@@ -40,6 +40,7 @@ a{color:var(--accent)}
 .spin{width:12px;height:12px;border:2px solid #c9d3e3;border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite;display:inline-block}
 @keyframes sp{to{transform:rotate(360deg)}}
 
+.toolbar button{white-space:nowrap}.toolbar .nav{flex-wrap:wrap}
 .toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:14px 20px 6px;flex-wrap:wrap}
 .nav{display:flex;align-items:center;gap:6px}
 .nav h2{margin:0 6px;font-size:18px;min-width:120px;text-align:center}
@@ -131,6 +132,7 @@ span.lk-chip{cursor:default}
 .lk-items{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .lk-item{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;padding:2px 4px;background:#fafbfd}
 .lk-item input{border:0;background:transparent;width:190px;padding:4px}
+#btnLock.lk-open{background:#eaf7ee;border-color:#9fd0ad}
 dialog::backdrop{background:rgba(20,28,45,.42)}
 .dlg-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:1}
 .dlg-head h3{margin:0;font-size:16px}
@@ -690,6 +692,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     </div>
     <div class="row">
       <button id="btnNew" class="primary">+ 새 일정</button>
+      <button id="btnLock" title="잠긴 메모 열기·잠그기">🔒 메모 잠김</button>
       <div class="seg" id="viewSeg" role="group" aria-label="보기 방식"><button data-v="month">월간</button><button data-v="list">목록</button></div>
       <div class="seg" id="showSeg" role="group" aria-label="표시할 일정"><button data-s="work">업무</button><button data-s="personal">개인</button><button data-s="all">함께</button></div>
     </div>
@@ -759,6 +762,8 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     <label class="f" style="max-width:240px">새 일정의 기본 알림<select id="setReminder">
       <option value="-1">알림 없음</option><option value="0">정각</option><option value="10">10분 전</option><option value="30">30분 전</option><option value="60">1시간 전</option><option value="1440">하루 전</option></select></label>
     <label class="opt"><input type="checkbox" id="setAlias"> <span>휴대폰 캘린더 제목에 대상자명(김O수)도 표시 <span class="hint">(기본: 끔 — ‘[방문] 완료’처럼 유형·상태만 표시. 출생연도·성별은 제목에 넣지 않고 숨은 정보로만 저장됩니다)</span></span></label>
+    <h3 style="margin:18px 0 8px">메모 잠금</h3>
+    <div class="infobox" id="lockSet"></div>
     <h3 style="margin:18px 0 8px">백업</h3>
     <p class="hint" style="margin-top:0">일정은 구글 캘린더에 있으므로 따로 옮길 필요는 없습니다. 실수로 지운 경우를 대비해 이 기기에 JSON 파일로 내려받아 둘 수 있습니다.</p>
     <div class="row">
@@ -809,7 +814,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
           <option value="-2">캘린더 기본 알림</option><option value="-1">알림 없음</option><option value="0">정각</option><option value="10">10분 전</option><option value="30">30분 전</option>
           <option value="60">1시간 전</option><option value="1440">하루 전</option></select></label>
         <div></div>
-        <label class="f full">메모 <span class="hint">(구글 캘린더 화면에는 보이지 않는 숨은 정보로 저장)</span><textarea name="memo" maxlength="500" placeholder="본인 확인용 짧은 메모 (상담 내용은 기관 전산시스템에)"></textarea></label>
+        <div class="f full"><span>메모 <span class="hint">(잠금 암호로 잠가서 저장 — 구글·Claude도 읽을 수 없음, 200자까지)</span> <button type="button" class="link" id="memoUnlock" hidden>🔓 잠금 풀기</button></span><textarea name="memo" maxlength="200" placeholder="본인 확인용 짧은 메모 (상담 내용은 기관 전산시스템에)"></textarea></div>
       </div>
     </div>
     <div class="dlg-foot">
@@ -827,6 +832,13 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
   <div class="dlg-head"><h3 id="svcTitle">서비스</h3><button type="button" class="link" data-close>닫기</button></div>
   <div class="dlg-body"><form id="svcForm" onsubmit="return false"></form></div>
   <div class="dlg-foot"><button type="button" class="danger" id="svcDelete">삭제</button><div class="right"><button type="button" data-close>취소</button><button type="button" class="primary" id="svcSave">저장</button></div></div>
+</dialog>
+
+<!-- 메모 잠금 -->
+<dialog id="lockDlg">
+  <div class="dlg-head"><h3 id="lockTitle">메모 잠금</h3></div>
+  <div class="dlg-body" id="lockBody"></div>
+  <div class="dlg-foot"><div class="right"><button type="button" id="lockCancel">취소</button><button type="button" class="primary" id="lockOk">열기</button></div></div>
 </dialog>
 
 <!-- 선택 상자 -->
@@ -1021,9 +1033,9 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       e.sex = e.sex === '남' || e.sex === '여' ? e.sex : '';
     } else {
       e.kind = 'personal'; e.ptype = e.ptype === '메모' ? '메모' : '일정'; e.title = String(e.title || '').slice(0, 80);
-      if (!e.title && !e.memo) throw new Error('제목이나 메모를 입력하세요.');
+      if (!e.title && !e.memo && !e.memoCipher) throw new Error('제목이나 메모를 입력하세요.');
     }
-    e.memo = String(e.memo || '').slice(0, 500);
+    e.memo = String(e.memo || ''); if (!e.memo.startsWith(LOCK_PREFIX)) e.memo = e.memo.slice(0, 500);
     e.reminder = Number(e.reminder); if (!isFinite(e.reminder)) e.reminder = -1;
     return e;
   }
@@ -1040,6 +1052,134 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     const reminders = e.reminder === -2 ? { useDefault: true } : { useDefault: false, overrides: e.reminder >= 0 ? [{ method: 'popup', minutes: e.reminder }] : [] };
     return { summary, start, end, reminders, extendedProperties: { private: priv } };
   }
+  /* ---------- 메모 잠금 (AES-GCM, 암호 → PBKDF2) ----------
+     구글에는 'vhm1:' + 암호문만 저장. 암호·키는 어디에도 저장하지 않고 이 창의 메모리에만 둠.
+     잠금 정보(소금값·확인용 암호문)는 업무 캘린더의 설명에 저장 → 다른 기기에서도 같은 암호로 열림 */
+  const LOCK_PREFIX = 'vhm1:', META_TAG = 'vhmlock1:', ITER = 310000, CHECK = 'vhm-lock-ok', MEMO_BYTES = 700;
+  const Lock = { key: null, raw: null, meta: undefined };
+  const te = new TextEncoder(), td = new TextDecoder();
+  const b64 = u8 => { let s = ''; u8.forEach(b => { s += String.fromCharCode(b); }); return btoa(s); };
+  const ub64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  async function deriveRaw(pass, salt, iter) {
+    const base = await crypto.subtle.importKey('raw', te.encode(String(pass).normalize('NFC')), 'PBKDF2', false, ['deriveBits']);
+    return new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: iter || ITER }, base, 256));
+  }
+  const aesKey = raw => crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+  async function encWith(key, text) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, te.encode(text)));
+    const out = new Uint8Array(12 + ct.length); out.set(iv); out.set(ct, 12); return b64(out);
+  }
+  async function decWith(key, s) { const u = ub64(s); return td.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: u.slice(0, 12) }, key, u.slice(12))); }
+  class LockNeeded extends Error { constructor(m) { super(m || '메모 잠금을 먼저 풀어 주세요.'); this.lockNeeded = true; } }
+  async function lockMeta(refresh) {
+    if (Lock.meta !== undefined && !refresh) return Lock.meta;
+    const c = await ensureCalendars();
+    const cal = await api('GET', '/calendars/' + encodeURIComponent(c.work));
+    const d = cal.description || ''; const i = d.indexOf(META_TAG); let m = null;
+    if (i >= 0) { try { m = JSON.parse(d.slice(i + META_TAG.length).split('\n')[0].trim()); } catch (e) { m = null; } }
+    Lock.meta = m; return m;
+  }
+  async function useRaw(raw) {
+    const m = await lockMeta(); const key = await aesKey(raw);
+    let ok = false; try { ok = (await decWith(key, m.check)) === CHECK; } catch (e) {}
+    if (!ok) return false;
+    Lock.key = key; Lock.raw = raw; return true;
+  }
+  async function lockSetup(pass) {
+    if (String(pass || '').length < 8) throw new Error('잠금 암호는 8자 이상으로 정하세요.');
+    if (await lockMeta(true)) throw new Error('이미 잠금 암호가 있습니다. 그 암호로 잠금을 푸세요.');
+    const salt = crypto.getRandomValues(new Uint8Array(16)), raw = await deriveRaw(pass, salt), key = await aesKey(raw);
+    const meta = { v: 1, salt: b64(salt), iter: ITER, check: await encWith(key, CHECK) };
+    const c = await ensureCalendars();
+    const cal = await api('GET', '/calendars/' + encodeURIComponent(c.work));
+    const keep = (cal.description || '').split('\n').filter(l => l.indexOf(META_TAG) < 0 && l.indexOf('메모 잠금 정보') < 0).join('\n').trim();
+    await api('PATCH', '/calendars/' + encodeURIComponent(c.work), { body: { description: (keep ? keep + '\n' : '') + '메모 잠금 정보입니다. 지우거나 고치지 마세요.\n' + META_TAG + JSON.stringify(meta) } });
+    Lock.meta = meta; Lock.key = key; Lock.raw = raw; return true;
+  }
+  async function lockUnlock(pass) {
+    const m = await lockMeta(true); if (!m) throw new Error('아직 잠금 암호를 만들지 않았습니다.');
+    if (!(await useRaw(await deriveRaw(pass, ub64(m.salt), m.iter)))) throw new Error('암호가 맞지 않습니다.');
+    return true;
+  }
+  function lockNow() { Lock.key = null; Lock.raw = null; }
+  async function lockState() { const m = await lockMeta(); return { setup: !!m, open: !!Lock.key, bio: bioInfo() }; }
+  async function decObj(o) {
+    if (!o || !o.memo || !o.memo.startsWith(LOCK_PREFIX)) { if (o) o.memoLock = ''; return o; }
+    if (Lock.key) { try { o.memo = await decWith(Lock.key, o.memo.slice(LOCK_PREFIX.length)); o.memoLock = 'open'; return o; } catch (e) { o.memoLock = 'bad'; } }
+    else o.memoLock = 'locked';
+    o.memoCipher = o.memo; o.memo = ''; return o;
+  }
+  async function sealMemo(e, oldRaw, allowPlain) {   // 저장 직전: 메모를 암호문으로
+    if (e.memoCipher && !e.memo) { e.memo = e.memoCipher; return; }
+    if (!e.memo || e.memo.startsWith(LOCK_PREFIX)) return;
+    if (Lock.key) {
+      if (te.encode(e.memo).length > MEMO_BYTES) throw new Error('잠금 메모는 200자 안쪽으로 줄여 주세요.');
+      e.memo = LOCK_PREFIX + await encWith(Lock.key, e.memo); return;
+    }
+    if (allowPlain || (oldRaw != null && oldRaw === e.memo)) return;   // 예전 일반 메모를 그대로 두는 경우
+    throw new LockNeeded();
+  }
+  async function lockAll(from, to) {   // 예전 일반 메모를 모두 잠금
+    if (!Lock.key) throw new LockNeeded();
+    const c = await ensureCalendars(); let done = 0, long = 0;
+    for (const calId of [c.work, c.personal]) {
+      for (const ev of await listCal(calId, from, to)) {
+        const p = ev.extendedProperties && ev.extendedProperties.private; const m = p && p.vhm_memo;
+        if (!m || m.startsWith(LOCK_PREFIX)) continue;
+        if (te.encode(m).length > MEMO_BYTES) { long++; continue; }
+        await api('PATCH', '/calendars/' + encodeURIComponent(calId) + '/events/' + encodeURIComponent(ev.id), { body: { extendedProperties: { private: { vhm_memo: LOCK_PREFIX + await encWith(Lock.key, m) } } } });
+        done++;
+      }
+    }
+    return { done, long };
+  }
+
+  /* ---------- 생체인증으로 잠금 풀기 (패스키 PRF) ----------
+     이 기기의 Face ID·지문·Windows Hello 가 만든 비밀값으로 '잠금 키'를 감싸 이 기기에만 저장 */
+  const BIO_KEY = 'vhm-bio';
+  function bioInfo() { try { const b = JSON.parse(localStorage.getItem(BIO_KEY) || 'null'); return b && b.cid ? { on: true } : { on: false }; } catch (e) { return { on: false }; } }
+  async function bioAvailable() {
+    try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch (e) { return false; }
+  }
+  async function prfKey(out) {
+    const base = await crypto.subtle.importKey('raw', out, 'HKDF', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: te.encode('vhm-bio-wrap'), info: te.encode('v1') }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+  async function bioGet(cid, salt) {
+    const a = await navigator.credentials.get({ publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: location.hostname, userVerification: 'required', timeout: 60000,
+      allowCredentials: [{ type: 'public-key', id: cid }], extensions: { prf: { eval: { first: salt } } } } });
+    const r = a && a.getClientExtensionResults().prf; const out = r && r.results && r.results.first;
+    if (!out) throw new Error('이 기기·브라우저는 생체인증 잠금 풀기를 지원하지 않습니다. 암호로 여세요.');
+    return new Uint8Array(out);
+  }
+  async function bioRegister() {
+    if (!Lock.raw) throw new LockNeeded('먼저 암호로 잠금을 푼 뒤 등록하세요.');
+    if (!(await bioAvailable())) throw new Error('이 기기에서 쓸 수 있는 생체인증(Face ID·지문·Windows Hello)을 찾지 못했습니다.');
+    const salt = crypto.getRandomValues(new Uint8Array(32));
+    const email = (CAL && CAL.email) || '';
+    const cred = await navigator.credentials.create({ publicKey: {
+      rp: { name: '방문건강관리 일정', id: location.hostname }, user: { id: crypto.getRandomValues(new Uint8Array(16)), name: email || '메모 잠금', displayName: '방문건강관리 메모 잠금' },
+      challenge: crypto.getRandomValues(new Uint8Array(32)), pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+      authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' }, timeout: 60000,
+      extensions: { prf: { eval: { first: salt } } } } });
+    const ext = cred.getClientExtensionResults().prf || {};
+    if (ext.enabled === false) throw new Error('이 기기·브라우저는 생체인증 잠금 풀기를 지원하지 않습니다.');
+    const cid = new Uint8Array(cred.rawId);
+    const out = ext.results && ext.results.first ? new Uint8Array(ext.results.first) : await bioGet(cid, salt);
+    const w = await encWith(await prfKey(out), b64(Lock.raw));
+    localStorage.setItem(BIO_KEY, JSON.stringify({ cid: b64(cid), salt: b64(salt), w, email }));
+    return true;
+  }
+  async function bioUnlock() {
+    const b = JSON.parse(localStorage.getItem(BIO_KEY) || 'null'); if (!b) throw new Error('이 기기에는 생체인증이 등록되어 있지 않습니다.');
+    const out = await bioGet(ub64(b.cid), ub64(b.salt));
+    let raw; try { raw = ub64(await decWith(await prfKey(out), b.w)); } catch (e) { throw new Error('생체인증 정보가 맞지 않습니다. 암호로 연 뒤 다시 등록하세요.'); }
+    if (!(await useRaw(raw))) throw new Error('잠금 암호가 바뀐 것 같습니다. 암호로 연 뒤 생체인증을 다시 등록하세요.');
+    return true;
+  }
+  function bioRemove() { try { localStorage.removeItem(BIO_KEY); } catch (e) {} return true; }
+
   async function findEvent(id) {
     const c = await ensureCalendars();
     for (const [kind, calId] of [['work', c.work], ['personal', c.personal]]) {
@@ -1048,7 +1188,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     }
     return null;
   }
-  async function saveEvent(e, force) {
+  async function saveEvent(e, force, opt) {
     e = validate(Object.assign({}, e));
     const settings = getSettings(), c = await ensureCalendars();
     const calId = e.kind === 'work' ? c.work : c.personal;
@@ -1057,6 +1197,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       if (!f) return { ok: false, gone: true, message: '이 일정은 다른 기기에서 삭제되었습니다.' };
       if (!force && e.updated && f.ev.etag !== e.updated) return { ok: false, conflict: true, current: toObj(f.ev, f.kind) };
       const old = toObj(f.ev, f.kind);
+      await sealMemo(e, old.memo, opt && opt.allowPlain);
       e.uid = e.uid || old.uid;
       const sameKind = f.kind === e.kind, sameShape = !!old.start === !!e.start;
       if (sameKind && sameShape) {
@@ -1073,6 +1214,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       await api('DELETE', '/calendars/' + encodeURIComponent(f.calId) + '/events/' + encodeURIComponent(e.id));
       return { ok: true, event: toObj(created, e.kind) };
     }
+    await sealMemo(e, null, opt && opt.allowPlain);
     const ev = await api('POST', '/calendars/' + encodeURIComponent(calId) + '/events', { body: bodyOf(e, settings) });
     return { ok: true, event: toObj(ev, e.kind) };
   }
@@ -1134,7 +1276,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
           await api('POST', '/calendars/' + encodeURIComponent(c.work) + '/events', { body: { summary: copy.rawTitle || copy.target || '(제목 없음)', start, end, reminders: { useDefault: true } } });
           added++; continue;
         }
-        const r = await saveEvent(copy, true); if (r.ok) { added++; have[r.event.uid] = true; } else failed++;
+        const r = await saveEvent(copy, true, { allowPlain: true }); if (r.ok) { added++; have[r.event.uid] = true; } else failed++;
       } catch (err) { if (err.authNeeded) throw err; failed++; }
     }
     return { added, skipped, failed };
@@ -1223,11 +1365,131 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       try { localStorage.setItem(SET_KEY, JSON.stringify(s)); } catch (e) {}
       return s;
     },
-    listEvents, saveEvent, setStatus, deleteEvent, getStats, exportBackup, restoreBackup,
+    async listEvents(f, t) { return Promise.all((await listEvents(f, t)).map(decObj)); },
+    async saveEvent(e, force) { const r = await saveEvent(e, force); if (r.event) await decObj(r.event); if (r.current) await decObj(r.current); return r; },
+    async setStatus(id, st, up) { const r = await setStatus(id, st, up); if (r.event) await decObj(r.event); if (r.current) await decObj(r.current); return r; },
+    async deleteEvent(id, up) { const r = await deleteEvent(id, up); if (r.current) await decObj(r.current); return r; },
+    getStats, exportBackup, restoreBackup,
+    lockState, lockSetup, lockUnlock, lockNow, lockAll, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
     linksLoad, linksSave, uploadForm, downloadForm, trashForm,
     hasDrive: () => Auth.hasDrive,
-    _resetCache() { CAL = null; LINK = null; }
+    _resetCache() { CAL = null; LINK = null; Lock.meta = undefined; lockNow(); }
   };
+})();
+
+</script>
+<script>
+/* 메모 잠금 화면 (호스팅 버전 전용)
+ * - 메모는 잠금 암호로 암호화되어 구글에 저장됩니다. 암호·키는 이 창의 메모리에만 있고, 창을 닫으면 다시 잠깁니다.
+ * - 이 기기에 생체인증(Face ID·지문·Windows Hello)을 등록하면 암호 대신 쓸 수 있습니다. */
+(function () {
+  'use strict';
+  const $ = s => document.querySelector(s);
+  const escH = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  let state = { setup: false, open: false, bio: { on: false } }, bioOk = null;
+
+  async function refresh() {
+    try { state = await SERVER.lockState(); } catch (e) { return; }
+    if (bioOk === null) bioOk = await SERVER.bioAvailable();
+    paint();
+  }
+  function paint() {
+    const b = $('#btnLock');
+    if (b) { b.textContent = state.open ? '🔓 메모 열림' : '🔒 메모 잠김'; b.title = state.open ? '누르면 메모를 다시 잠급니다' : '누르면 잠긴 메모를 엽니다'; b.classList.toggle('lk-open', state.open); }
+    const box = $('#lockSet'); if (!box) return;
+    const st = !state.setup ? '아직 잠금 암호를 만들지 않았습니다. 메모를 처음 저장할 때 만들게 됩니다.'
+      : state.open ? '<b>열림</b> — 이 창을 닫거나 ‘지금 잠그기’를 누르면 다시 잠깁니다.' : '<b>잠김</b> — 메모 내용이 가려져 있습니다.';
+    const bio = !bioOk ? '이 기기·브라우저에서는 생체인증을 찾지 못했습니다. 암호로 여세요.'
+      : state.bio.on ? '이 기기에 생체인증이 등록되어 있습니다.' : '이 기기에는 생체인증이 등록되어 있지 않습니다.';
+    box.innerHTML = `<p style="margin:0 0 6px">${st}</p><p class="hint" style="margin:0 0 8px">${escH(bio)}</p>
+      <div class="row">
+        ${!state.setup ? '<button id="lkSetup" class="primary">잠금 암호 만들기</button>' : state.open ? '<button id="lkClose">지금 잠그기</button>' : '<button id="lkOpen" class="primary">잠금 풀기</button>'}
+        ${state.setup && bioOk && !state.bio.on ? '<button id="lkBioAdd">이 기기에 생체인증 등록</button>' : ''}
+        ${state.bio.on ? '<button id="lkBioDel">이 기기 생체인증 해제</button>' : ''}
+        ${state.open ? '<button id="lkAll">예전 메모 모두 잠그기</button>' : ''}
+      </div>`;
+  }
+
+  // 잠금 풀기·만들기 창. 성공하면 true
+  function prompt(reason) {
+    return new Promise(resolve => {
+      const d = $('#lockDlg'), setup = !state.setup;
+      $('#lockTitle').textContent = setup ? '메모 잠금 암호 만들기' : '메모 잠금 풀기';
+      $('#lockBody').innerHTML = (reason ? `<p class="hint" style="margin-top:0">${escH(reason)}</p>` : '') + (setup
+        ? `<p style="margin-top:0">메모는 이 암호로 잠겨서 구글에 저장됩니다. <b>구글도, Claude도, 만든 사람도 열 수 없습니다.</b></p>
+           <div class="warnbox" style="margin-bottom:10px">암호를 잊으면 잠긴 메모는 <b>영영 복구할 수 없습니다.</b> 따로 안전하게 적어 두세요.</div>
+           <label class="f">잠금 암호 (8자 이상)<input type="password" id="lockPw" autocomplete="new-password"></label>
+           <label class="f" style="margin-top:8px">한 번 더<input type="password" id="lockPw2" autocomplete="new-password"></label>`
+        : `${state.bio.on ? '<button type="button" id="lockBio" class="primary" style="width:100%;margin-bottom:12px">생체인증으로 열기 (Face ID·지문)</button>' : ''}
+           <label class="f">잠금 암호<input type="password" id="lockPw" autocomplete="current-password"></label>`)
+        + '<p id="lockMsg" class="hint" style="color:var(--warn);min-height:1em;margin:8px 0 0"></p>';
+      const msg = t => { $('#lockMsg').textContent = t || ''; };
+      const done = ok => { d.onclose = null; if (d.open) d.close(); resolve(ok); };
+      const busy = on => { $('#lockOk').disabled = on; const bb = $('#lockBio'); if (bb) bb.disabled = on; };
+      $('#lockOk').textContent = setup ? '암호 만들기' : '열기';
+      $('#lockOk').onclick = async () => {
+        const pw = $('#lockPw').value;
+        if (setup && pw !== $('#lockPw2').value) return msg('두 암호가 다릅니다.');
+        busy(true); msg(setup ? '만드는 중…' : '확인 중…');
+        try { setup ? await SERVER.lockSetup(pw) : await SERVER.lockUnlock(pw); await refresh(); done(true);
+          if (setup && bioOk) toast('잠금 암호를 만들었습니다. 설정 탭에서 이 기기에 생체인증을 등록할 수 있습니다.', 5000); }
+        catch (e) { msg(e.message || String(e)); busy(false); }
+      };
+      const bb = $('#lockBio');
+      if (bb) bb.onclick = async () => { busy(true); msg('생체인증을 기다리는 중…');
+        try { await SERVER.bioUnlock(); await refresh(); done(true); } catch (e) { msg(e.name === 'NotAllowedError' ? '생체인증이 취소되었습니다. 암호로 여세요.' : (e.message || String(e))); busy(false); } };
+      $('#lockCancel').onclick = () => done(false);
+      d.onclose = () => resolve(false);
+      $('#lockPw').onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); (setup ? $('#lockPw2') : $('#lockOk')).focus(); if (!setup) $('#lockOk').click(); } };
+      d.showModal(); if (!bb) $('#lockPw').focus();
+    });
+  }
+
+  async function openNow(reason) { if (state.open) return true; const ok = await prompt(reason); if (ok) await loadEvents(); return ok; }
+
+  // 일정 창의 메모 칸: 잠긴 메모면 가리고 '잠금 풀기' 단추
+  function syncMemo(d) {
+    const f = $('#eventForm'), ta = f.memo, locked = d && (d.memoLock === 'locked' || d.memoLock === 'bad');
+    ta.disabled = !!locked; ta.dataset.cipher = locked ? '1' : '';
+    ta.placeholder = locked ? (d.memoLock === 'bad' ? '🔒 이 메모는 지금 암호로 열 수 없습니다' : '🔒 잠긴 메모입니다 — ‘잠금 풀기’를 누르면 보입니다') : '본인 확인용 짧은 메모 (상담 내용은 기관 전산시스템에)';
+    $('#memoUnlock').hidden = !locked || d.memoLock === 'bad';
+  }
+
+  function bind() {
+    $('#btnLock').onclick = async () => {
+      if (state.open) { SERVER.lockNow(); await refresh(); await loadEvents(); toast('메모를 잠갔습니다.'); }
+      else await openNow();
+    };
+    $('#memoUnlock').onclick = async () => {
+      const id = S.editing && S.editing.id; const ok = await openNow(); if (!ok || !id) return;
+      const ev = S.events.find(x => x.id === id); if (ev) { $('#eventForm').memo.value = ev.memo || ''; syncMemo(ev); S.editing = ev; }
+    };
+    $('#lockSet').addEventListener('click', async ev => {
+      const t = ev.target.closest('button'); if (!t) return;
+      try {
+        if (t.id === 'lkSetup' || t.id === 'lkOpen') await openNow();
+        else if (t.id === 'lkClose') { SERVER.lockNow(); await refresh(); await loadEvents(); toast('메모를 잠갔습니다.'); }
+        else if (t.id === 'lkBioAdd') {
+          if (!state.open && !(await openNow('생체인증을 등록하려면 먼저 암호로 여세요.'))) return;
+          await SERVER.bioRegister(); await refresh(); toast('이 기기에 생체인증을 등록했습니다. 다음부터 ‘생체인증으로 열기’를 쓸 수 있습니다.', 5000);
+        } else if (t.id === 'lkBioDel') {
+          SERVER.bioRemove(); await refresh(); toast('이 기기의 생체인증을 해제했습니다. 기기 설정의 암호(패스키) 목록에서 ‘방문건강관리’ 항목도 지울 수 있습니다.', 6000);
+        } else if (t.id === 'lkAll') {
+          const [a, b] = [addDays(S.today || S.selected, -400), addDays(S.today || S.selected, 400)];
+          const r = await run('예전 메모를 잠그는 중…', () => SERVER.lockAll(a, b)); await loadEvents();
+          toast(`메모 ${r.done}건을 잠갔습니다.` + (r.long ? ` 200자가 넘는 메모 ${r.long}건은 줄인 뒤 다시 저장하세요.` : ''), 6000);
+        }
+      } catch (e) { toast(e.name === 'NotAllowedError' ? '생체인증이 취소되었습니다.' : (e.message || String(e)), 6000); }
+    });
+  }
+
+  window.MEMOLOCK = { refresh, prompt, openNow, syncMemo, isOpen: () => state.open, bind,
+    // 저장 전: 새로 쓴 메모가 있는데 잠겨 있으면 먼저 풀기(처음이면 암호 만들기)
+    async beforeSave(e) {
+      if (!e.memo || e.memoCipher || state.open) return true;
+      if (S.editing && S.editing.memoLock === '' && S.editing.memo === e.memo) return true;   // 예전 일반 메모 그대로
+      return openNow(state.setup ? '메모를 저장하려면 잠금을 풀어 주세요.' : '메모는 잠금 암호로 잠가서 저장합니다. 처음 한 번 암호를 만들어 주세요.');
+    } };
 })();
 
 </script>
@@ -1276,7 +1538,8 @@ async function run(label, fn) {
   busy++; syncState('busy', label);
   try { const r = await fn(); $('#sync').classList.remove('err'); return r; }
   catch (e) {
-    if (e && e.authNeeded) { showConnect(e.message + ' 아래 버튼을 눌러 주세요.'); syncState('err', '구글 캘린더 연결 필요'); }
+    if (e && e.lockNeeded) { toast(e.message, 5000); }
+    else if (e && e.authNeeded) { showConnect(e.message + ' 아래 버튼을 눌러 주세요.'); syncState('err', '구글 캘린더 연결 필요'); }
     else if (e && e.noDrive) { /* 연계 안내 탭에서 '드라이브 연결' 버튼으로 안내 */ }
     else { syncState('err', '연결 실패 — 인터넷 연결을 확인한 뒤 새로고침하세요'); toast('실패: ' + (e.message || e), 5000); }
     throw e;
@@ -1373,7 +1636,7 @@ function itemHtml(e) {
   if (!e.fromApp) b.push('<span class="badge" title="휴대폰·구글 캘린더에서 직접 만든 일정">휴대폰 등록</span>');
   const quick = (e.kind === 'work' && e.type && e.status === '예정') ? `<div class="quick"><button class="small" data-quick="완료" data-id="${esc(e.id)}">완료</button><button class="small" data-quick="부재" data-id="${esc(e.id)}">부재</button></div>` : '';
   return `<div class="item ${e.kind==='personal'?'personal':''} ${e.kind==='work'?statusCls[e.status]:''}" style="--c:${colorOf(e)}" data-id="${esc(e.id)}" role="button" tabindex="0">
-    <div class="time">${esc(timeOf(e))}</div><div class="main"><div class="title">${esc(e.kind === 'work' && e.type ? e.type + (personOf(e) ? ' · ' + personOf(e) : '') : labelOf(e))} ${b.join('')}</div>${e.memo ? `<div class="memo">${esc(e.memo)}</div>` : ''}</div>${quick}</div>`;
+    <div class="time">${esc(timeOf(e))}</div><div class="main"><div class="title">${esc(e.kind === 'work' && e.type ? e.type + (personOf(e) ? ' · ' + personOf(e) : '') : labelOf(e))} ${b.join('')}</div>${e.memo ? `<div class="memo">${esc(e.memo)}</div>` : ''}${e.memoLock === 'locked' || e.memoLock === 'bad' ? '<div class="memo">🔒 잠긴 메모</div>' : ''}</div>${quick}</div>`;
 }
 function renderList() {
   const y = S.cursor.getFullYear(), m = S.cursor.getMonth(); const from = ymd(new Date(y, m, 1)), to = ymd(new Date(y, m + 1, 0));
@@ -1476,7 +1739,7 @@ function openEvent(ev, defaults = {}) {
     ? `휴대폰·구글 캘린더에서 만든 일정입니다 (제목: ${ev.rawTitle || '없음'}). 유형을 고르고 저장하면 실적에 들어갑니다.`
     : '휴대폰·구글 캘린더에서 만든 일정입니다. 저장하면 일정표 형식으로 정리됩니다.';
   $('#eventDlgTitle').textContent = ev ? '일정 수정' : (d.parentId ? '후속 일정 등록' : '새 일정');
-  $('#btnDelete').hidden = !ev; syncKindUI(); syncPersonHint(); $('#eventDlg').showModal();
+  $('#btnDelete').hidden = !ev; syncKindUI(); syncPersonHint(); if (window.MEMOLOCK) MEMOLOCK.syncMemo(ev ? d : null); $('#eventDlg').showModal();
 }
 function syncKindUI() {
   const work = $('#eventForm').kind.value === 'work';
@@ -1492,12 +1755,13 @@ function readForm() {
   if (!f.start.value && f.end.value) { alert('시작 시간을 입력하세요.'); return null; }
   const e = { kind:f.kind.value, date:f.date.value, start:f.start.value, end:f.end.value, memo:f.memo.value.trim(), reminder:+f.reminder.value, parentId:f.dataset.parentId || '' };
   if (S.editing) { e.id = S.editing.id; e.updated = S.editing.updated; e.uid = S.editing.uid; }
+  if (f.memo.dataset.cipher === '1' && S.editing) { e.memo = ''; e.memoCipher = S.editing.memoCipher; }
   if (e.kind === 'work') {
     if (!f.type.value) { alert('유형을 선택하세요.'); return null; }
     f.target.value = maskName(f.target.value);
     if (f.birth.value.trim() && !cleanBirth(f.birth.value)) { alert('출생연도는 1948처럼 네 자리로 적으세요.'); return null; }
     Object.assign(e, { type:f.type.value, status:f.status.value, group:f.group.value, target:f.target.value, birth:cleanBirth(f.birth.value), sex:['남','여'].includes(f.sex.value) ? f.sex.value : '' });
-  } else { Object.assign(e, { ptype:f.ptype.value, title:f.title.value.trim() }); if (!e.title && !e.memo) { alert('제목이나 메모를 입력하세요.'); return null; } }
+  } else { Object.assign(e, { ptype:f.ptype.value, title:f.title.value.trim() }); if (!e.title && !e.memo && !e.memoCipher) { alert('제목이나 메모를 입력하세요.'); return null; } }
   return e;
 }
 function describe(e) {
@@ -1522,6 +1786,7 @@ async function persist(e) {
 }
 async function submitForm(thenFollow) {
   const e = readForm(); if (!e) return;
+  if (window.MEMOLOCK && !(await MEMOLOCK.beforeSave(e))) return;
   $('#btnSave').disabled = true; $('#btnFollow').disabled = true;
   try {
     const saved = await persist(e); if (!saved) { $('#eventDlg').close(); return; }
@@ -1742,11 +2007,12 @@ async function boot() {
   const b = await run('구글 캘린더 연결 중…', () => call('getBootstrap'));
   $('#connectBox').hidden = true;
   S.settings = b.settings; renderSettings(b); render(); await loadEvents();
+  if (window.MEMOLOCK) await MEMOLOCK.refresh();
 }
 (async function start() {
   const d = new Date(); S.cursor = new Date(d.getFullYear(), d.getMonth(), 1);
   S.settings = Object.assign({ show:'all', view:'month', defaultReminder:30, titleAlias:false, timeStep:10 }, (() => { try { return JSON.parse(localStorage.getItem('vhm-settings') || '{}'); } catch (e) { return {}; } })());
-  bind(); render();
+  bind(); if (window.MEMOLOCK) MEMOLOCK.bind(); render();
   $('#btnConnect').onclick = async () => {
     $('#btnConnect').disabled = true;
     try { await VHM_AUTH.request('base'); $('#connectBox').hidden = true; await boot(); }
