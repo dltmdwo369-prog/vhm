@@ -149,7 +149,7 @@ textarea{resize:vertical;min-height:70px}
 .kind-seg label{flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center;cursor:pointer}
 .kind-seg input{position:absolute;opacity:0;pointer-events:none}
 .kind-seg label:has(input:checked){border-color:var(--accent);background:#f1f6ff;color:var(--accent);font-weight:600}
-.tpick{display:flex;gap:4px}.tpick select{flex:1;min-width:0;color:var(--ink);font-size:14px;padding:7px 4px}
+.tin{width:100%;min-width:0;box-sizing:border-box}.tin.bad{border-color:var(--danger,#c0392b);background:rgba(192,57,43,.06)}
 div.f{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--sub)}
 .opt{display:flex;gap:8px;align-items:flex-start;padding:6px 0}
 .cmp{display:grid;grid-template-columns:auto 1fr 1fr;gap:4px 10px;font-size:13px}
@@ -698,7 +698,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     <select id="fGroup" aria-label="관리군"></select>
     <select id="fType" aria-label="유형"></select>
     <select id="fStatus" aria-label="상태"></select>
-    <input type="search" id="fQuery" placeholder="검색 (별칭·메모·제목)" aria-label="검색어">
+    <input type="search" id="fQuery" placeholder="검색 (대상자명·메모·제목)" aria-label="검색어">
     <button id="fReset" class="link">필터 초기화</button>
     <span class="hint" id="filterHint"></span>
   </section>
@@ -758,9 +758,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     <h3 style="margin:18px 0 8px">일정 기본값 <span class="hint" style="font-weight:400">(이 설정은 기기마다 따로 저장됩니다)</span></h3>
     <label class="f" style="max-width:240px">새 일정의 기본 알림<select id="setReminder">
       <option value="-1">알림 없음</option><option value="0">정각</option><option value="10">10분 전</option><option value="30">30분 전</option><option value="60">1시간 전</option><option value="1440">하루 전</option></select></label>
-    <label class="f" style="max-width:240px;margin-top:8px">시간 선택 단위 (시작·종료 시간의 분)<select id="setStep">
-      <option value="5">5분 단위</option><option value="10">10분 단위</option><option value="30">30분 단위</option></select></label>
-    <label class="opt"><input type="checkbox" id="setAlias"> <span>휴대폰 캘린더 제목에 대상자 별칭도 표시 <span class="hint">(기본: 끔 — ‘[방문] 완료’처럼 유형·상태만 표시. 별칭은 어느 쪽이든 일정의 숨은 정보로 저장됩니다)</span></span></label>
+    <label class="opt"><input type="checkbox" id="setAlias"> <span>휴대폰 캘린더 제목에 대상자명(김O수)도 표시 <span class="hint">(기본: 끔 — ‘[방문] 완료’처럼 유형·상태만 표시. 출생연도·성별은 제목에 넣지 않고 숨은 정보로만 저장됩니다)</span></span></label>
     <h3 style="margin:18px 0 8px">백업</h3>
     <p class="hint" style="margin-top:0">일정은 구글 캘린더에 있으므로 따로 옮길 필요는 없습니다. 실수로 지운 경우를 대비해 이 기기에 JSON 파일로 내려받아 둘 수 있습니다.</p>
     <div class="row">
@@ -792,15 +790,19 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
         <div class="full infobox" id="parentInfo" hidden></div>
         <div class="full warnbox" id="phoneInfo" hidden></div>
         <label class="f">날짜<input type="date" name="date" required></label>
-        <div class="row" style="gap:8px">
-          <div class="f" style="flex:1">시작<div class="tpick" data-for="start"><select class="th" aria-label="시작 시"></select><select class="tm" aria-label="시작 분"></select></div><input type="hidden" name="start"></div>
-          <div class="f" style="flex:1">종료<div class="tpick" data-for="end"><select class="th" aria-label="종료 시"></select><select class="tm" aria-label="종료 분"></select></div><input type="hidden" name="end"></div>
+        <div class="row" style="gap:8px;flex-wrap:nowrap;align-items:flex-start;min-width:0">
+          <label class="f" style="flex:1;min-width:0">시작<input name="start" class="tin" inputmode="numeric" maxlength="12" placeholder="예: 14:30" autocomplete="off"></label>
+          <label class="f" style="flex:1;min-width:0">종료<input name="end" class="tin" inputmode="numeric" maxlength="12" placeholder="비우면 30분 뒤" autocomplete="off"></label>
         </div>
+        <div class="full hint" style="margin-top:-6px">시간은 직접 적으세요. 1430, 14:30, 2:30, 오후 2시 30분 모두 됩니다. 비우면 종일 일정입니다.</div>
         <label class="f work-only">유형<select name="type"></select></label>
         <label class="f work-only">상태<select name="status"></select></label>
         <label class="f work-only">관리군<select name="group"></select></label>
-        <label class="f work-only">대상자 별칭<input name="target" maxlength="40" placeholder="예: 가-12" autocomplete="off"></label>
-        <div class="full warnbox work-only">실명·주민번호·주소·건강정보는 넣지 마세요. 이 일정은 본인 구글 계정에 저장됩니다. 별칭은 본인이 알아볼 수 있는 표시만 쓰세요.</div>
+        <label class="f work-only">대상자명<input name="target" maxlength="20" placeholder="예: 김민수 → 김O수" autocomplete="off"></label>
+        <label class="f work-only">출생연도<input name="birth" inputmode="numeric" maxlength="4" placeholder="예: 1948" autocomplete="off"></label>
+        <label class="f work-only">성별<select name="sex"><option value="">선택 안 함</option><option value="남">남</option><option value="여">여</option></select></label>
+        <div class="full hint work-only" id="personHint"></div>
+        <div class="full warnbox work-only">이름은 두 번째 글자가 자동으로 O로 바뀌어 저장됩니다(김민수 → 김O수). 원래 이름은 저장·전송되지 않습니다. 생년월일·주소·연락처·건강정보는 넣지 마세요.</div>
         <label class="f personal-only">종류<select name="ptype"><option value="일정">개인 일정</option><option value="메모">메모</option></select></label>
         <label class="f personal-only">제목<input name="title" maxlength="80" autocomplete="off"></label>
         <label class="f">휴대폰 알림<select name="reminder">
@@ -972,9 +974,9 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       memo: tag('memo'), parentId: tag('parent'), reminder, updated: ev.etag, fromApp: tag('kind') !== '' };
     const title = ev.summary || '';
     if (kind === 'work') {
-      o.type = tag('type'); o.status = tag('status') || '예정'; o.group = tag('group') || '미지정'; o.target = tag('target');
+      o.type = tag('type'); o.status = tag('status') || '예정'; o.group = tag('group') || '미지정'; o.target = tag('target'); o.birth = tag('birth'); o.sex = tag('sex');
       const m = TITLE_RE.exec(title);
-      if (m) { o.type = m[1]; o.status = m[2] || '예정'; if (!o.target && m[3]) o.target = m[3].slice(0, 40); }
+      if (m) { o.type = m[1]; o.status = m[2] || '예정'; if (!o.target && m[3]) o.target = maskName(m[3]).slice(0, 40); }
       else if (!o.fromApp) o.target = o.target || title.slice(0, 40);
       if (TYPES.indexOf(o.type) < 0) o.type = '';
       if (STATUSES.indexOf(o.status) < 0) o.status = '예정';
@@ -1004,6 +1006,8 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
   }
 
   /* ---------- 저장·삭제 ---------- */
+  // 한글 이름 2~5자면 두 번째 글자를 O로 (화면과 같은 규칙. 저장 직전에 한 번 더 적용)
+  function maskName(raw) { const s = String(raw || '').replace(/\s+/g, ''); return /^[가-힣]{2,5}$/.test(s) ? s[0] + 'O' + s.slice(2) : String(raw || '').trim(); }
   function validate(e) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date || '')) throw new Error('날짜가 올바르지 않습니다.');
     ['start', 'end'].forEach(k => { if (e[k] && !/^\d{2}:\d{2}$/.test(e[k])) throw new Error('시간이 올바르지 않습니다.'); });
@@ -1012,7 +1016,9 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       if (TYPES.indexOf(e.type) < 0) throw new Error('유형을 선택하세요.');
       if (STATUSES.indexOf(e.status) < 0) e.status = '예정';
       if (GROUPS.indexOf(e.group) < 0) e.group = '미지정';
-      e.target = String(e.target || '').slice(0, 40);
+      e.target = maskName(e.target).slice(0, 40);
+      const by = String(e.birth || '').trim(); e.birth = /^\d{4}$/.test(by) && +by >= 1900 && +by <= new Date().getFullYear() ? by : '';
+      e.sex = e.sex === '남' || e.sex === '여' ? e.sex : '';
     } else {
       e.kind = 'personal'; e.ptype = e.ptype === '메모' ? '메모' : '일정'; e.title = String(e.title || '').slice(0, 80);
       if (!e.title && !e.memo) throw new Error('제목이나 메모를 입력하세요.');
@@ -1027,7 +1033,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       ? '[' + e.type + ']' + (e.status && e.status !== '예정' ? ' ' + e.status : '') + (settings.titleAlias && e.target ? ' ' + e.target : '')
       : (e.title || (e.ptype === '메모' ? '메모' : '개인 일정'));
     const priv = { vhm_kind: e.kind, vhm_memo: e.memo, vhm_parent: e.parentId || '', vhm_uid: e.uid || newUid() };
-    if (e.kind === 'work') Object.assign(priv, { vhm_type: e.type, vhm_status: e.status, vhm_group: e.group, vhm_target: e.target });
+    if (e.kind === 'work') Object.assign(priv, { vhm_type: e.type, vhm_status: e.status, vhm_group: e.group, vhm_target: e.target, vhm_birth: e.birth || '', vhm_sex: e.sex || '' });
     else priv.vhm_ptype = e.ptype;
     const start = e.start ? { dateTime: e.date + 'T' + e.start + ':00' + OFFSET, timeZone: TZ } : { date: e.date };
     const end = e.start ? { dateTime: e.date + 'T' + (e.end || plus30(e.start)) + ':00' + OFFSET, timeZone: TZ } : { date: addDays(e.date, 1) };
@@ -1322,7 +1328,7 @@ function matches(e) {
     if (f.type && e.type !== f.type) return false;
     if (f.status && e.status !== f.status) return false;
   } else if (workFilterOn()) return false;
-  if (f.q) { const hay = [e.target, e.memo, e.title, e.type, e.status, e.group, e.ptype, e.rawTitle].join(' ').toLowerCase(); if (!hay.includes(f.q.toLowerCase())) return false; }
+  if (f.q) { const hay = [e.target, e.birth, e.sex, e.memo, e.title, e.type, e.status, e.group, e.ptype, e.rawTitle].join(' ').toLowerCase(); if (!hay.includes(f.q.toLowerCase())) return false; }
   return true;
 }
 const visible = () => S.events.filter(matches).sort(sortEv);
@@ -1367,7 +1373,7 @@ function itemHtml(e) {
   if (!e.fromApp) b.push('<span class="badge" title="휴대폰·구글 캘린더에서 직접 만든 일정">휴대폰 등록</span>');
   const quick = (e.kind === 'work' && e.type && e.status === '예정') ? `<div class="quick"><button class="small" data-quick="완료" data-id="${esc(e.id)}">완료</button><button class="small" data-quick="부재" data-id="${esc(e.id)}">부재</button></div>` : '';
   return `<div class="item ${e.kind==='personal'?'personal':''} ${e.kind==='work'?statusCls[e.status]:''}" style="--c:${colorOf(e)}" data-id="${esc(e.id)}" role="button" tabindex="0">
-    <div class="time">${esc(timeOf(e))}</div><div class="main"><div class="title">${esc(labelOf(e))} ${b.join('')}</div>${e.memo ? `<div class="memo">${esc(e.memo)}</div>` : ''}</div>${quick}</div>`;
+    <div class="time">${esc(timeOf(e))}</div><div class="main"><div class="title">${esc(e.kind === 'work' && e.type ? e.type + (personOf(e) ? ' · ' + personOf(e) : '') : labelOf(e))} ${b.join('')}</div>${e.memo ? `<div class="memo">${esc(e.memo)}</div>` : ''}</div>${quick}</div>`;
 }
 function renderList() {
   const y = S.cursor.getFullYear(), m = S.cursor.getMonth(); const from = ymd(new Date(y, m, 1)), to = ymd(new Date(y, m + 1, 0));
@@ -1407,33 +1413,58 @@ async function loadStats() {
 }
 
 /* ---------- 일정 등록·수정 ---------- */
-/* ---------- 시·분 선택 (설정의 5·10·30분 단위) ---------- */
-const hourLabel = h => (h < 12 ? '오전 ' : '오후 ') + (h % 12 === 0 ? 12 : h % 12) + '시';
-function pickerBox(name) { return document.querySelector('#eventForm .tpick[data-for="' + name + '"]'); }
-function setTimePicker(name, value) {
-  const box = pickerBox(name), hs = box.querySelector('.th'), ms = box.querySelector('.tm');
-  const step = Number(S.settings.timeStep) || 10;
-  const [vh, vm] = value ? value.split(':').map(Number) : [null, null];
-  let html = '<option value="">' + (name === 'start' ? '— (종일)' : '— (없음)') + '</option>';
-  for (let h = 0; h < 24; h++) html += '<option value="' + pad(h) + '">' + hourLabel(h) + '</option>';
-  hs.innerHTML = html;
-  const mins = []; for (let m = 0; m < 60; m += step) mins.push(m);
-  if (vm != null && !mins.includes(vm)) { mins.push(vm); mins.sort((a, b) => a - b); }   // 휴대폰에서 정한 07분 같은 값도 그대로 보이게
-  ms.innerHTML = mins.map(m => '<option value="' + pad(m) + '">' + pad(m) + '분</option>').join('');
-  hs.value = vh == null ? '' : pad(vh); ms.value = vm == null ? '00' : pad(vm);
-  syncTimePicker(name);
+/* ---------- 시간 직접 입력 ---------- */
+// '1430' '14:30' '2:30' '930' '9' '오후 2시 30분' '2시반' 'pm 2:30' → 'HH:MM'. 빈칸은 '', 알 수 없으면 null
+function parseTime(raw) {
+  let t = String(raw || '').trim().toLowerCase().replace(/\s+/g, '');
+  if (!t) return '';
+  let pm = null;
+  if (/^(오후|pm|p\.m\.)/.test(t) || /(오후|pm)$/.test(t)) pm = true; else if (/^(오전|am|a\.m\.)/.test(t) || /(오전|am)$/.test(t)) pm = false;
+  t = t.replace(/오전|오후|a\.m\.|p\.m\.|am|pm/g, '').replace(/반/g, '30').replace(/분/g, '');
+  let h, m;
+  let mm = /^(\d{1,2})(?:[:.시h])(\d{0,2})$/.exec(t);
+  if (mm) { h = +mm[1]; m = mm[2] === '' ? 0 : +mm[2]; }
+  else if (/^\d{1,4}$/.test(t)) { if (t.length <= 2) { h = +t; m = 0; } else { h = +t.slice(0, t.length - 2); m = +t.slice(-2); } }
+  else return null;
+  if (pm === true && h >= 1 && h < 12) h += 12; else if (pm === false && h === 12) h = 0;
+  if (!(h >= 0 && h < 24 && m >= 0 && m < 60)) return null;
+  return pad(h) + ':' + pad(m);
 }
-function syncTimePicker(name) {
-  const box = pickerBox(name), hs = box.querySelector('.th'), ms = box.querySelector('.tm');
-  ms.disabled = !hs.value;
-  $('#eventForm')[name].value = hs.value ? hs.value + ':' + ms.value : '';
+function tidyTime(input) {   // 칸을 벗어날 때 14:30 형태로 정리. 알 수 없으면 빨갛게 표시
+  const v = parseTime(input.value);
+  input.classList.toggle('bad', v === null);
+  if (v !== null) input.value = v;
+  return v;
+}
+/* ---------- 대상자명 가리기·나이 ---------- */
+// 한글 이름 2~5자면 두 번째 글자를 O로 바꿈 (김민수→김O수, 이준→이O, 남궁민수→남O민수). 그 밖의 표시(가-12 등)는 그대로
+function maskName(raw) {
+  const s = String(raw || '').replace(/\s+/g, '');
+  if (/^[가-힣]{2,5}$/.test(s)) return s[0] + 'O' + s.slice(2);
+  return String(raw || '').trim();
+}
+function cleanBirth(v) { const y = String(v || '').trim(); const n = +y; return /^\d{4}$/.test(y) && n >= 1900 && n <= new Date().getFullYear() ? y : ''; }
+function ageOf(birth) { const b = cleanBirth(birth); if (!b) return null; const y = new Date().getFullYear() - +b; return { after: y, before: y - 1 }; }
+function personOf(e) {   // 목록에 보이는 대상자 표시: 김O수 (여·1948년생·만 78세)
+  const bits = [];
+  if (e.sex) bits.push(e.sex);
+  const a = ageOf(e.birth); if (a) bits.push(e.birth + '년생·만 ' + a.after + '세');
+  return (e.target || '') + (bits.length ? ' (' + bits.join('·') + ')' : '');
+}
+function syncPersonHint() {
+  const f = $('#eventForm'), raw = f.birth.value.trim(), a = ageOf(raw), m = maskName(f.target.value);
+  const parts = [];
+  if (m && m !== f.target.value.trim()) parts.push('저장될 이름: <b>' + esc(m) + '</b>');
+  if (raw && !a) parts.push('<span style="color:var(--warn)">출생연도는 1948처럼 네 자리로 적으세요.</span>');
+  else if (a) parts.push('올해 <b>만 ' + a.after + '세</b> (생일 전이면 ' + a.before + '세)');
+  $('#personHint').innerHTML = parts.join(' · ');
 }
 
 function openEvent(ev, defaults = {}) {
   const f = $('#eventForm'); f.reset(); S.editing = ev || null;
-  const d = ev ? Object.assign({}, ev) : Object.assign({ kind:'work', date:S.selected, start:'', end:'', type:'방문', status:'예정', group:'미지정', target:'', ptype:'일정', title:'', memo:'', reminder:S.settings.defaultReminder, parentId:'' }, defaults);
-  f.kind.value = d.kind; f.date.value = d.date; setTimePicker('start', d.start || ''); setTimePicker('end', d.end || '');
-  f.type.value = d.type || ''; f.status.value = d.status || '예정'; f.group.value = d.group || '미지정'; f.target.value = d.target || '';
+  const d = ev ? Object.assign({}, ev) : Object.assign({ kind:'work', date:S.selected, start:'', end:'', type:'방문', status:'예정', group:'미지정', target:'', birth:'', sex:'', ptype:'일정', title:'', memo:'', reminder:S.settings.defaultReminder, parentId:'' }, defaults);
+  f.kind.value = d.kind; f.date.value = d.date; f.start.value = d.start || ''; f.end.value = d.end || ''; $$('#eventForm .tin').forEach(x => x.classList.remove('bad'));
+  f.type.value = d.type || ''; f.status.value = d.status || '예정'; f.group.value = d.group || '미지정'; f.target.value = d.target || ''; f.birth.value = d.birth || ''; f.sex.value = d.sex || '';
   f.ptype.value = d.ptype || '일정'; f.title.value = d.title || ''; f.memo.value = d.memo || ''; f.reminder.value = String(d.reminder ?? 30);
   if (!f.reminder.value) f.reminder.value = '30';
   f.dataset.parentId = d.parentId || '';
@@ -1445,7 +1476,7 @@ function openEvent(ev, defaults = {}) {
     ? `휴대폰·구글 캘린더에서 만든 일정입니다 (제목: ${ev.rawTitle || '없음'}). 유형을 고르고 저장하면 실적에 들어갑니다.`
     : '휴대폰·구글 캘린더에서 만든 일정입니다. 저장하면 일정표 형식으로 정리됩니다.';
   $('#eventDlgTitle').textContent = ev ? '일정 수정' : (d.parentId ? '후속 일정 등록' : '새 일정');
-  $('#btnDelete').hidden = !ev; syncKindUI(); $('#eventDlg').showModal();
+  $('#btnDelete').hidden = !ev; syncKindUI(); syncPersonHint(); $('#eventDlg').showModal();
 }
 function syncKindUI() {
   const work = $('#eventForm').kind.value === 'work';
@@ -1455,18 +1486,22 @@ function syncKindUI() {
 function readForm() {
   const f = $('#eventForm');
   if (!f.date.value) { alert('날짜를 입력하세요.'); return null; }
+  const st = tidyTime(f.start), en = tidyTime(f.end);
+  if (st === null || en === null) { alert('시간을 알아볼 수 없습니다. 14:30처럼 적어 주세요.'); return null; }
   if (f.start.value && f.end.value && f.end.value < f.start.value) { alert('종료 시간이 시작 시간보다 빠릅니다.'); return null; }
   if (!f.start.value && f.end.value) { alert('시작 시간을 입력하세요.'); return null; }
   const e = { kind:f.kind.value, date:f.date.value, start:f.start.value, end:f.end.value, memo:f.memo.value.trim(), reminder:+f.reminder.value, parentId:f.dataset.parentId || '' };
   if (S.editing) { e.id = S.editing.id; e.updated = S.editing.updated; e.uid = S.editing.uid; }
   if (e.kind === 'work') {
     if (!f.type.value) { alert('유형을 선택하세요.'); return null; }
-    Object.assign(e, { type:f.type.value, status:f.status.value, group:f.group.value, target:f.target.value.trim() });
+    f.target.value = maskName(f.target.value);
+    if (f.birth.value.trim() && !cleanBirth(f.birth.value)) { alert('출생연도는 1948처럼 네 자리로 적으세요.'); return null; }
+    Object.assign(e, { type:f.type.value, status:f.status.value, group:f.group.value, target:f.target.value, birth:cleanBirth(f.birth.value), sex:['남','여'].includes(f.sex.value) ? f.sex.value : '' });
   } else { Object.assign(e, { ptype:f.ptype.value, title:f.title.value.trim() }); if (!e.title && !e.memo) { alert('제목이나 메모를 입력하세요.'); return null; } }
   return e;
 }
 function describe(e) {
-  return [['날짜', e.date], ['시간', timeOf(e)], ['유형', e.type || (e.kind === 'personal' ? '개인' : '미분류')], ['상태', e.status || ''], ['별칭·제목', e.target || e.title || ''], ['메모', e.memo || '']];
+  return [['날짜', e.date], ['시간', timeOf(e)], ['유형', e.type || (e.kind === 'personal' ? '개인' : '미분류')], ['상태', e.status || ''], ['대상자·제목', (e.kind === 'work' ? personOf(e) : '') || e.title || ''], ['메모', e.memo || '']];
 }
 async function resolveConflict(mine, current) {
   const a = describe(mine), b = describe(current);
@@ -1493,7 +1528,7 @@ async function submitForm(thenFollow) {
     $('#eventDlg').close(); S.selected = saved.date; const d = parseYmd(saved.date); S.cursor = new Date(d.getFullYear(), d.getMonth(), 1);
     toast('구글 캘린더에 저장했습니다.');
     await loadEvents();
-    if (thenFollow) openEvent(null, { kind:'work', date:addDays(saved.date, 7), start:saved.start, type:saved.type === '신규' ? '방문' : saved.type, status:'예정', group:saved.group, target:saved.target, parentId:saved.id });
+    if (thenFollow) openEvent(null, { kind:'work', date:addDays(saved.date, 7), start:saved.start, type:saved.type === '신규' ? '방문' : saved.type, status:'예정', group:saved.group, target:saved.target, birth:saved.birth, sex:saved.sex, parentId:saved.id });
   } catch (err) { /* run() 에서 안내함 */ }
   finally { $('#btnSave').disabled = false; $('#btnFollow').disabled = false; }
 }
@@ -1581,7 +1616,7 @@ async function addFiles(files) {
 /* ---------- 설정 ---------- */
 function renderSettings(boot) {
   const s = S.settings;
-  $('#setReminder').value = String(s.defaultReminder); $('#setStep').value = String(s.timeStep || 10); $('#setAlias').checked = !!s.titleAlias; $('#setDaily').checked = !!s.dailyBackup;
+  $('#setReminder').value = String(s.defaultReminder); $('#setAlias').checked = !!s.titleAlias; $('#setDaily').checked = !!s.dailyBackup;
   if (boot) $('#setStatus').innerHTML = `연결된 계정: <b>${esc(boot.email || '(표시 안 됨)')}</b><br>일정 저장 캘린더: ‘${esc(boot.calendars.work)}’, ‘${esc(boot.calendars.personal)}’<br>이 화면에서 저장한 일정은 위 캘린더에 바로 기록됩니다.`;
 }
 async function saveSetting(patch) { const r = await run('설정 저장 중…', () => call('saveSettings', patch)); S.settings = Object.assign(S.settings, r); }
@@ -1633,16 +1668,16 @@ function bind() {
   $('#btnNew').onclick = () => openEvent(null);
   $('#btnAddDay').onclick = () => openEvent(null, { date:S.selected });
   $$('#eventForm input[name=kind]').forEach(r => r.onchange = syncKindUI);
-  $$('#eventForm .tpick').forEach(box => box.addEventListener('change', () => {
-    const f = $('#eventForm'); syncTimePicker(box.dataset.for);
-    if (box.dataset.for === 'start') {
-      if (!f.start.value) setTimePicker('end', '');
-      else if (!f.end.value || f.end.value <= f.start.value) {   // 종료가 비었거나 시작보다 이르면 30분 뒤로 맞춤
-        const [h, m] = f.start.value.split(':').map(Number); const t = Math.min(h * 60 + m + 30, 23 * 60 + 30);
-        setTimePicker('end', pad(Math.floor(t / 60)) + ':' + pad(t % 60));
-      }
+  $$('#eventForm .tin').forEach(inp => inp.addEventListener('change', () => {
+    const f = $('#eventForm'), v = tidyTime(inp);
+    if (inp.name === 'start' && v) {   // 종료가 비었거나 시작보다 이르면 30분 뒤로 맞춤
+      const en = parseTime(f.end.value);
+      if (!en || en <= v) { const [h, m] = v.split(':').map(Number); const t = Math.min(h * 60 + m + 30, 23 * 60 + 59); f.end.value = pad(Math.floor(t / 60)) + ':' + pad(t % 60); f.end.classList.remove('bad'); }
     }
+    if (inp.name === 'start' && v === '') { f.end.value = ''; f.end.classList.remove('bad'); }
   }));
+  ['input', 'change'].forEach(ev => { $('#eventForm').target.addEventListener(ev, syncPersonHint); $('#eventForm').birth.addEventListener(ev, syncPersonHint); });
+  $('#eventForm').target.addEventListener('change', () => { const f = $('#eventForm'); f.target.value = maskName(f.target.value); syncPersonHint(); });
   $('#eventForm').addEventListener('submit', e => { e.preventDefault(); submitForm(false); });
   $('#btnFollow').onclick = () => submitForm(true);
   $('#btnDelete').onclick = async () => {
@@ -1683,7 +1718,6 @@ function bind() {
 
   // 설정
   $('#setReminder').onchange = e => saveSetting({ defaultReminder:+e.target.value }).then(() => toast('저장했습니다.')).catch(() => {});
-  $('#setStep').onchange = e => saveSetting({ timeStep:+e.target.value }).then(() => toast('시간을 ' + e.target.value + '분 단위로 고르게 했습니다.')).catch(() => {});
   $('#setAlias').onchange = e => saveSetting({ titleAlias:e.target.checked }).then(() => toast('저장했습니다. 이후 저장하는 일정부터 적용됩니다.', 3500)).catch(() => {});
   $('#setDaily').onchange = e => run('설정 중…', () => call('setDailyBackup', e.target.checked)).then(v => { S.settings.dailyBackup = v; toast(v ? '매일 자동 백업을 켰습니다.' : '자동 백업을 껐습니다.'); }).catch(() => { e.target.checked = !e.target.checked; });
   $('#btnBackup').onclick = async () => { const t = todayStr();
