@@ -1098,7 +1098,8 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     Lock.meta = meta; Lock.key = key; Lock.raw = raw; return true;
   }
   async function lockUnlock(pass) {
-    const m = await lockMeta(true); if (!m) throw new Error('아직 잠금 암호를 만들지 않았습니다.');
+    let m = await lockMeta(); if (!m) m = await lockMeta(true);   // 이미 읽어 둔 잠금 정보로 확인 (연결이 끊겨도 열림)
+    if (!m) throw new Error('아직 잠금 암호를 만들지 않았습니다.');
     if (!(await useRaw(await deriveRaw(pass, ub64(m.salt), m.iter)))) throw new Error('암호가 맞지 않습니다.');
     return true;
   }
@@ -1155,7 +1156,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
   }
   async function bioRegister() {
     if (!Lock.raw) throw new LockNeeded('먼저 암호로 잠금을 푼 뒤 등록하세요.');
-    if (!(await bioAvailable())) throw new Error('이 기기에서 쓸 수 있는 생체인증(Face ID·지문·Windows Hello)을 찾지 못했습니다.');
+    if (!window.PublicKeyCredential) throw new Error('이 브라우저는 생체인증을 지원하지 않습니다.');
     const salt = crypto.getRandomValues(new Uint8Array(32));
     const email = (CAL && CAL.email) || '';
     const cred = await navigator.credentials.create({ publicKey: {
@@ -1404,7 +1405,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     box.innerHTML = `<p style="margin:0 0 6px">${st}</p><p class="hint" style="margin:0 0 8px">${escH(bio)}</p>
       <div class="row">
         ${!state.setup ? '<button id="lkSetup" class="primary">잠금 암호 만들기</button>' : state.open ? '<button id="lkClose">지금 잠그기</button>' : '<button id="lkOpen" class="primary">잠금 풀기</button>'}
-        ${state.setup && bioOk && !state.bio.on ? '<button id="lkBioAdd">이 기기에 생체인증 등록</button>' : ''}
+        ${state.setup && bioOk && !state.bio.on ? '<button id="lkBioAdd"' + (state.open ? ' class="primary"' : '') + '>이 기기에 생체인증 등록</button>' : ''}
         ${state.bio.on ? '<button id="lkBioDel">이 기기 생체인증 해제</button>' : ''}
         ${state.open ? '<button id="lkAll">예전 메모 모두 잠그기</button>' : ''}
       </div>`;
@@ -1426,7 +1427,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       const msg = t => { $('#lockMsg').textContent = t || ''; };
       const done = ok => { d.onclose = null; if (d.open) d.close(); resolve(ok); };
       const busy = on => { $('#lockOk').disabled = on; const bb = $('#lockBio'); if (bb) bb.disabled = on; };
-      $('#lockOk').textContent = setup ? '암호 만들기' : '열기';
+      $('#lockOk').textContent = setup ? '암호 만들기' : '열기'; $('#lockOk').disabled = false;   // 앞 창에서 눌린 상태가 남지 않게
       $('#lockOk').onclick = async () => {
         const pw = $('#lockPw').value;
         if (setup && pw !== $('#lockPw2').value) return msg('두 암호가 다릅니다.');
@@ -1445,7 +1446,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     });
   }
 
-  async function openNow(reason) { if (state.open) return true; const ok = await prompt(reason); if (ok) await loadEvents(); return ok; }
+  async function openNow(reason) { if (state.open) return true; const ok = await prompt(reason); if (ok) await loadEvents().catch(() => {}); return ok; }
 
   // 일정 창의 메모 칸: 잠긴 메모면 가리고 '잠금 풀기' 단추
   function syncMemo(d) {
@@ -1470,7 +1471,8 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
         if (t.id === 'lkSetup' || t.id === 'lkOpen') await openNow();
         else if (t.id === 'lkClose') { SERVER.lockNow(); await refresh(); await loadEvents(); toast('메모를 잠갔습니다.'); }
         else if (t.id === 'lkBioAdd') {
-          if (!state.open && !(await openNow('생체인증을 등록하려면 먼저 암호로 여세요.'))) return;
+          // 생체인증 창은 버튼을 누른 그 순간에 띄워야 함(사파리 등). 잠겨 있으면 먼저 열고, 한 번 더 누르게 안내
+          if (!state.open) { if (await openNow('생체인증을 등록하려면 먼저 암호로 여세요.')) toast('잠금을 풀었습니다. ‘이 기기에 생체인증 등록’을 한 번 더 눌러 주세요.', 6000); return; }
           await SERVER.bioRegister(); await refresh(); toast('이 기기에 생체인증을 등록했습니다. 다음부터 ‘생체인증으로 열기’를 쓸 수 있습니다.', 5000);
         } else if (t.id === 'lkBioDel') {
           SERVER.bioRemove(); await refresh(); toast('이 기기의 생체인증을 해제했습니다. 기기 설정의 암호(패스키) 목록에서 ‘방문건강관리’ 항목도 지울 수 있습니다.', 6000);
