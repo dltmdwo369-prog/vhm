@@ -1668,6 +1668,9 @@ function bind() {
   $('#btnNew').onclick = () => openEvent(null);
   $('#btnAddDay').onclick = () => openEvent(null, { date:S.selected });
   $$('#eventForm input[name=kind]').forEach(r => r.onchange = syncKindUI);
+  $$('#eventForm .tin').forEach(inp => inp.addEventListener('input', () => {   // 숫자 4개를 치면 바로 12:34 로
+    if (/^\d{4}$/.test(inp.value)) { const v = parseTime(inp.value); if (v) { inp.value = v; inp.classList.remove('bad'); inp.dispatchEvent(new Event('change', { bubbles: true })); } }
+  }));
   $$('#eventForm .tin').forEach(inp => inp.addEventListener('change', () => {
     const f = $('#eventForm'), v = tidyTime(inp);
     if (inp.name === 'start' && v) {   // 종료가 비었거나 시작보다 이르면 30분 뒤로 맞춤
