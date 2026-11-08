@@ -2441,6 +2441,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
   const KINDS = { one: '하나 고르기', many: '여러 개 고르기', num: '숫자 입력', drugs: '약 검색' };
 
   // 기본 틀 (임시 — 사용자가 확인 후 고침)
+  const stopItem = () => ({ id: uid(), group: '복약', label: '투약 중단', kind: 'one', options: [{ label: '약 부작용', text: '약 부작용으로 인해 투약 중단했다고 함.' }, { label: '증상 호전', text: '증상 호전으로 인해 투약 중단했다고 함.' }], fields: [], template: '' });
   const drugItem = () => ({ id: uid(), group: '복약', label: '처방약', kind: 'drugs', options: [], fields: [], template: '*복용약\n-{목록}' });
   function defaults() {
     const one = (group, label, opts) => ({ id: uid(), group, label, kind: 'one', options: opts.map(([l, t]) => ({ label: l, text: t })), fields: [], template: '' });
@@ -2448,7 +2449,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
     const num = (group, label, fields, template) => ({ id: uid(), group, label, kind: 'num', options: [], fields: fields.map(f => Array.isArray(f) ? { label: f[0], unit: f[1] } : f), template });
     // 정상 범위: 대한고혈압학회 2022 진료지침(정상 <120/80, 주의·전단계 ~139/89, 고혈압 ≥140/90), 대한당뇨병학회 진단기준(공복 100~125·식후2시간 140~199 = 주의, 그 이상 = 높음, 70 미만 = 저혈당), 맥박 성인 60~100회/분
     const R = (min, max, warn) => ({ min: min == null ? '' : String(min), max: max == null ? '' : String(max), warn: warn == null ? '' : String(warn) });
-    return { schema: 3, updatedAt: null, defaultsPending: true, joiner: ' ', flagInMemo: false, drugs: [], items: [
+    return { schema: 4, updatedAt: null, defaultsPending: true, joiner: ' ', flagInMemo: false, drugs: [], items: [
       num('측정', 'Vital', [
         { label: '수축기', unit: 'mmHg', range: R(90, 119, 139) },
         { label: '이완기', unit: 'mmHg', range: R(60, 79, 89) },
@@ -2465,6 +2466,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
       one('건강 상태', '기분·정서', [['안정', '정서 안정적임.'], ['우울감', '우울감 호소하여 경청 및 정서 지지함.'], ['불안', '불안감 호소하여 경청 및 정서 지지함.']]),
       one('건강 상태', '최근 낙상', [['없음', '최근 낙상 경험 없다고 함.'], ['있음', '최근 낙상 경험 있다고 하여 낙상 예방 교육함.']]),
       one('복약', '복약', [['규칙적', '처방약 규칙적으로 복용 중이라 함.'], ['가끔 거름', '복약을 가끔 거른다고 하여 규칙적 복약 교육함.'], ['복용약 없음', '현재 복용 중인 약 없다고 함.']]),
+      stopItem(),
       drugItem(),
       one('생활 습관', '운동', [['하고 있음', '걷기 등 꾸준히 운동하고 계심.'], ['안 함', '규칙적인 운동 하지 않는다고 하여 운동 권유함.']]),
       one('생활 습관', '흡연', [['안 함', ''], ['함', '흡연 중이라 하여 금연 권유함.']]),
@@ -2477,7 +2479,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
     const base = defaults(); if (!d || !Array.isArray(d.items)) return base;
     if (d.defaultsPending && !(d.schema >= 2)) return base;   // 아직 손대지 않은 예전 임시 틀은 새 기본 틀로
     const rg = r => ({ min: String((r && r.min) ?? '').slice(0, 8), max: String((r && r.max) ?? '').slice(0, 8), warn: String((r && r.warn) ?? '').slice(0, 8) });
-    const out = { schema: 3, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ', flagInMemo: !!d.flagInMemo,
+    const out = { schema: 4, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ', flagInMemo: !!d.flagInMemo,
       drugs: (Array.isArray(d.drugs) ? d.drugs : []).map(x => ({ name: String(x.name || '').slice(0, 60), note: String(x.note || '').slice(0, 40) })).filter(x => x.name).slice(0, 500),
       items: d.items.map(i => ({ id: i.id || uid(), group: String(i.group || '기타').slice(0, 30), label: String(i.label || '').slice(0, 40), kind: KINDS[i.kind] ? i.kind : 'one',
         options: (i.options || []).map(o => ({ label: String(o.label || '').slice(0, 40), text: String(o.text || '').slice(0, 200) })).filter(o => o.label),
@@ -2490,6 +2492,9 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
     out.items.forEach(i => { if (i.kind === 'drugs' && i.template === '복용약: {목록}') i.template = '*복용약\n-{목록}'; });   // 예전 기본 형식 → *복용약 묶음 (사용자 요청)
     if (!(d.schema >= 3) && !out.items.some(i => i.kind === 'drugs')) {   // 예전 틀에 '처방약' 검색 항목 추가 (손댄 내용은 그대로)
       const k = out.items.findIndex(i => i.label === '복약'); out.items.splice(k >= 0 ? k + 1 : out.items.length, 0, drugItem());
+    }
+    if (!(d.schema >= 4) && !out.items.some(i => i.label === '투약 중단')) {   // 사용자 요청(2026-11-09): 복약 다음에 '투약 중단' 추가
+      const k = out.items.findIndex(i => i.label === '복약'); out.items.splice(k >= 0 ? k + 1 : out.items.length, 0, stopItem());
     }
     return out;
   }
