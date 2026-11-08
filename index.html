@@ -105,6 +105,22 @@ table.stats tfoot td{font-weight:700;border-bottom:0}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);margin-right:6px;vertical-align:middle}
 
 dialog{border:0;border-radius:14px;padding:0;box-shadow:0 20px 60px rgba(10,20,40,.3);max-width:min(560px,calc(100vw - 24px));width:100%;color:var(--ink)}
+.nt-layout{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px;align-items:start}
+.nt-outcard{position:sticky;top:12px}
+@media (max-width:900px){.nt-layout{grid-template-columns:1fr}.nt-outcard{position:sticky;top:auto;bottom:0;z-index:5;box-shadow:0 -6px 18px rgba(0,0,0,.12)}.nt-outcard #ntOut{height:5.5em;max-height:22vh}}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.nt-group{margin-bottom:12px}
+.nt-row{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)}
+@media (max-width:560px){.nt-row{grid-template-columns:1fr;gap:4px}}
+.nt-label{font-size:14px;font-weight:600}
+.nt-ctl{display:flex;flex-wrap:wrap;gap:6px}
+.nt-chip{border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:14px;background:#fff;min-height:36px}
+.nt-chip.on{background:#eaf2ff;border-color:#8fb3ee;color:#163f86;font-weight:700}
+.nt-num{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--sub)}
+.nt-num input{width:78px;font-size:15px;padding:7px 8px}
+#ntOut{width:100%;box-sizing:border-box;font-size:15px;line-height:1.55;resize:vertical}
+.nt-orow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr) auto;gap:6px;margin-bottom:6px}
+@media (max-width:560px){.nt-orow{grid-template-columns:1fr auto}.nt-orow input[data-f="text"],.nt-orow input[data-f="unit"]{grid-column:1}}
 dialog.wide{max-width:min(860px,calc(100vw - 24px))}
 .lk-bar{margin-bottom:12px;justify-content:space-between}
 .lk-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:16px;align-items:start}
@@ -672,6 +688,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
   <div class="brand"><h1>방문건강관리사업</h1><span>업무 일정 관리</span></div>
   <nav class="tabs" role="tablist">
     <button role="tab" data-tab="cal" aria-selected="true">일정</button>
+    <button role="tab" data-tab="note" aria-selected="false">상담 메모</button>
     <button role="tab" data-tab="link" aria-selected="false">연계 안내</button>
     <button role="tab" data-tab="edu" aria-selected="false">교육자료</button>
     <button role="tab" data-tab="set" aria-selected="false">설정</button>
@@ -731,6 +748,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
 </section>
 
 <!-- ===== 교육자료 ===== -->
+<section id="tab-note" class="page" hidden></section>
 <section id="tab-link" class="page" hidden></section>
 <section id="tab-edu" class="page" hidden></section>
 
@@ -825,6 +843,13 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       <div class="right"><button type="button" data-close>취소</button><button type="submit" class="primary" id="btnSave">저장</button></div>
     </div>
   </form>
+</dialog>
+
+<!-- 상담 메모 항목 편집 -->
+<dialog id="ntDlg" class="wide">
+  <div class="dlg-head"><h3 id="ntDlgTitle">항목</h3><button type="button" class="link" data-close>닫기</button></div>
+  <div class="dlg-body" id="ntDlgBody"></div>
+  <div class="dlg-foot"><button type="button" class="danger" id="ntDel">삭제</button><div class="right"><button type="button" data-close>취소</button><button type="button" class="primary" id="ntSave">저장</button></div></div>
 </dialog>
 
 <!-- 연계서비스 편집 -->
@@ -1335,6 +1360,24 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     const r = await api('POST', UPLOAD + '/files', { query: { uploadType: 'multipart', fields: 'id,modifiedTime' }, rawBody: mp.body, contentType: mp.type });
     LINK.fileId = r.id; return { ok: true, modifiedTime: r.modifiedTime };
   }
+  /* 상담 메모 틀 (질문 항목·문장 틀만. 대상자 정보·체크 내용은 저장하지 않음) */
+  const NOTE_FILE = 'vhm-notes.json'; let NOTE_ID = null;
+  async function notesLoad() {
+    needDrive();
+    const f = await driveFind(NOTE_FILE, null, await linkFolder());
+    if (!f) { NOTE_ID = null; return { data: null }; }
+    NOTE_ID = f.id;
+    const res = await api('GET', DRIVE + '/files/' + f.id, { query: { alt: 'media' }, raw: true });
+    try { return { data: JSON.parse(await res.text()) }; } catch (e) { return { data: null }; }
+  }
+  async function notesSave(data) {
+    needDrive();
+    const json = JSON.stringify(data, null, 1);
+    if (NOTE_ID) { await api('PATCH', UPLOAD + '/files/' + NOTE_ID, { query: { uploadType: 'media', fields: 'id' }, rawBody: json, contentType: 'application/json' }); return true; }
+    const mp = multipart({ name: NOTE_FILE, parents: [await linkFolder()], mimeType: 'application/json' }, new Blob([json]), 'application/json');
+    NOTE_ID = (await api('POST', UPLOAD + '/files', { query: { uploadType: 'multipart', fields: 'id' }, rawBody: mp.body, contentType: mp.type })).id;
+    return true;
+  }
   async function uploadForm(file) {
     needDrive();
     if (file.size > 20 * 1048576) throw new Error('20MB보다 큰 파일은 올릴 수 없습니다.');
@@ -1372,9 +1415,9 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     async deleteEvent(id, up) { const r = await deleteEvent(id, up); if (r.current) await decObj(r.current); return r; },
     getStats, exportBackup, restoreBackup,
     lockState, lockSetup, lockUnlock, lockNow, lockAll, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
-    linksLoad, linksSave, uploadForm, downloadForm, trashForm,
+    linksLoad, linksSave, uploadForm, downloadForm, trashForm, notesLoad, notesSave,
     hasDrive: () => Auth.hasDrive,
-    _resetCache() { CAL = null; LINK = null; Lock.meta = undefined; lockNow(); }
+    _resetCache() { CAL = null; LINK = null; NOTE_ID = null; Lock.meta = undefined; lockNow(); }
   };
 })();
 
@@ -1891,8 +1934,9 @@ async function saveSetting(patch) { const r = await run('설정 저장 중…', 
 /* ---------- 연결 ---------- */
 function showTab(name) {
   $$('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
-  ['cal','link','edu','arch','set'].forEach(t => $('#tab-' + t).hidden = t !== name);
+  ['cal','note','link','edu','arch','set'].forEach(t => $('#tab-' + t).hidden = t !== name);
   if (name === 'link' && window.LINKS) LINKS.open();
+  if (name === 'note' && window.NOTES) NOTES.open();
   if (name === 'edu') renderEdu(); if (name === 'arch') loadArchive().catch(() => {});
   window.scrollTo(0, 0);
 }
@@ -2355,6 +2399,253 @@ async function boot() {
     reset() { L.data = null; L.loaded = false; L.checks.clear(); },
     _state: L
   };
+})();
+
+</script>
+<script>
+/* =====================================================================
+ * 상담 메모: 체크리스트를 고르면 메모 문장이 자동으로 만들어지고, 복사해서 기관 전용앱에 붙여 넣음
+ * - 체크·입력한 내용과 만들어진 문장은 저장·전송하지 않음 (화면에서만 만들고, 탭을 닫으면 사라짐)
+ * - 질문 항목·문장 틀만 이 기기에 저장 + 드라이브가 연결되어 있으면 드라이브에도 저장(기기 간 공유)
+ * ===================================================================== */
+(function () {
+  'use strict';
+  const LS = 'vhm-notes-tpl';
+  const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3);
+  const KINDS = { one: '하나 고르기', many: '여러 개 고르기', num: '숫자 입력' };
+
+  // 기본 틀 (임시 — 사용자가 확인 후 고침)
+  function defaults() {
+    const one = (group, label, opts) => ({ id: uid(), group, label, kind: 'one', options: opts.map(([l, t]) => ({ label: l, text: t })), fields: [], template: '' });
+    const many = (group, label, opts, template) => ({ id: uid(), group, label, kind: 'many', options: opts.map(([l, t]) => ({ label: l, text: t || '' })), fields: [], template: template || '' });
+    const num = (group, label, fields, template) => ({ id: uid(), group, label, kind: 'num', options: [], fields: fields.map(([l, u]) => ({ label: l, unit: u })), template });
+    return { schema: 1, updatedAt: null, defaultsPending: true, joiner: ' ', items: [
+      num('측정', '혈압', [['수축기', 'mmHg'], ['이완기', 'mmHg']], '혈압 {1}/{2}mmHg 측정함.'),
+      num('측정', '공복 혈당', [['혈당', 'mg/dL']], '공복 혈당 {1}mg/dL 측정함.'),
+      num('측정', '식후 혈당', [['혈당', 'mg/dL']], '식후 혈당 {1}mg/dL 측정함.'),
+      num('측정', '체중', [['체중', 'kg']], '체중 {1}kg 측정함.'),
+      one('건강 상태', '전반적 컨디션', [['양호', '전반적인 컨디션 양호하다고 함.'], ['보통', '컨디션 보통이라고 함.'], ['저하', '최근 컨디션 저하 호소함.']]),
+      one('건강 상태', '통증', [['없음', '특별한 통증 호소 없음.'], ['있음', '통증 호소하여 부위·정도 확인함.']]),
+      one('건강 상태', '수면', [['양호', '수면 양호하다고 함.'], ['불량', '잠들기 어렵거나 자주 깬다고 함.']]),
+      one('건강 상태', '식사', [['규칙적', '식사 규칙적으로 하신다고 함.'], ['불규칙', '식사 불규칙하다고 함.'], ['식욕 저하', '식욕 저하 호소함.']]),
+      one('건강 상태', '배변', [['양호', '배변 양호함.'], ['변비', '변비 호소함.'], ['설사', '설사 증상 있다고 함.']]),
+      one('건강 상태', '기분·정서', [['안정', '정서 안정적임.'], ['우울감', '우울감 호소하여 경청 및 정서 지지함.'], ['불안', '불안감 호소하여 경청 및 정서 지지함.']]),
+      one('건강 상태', '최근 낙상', [['없음', '최근 낙상 경험 없다고 함.'], ['있음', '최근 낙상 경험 있다고 하여 낙상 예방 교육함.']]),
+      one('복약', '복약', [['규칙적', '처방약 규칙적으로 복용 중이라 함.'], ['가끔 거름', '복약을 가끔 거른다고 하여 규칙적 복약 교육함.'], ['복용약 없음', '현재 복용 중인 약 없다고 함.']]),
+      one('생활 습관', '운동', [['하고 있음', '걷기 등 꾸준히 운동하고 계심.'], ['안 함', '규칙적인 운동 하지 않는다고 하여 운동 권유함.']]),
+      one('생활 습관', '흡연', [['안 함', ''], ['함', '흡연 중이라 하여 금연 권유함.']]),
+      one('생활 습관', '음주', [['안 함', ''], ['가끔', '가끔 음주한다고 함.'], ['자주', '음주 잦다고 하여 절주 교육함.']]),
+      many('교육·안내', '교육 내용', [['고혈압 관리'], ['당뇨 관리'], ['저염식'], ['수분 섭취'], ['규칙적 운동'], ['복약'], ['낙상 예방'], ['치매 예방'], ['감염병 예방']], '{선택} 교육함.'),
+      many('마무리', '마무리', [['다음 방문 안내', '다음 방문 일정 안내함.'], ['보건소 내소 권유', '보건소 내소 권유함.'], ['진료 권유', '병원 진료 받으시도록 권유함.'], ['서비스 연계 검토', '필요 서비스 연계 검토 예정.']])
+    ] };
+  }
+  function clean(d) {
+    const base = defaults(); if (!d || !Array.isArray(d.items)) return base;
+    return { schema: 1, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ',
+      items: d.items.map(i => ({ id: i.id || uid(), group: String(i.group || '기타').slice(0, 30), label: String(i.label || '').slice(0, 40), kind: KINDS[i.kind] ? i.kind : 'one',
+        options: (i.options || []).map(o => ({ label: String(o.label || '').slice(0, 40), text: String(o.text || '').slice(0, 200) })).filter(o => o.label),
+        fields: (i.fields || []).map(f => ({ label: String(f.label || '').slice(0, 20), unit: String(f.unit || '').slice(0, 10) })).filter(f => f.label),
+        template: String(i.template || '').slice(0, 200) })).filter(i => i.label) };
+  }
+
+  const N = { tpl: null, view: 'write', pick: {}, extra: '', edited: false, synced: false, editing: null };
+  const box = () => $('#tab-note');
+
+  function localLoad() { try { const d = JSON.parse(localStorage.getItem(LS) || 'null'); return d ? clean(d) : null; } catch (e) { return null; } }
+  function localSave() { try { localStorage.setItem(LS, JSON.stringify(N.tpl)); } catch (e) {} }
+  async function syncDrive() {   // 드라이브가 연결되어 있으면 최근 것 기준으로 맞춤
+    if (!window.SERVER || !SERVER.hasDrive || !SERVER.hasDrive()) { N.synced = false; return; }
+    try {
+      const r = await SERVER.notesLoad(); const remote = r.data ? clean(r.data) : null;
+      if (remote && (!N.tpl.updatedAt || (remote.updatedAt && remote.updatedAt > N.tpl.updatedAt))) { N.tpl = remote; localSave(); }
+      else await SERVER.notesSave(N.tpl);
+      N.synced = true;
+    } catch (e) { N.synced = false; }
+  }
+  async function saveTpl(msg) {
+    N.tpl.updatedAt = new Date().toISOString(); localSave();
+    if (window.SERVER && SERVER.hasDrive && SERVER.hasDrive()) { try { await SERVER.notesSave(N.tpl); N.synced = true; } catch (e) { N.synced = false; toast('이 기기에는 저장했지만 드라이브 저장은 실패했습니다: ' + (e.message || e), 5000); } }
+    if (msg) toast(msg);
+  }
+
+  async function open() {
+    if (!N.tpl) { N.tpl = localLoad() || defaults(); render(); }
+    if (!N.synced) await syncDrive();   // 로그인 전에 열었던 경우 등
+    render();
+  }
+
+  /* ---------- 문장 만들기 ---------- */
+  function sentenceOf(it) {
+    const p = N.pick[it.id];
+    if (it.kind === 'one') { if (p == null) return ''; const o = it.options[p]; return o ? o.text.trim() : ''; }
+    if (it.kind === 'many') {
+      const sel = (p || []).map(k => it.options[k]).filter(Boolean); if (!sel.length) return '';
+      if (it.template.includes('{선택}')) return it.template.replace('{선택}', sel.map(o => o.label).join(', ')).trim();
+      return sel.map(o => (o.text || o.label).trim()).filter(Boolean).join(N.tpl.joiner);
+    }
+    const v = p || []; if (!it.fields.length || it.fields.some((f, k) => !String(v[k] || '').trim())) return '';
+    return it.template.replace(/\{(\d)\}/g, (m, k) => String(v[+k - 1] || '').trim()).trim();
+  }
+  function compose() {
+    const parts = N.tpl.items.map(sentenceOf).filter(Boolean);
+    if (N.extra.trim()) parts.push(N.extra.trim());
+    return parts.join(N.tpl.joiner);
+  }
+  function refreshOut(force) {
+    const ta = $('#ntOut'); if (!ta) return;
+    if (!N.edited || force) { ta.value = compose(); N.edited = false; }
+    $('#ntRegen').hidden = !N.edited;
+    $('#ntCount').textContent = ta.value.length + '자';
+  }
+
+  /* ---------- 화면 ---------- */
+  function groups() { const g = []; N.tpl.items.forEach(i => { if (!g.includes(i.group)) g.push(i.group); }); return g; }
+  function render() {
+    if (!N.tpl) return;
+    let h = '<div class="lk-bar row"><div class="seg" role="tablist">'
+      + [['write', '메모 쓰기'], ['edit', '항목 편집']].map(t => `<button data-ntview="${t[0]}" aria-pressed="${N.view === t[0]}">${t[1]}</button>`).join('') + '</div>'
+      + `<span class="hint">${N.synced ? '질문 틀: 구글 드라이브와 이 기기에 저장' : '질문 틀: 이 기기에 저장 (연계 안내 탭에서 드라이브를 연결하면 다른 기기와 같이 씀)'}</span></div>`;
+    if (N.tpl.defaultsPending) h += '<div class="warnbox" style="margin-bottom:10px">질문 항목과 문장은 아직 <b>임시 기본값</b>입니다. ‘항목 편집’에서 평소 쓰시는 말투로 고친 뒤 ‘확인 완료’를 눌러 주세요.</div>';
+    h += N.view === 'write' ? writeHtml() : editHtml();
+    box().innerHTML = h;
+    if (N.view === 'write') refreshOut();
+  }
+  function writeHtml() {
+    const items = g => N.tpl.items.filter(i => i.group === g).map(it => {
+      let ctl = '';
+      if (it.kind === 'num') ctl = it.fields.map((f, k) => `<label class="nt-num">${esc(f.label)}<input inputmode="decimal" data-num="${it.id}" data-k="${k}" value="${esc((N.pick[it.id] || [])[k] || '')}" autocomplete="off"><span>${esc(f.unit)}</span></label>`).join('');
+      else ctl = it.options.map((o, k) => { const on = it.kind === 'one' ? N.pick[it.id] === k : (N.pick[it.id] || []).includes(k);
+        return `<button type="button" class="nt-chip${on ? ' on' : ''}" data-it="${it.id}" data-k="${k}" aria-pressed="${on}">${esc(o.label)}</button>`; }).join('');
+      return `<div class="nt-row"><div class="nt-label">${esc(it.label)}${it.kind === 'many' ? ' <span class="hint">(여러 개)</span>' : ''}</div><div class="nt-ctl">${ctl}</div></div>`;
+    }).join('');
+    return `<div class="nt-layout"><div class="card"><div class="card-body">
+        ${groups().map(g => `<div class="nt-group"><div class="lk-cat-h">${esc(g)}</div>${items(g)}</div>`).join('')}
+        <label class="f" style="margin-top:8px">추가로 적을 내용<textarea id="ntExtra" rows="2" maxlength="300" placeholder="체크 항목에 없는 내용을 직접 적으세요">${esc(N.extra)}</textarea></label>
+      </div></div>
+      <div class="card nt-outcard"><div class="card-body">
+        <div class="row" style="justify-content:space-between;margin-bottom:6px"><b>만들어진 메모</b><span class="hint" id="ntCount"></span></div>
+        <textarea id="ntOut" rows="7" aria-label="만들어진 메모 (직접 고칠 수 있음)"></textarea>
+        <div class="row" style="margin-top:8px;gap:8px">
+          <button class="primary" id="ntCopy" style="flex:1">복사하기</button>
+          <button id="ntClear">다음 대상자 (모두 지우기)</button>
+        </div>
+        <button class="link" id="ntRegen" hidden style="margin-top:6px">직접 고친 내용을 버리고 체크한 내용으로 다시 만들기</button>
+        <p class="hint" style="margin:8px 0 0">체크한 내용과 문장은 <b>저장하지도, 어디로 보내지도 않습니다.</b> 복사한 문장은 기관 전용앱(전산시스템)의 메모란에만 붙여 넣으세요.</p>
+      </div></div></div>`;
+  }
+  function editHtml() {
+    const rows = N.tpl.items.map((it, k) => `<div class="lk-row" data-edit="${it.id}">
+        <div><b>${esc(it.label)}</b> <span class="hint">${esc(it.group)} · ${KINDS[it.kind]}</span></div>
+        <div class="hint">${esc(it.kind === 'num' ? it.template : it.options.map(o => o.label).join(' / '))}</div>
+        <div class="row" style="gap:4px"><button class="small" data-move="${k}" data-dir="-1" title="위로">▲</button><button class="small" data-move="${k}" data-dir="1" title="아래로">▼</button></div></div>`).join('');
+    return `<div class="row" style="margin-bottom:10px;gap:8px;flex-wrap:wrap">
+        <button class="primary" id="ntAdd">+ 항목 추가</button>
+        <label class="row" style="gap:6px">문장 사이<select id="ntJoin"><option value=" "${N.tpl.joiner === ' ' ? ' selected' : ''}>띄어쓰기</option><option value="\n"${N.tpl.joiner === '\n' ? ' selected' : ''}>줄바꿈</option></select></label>
+        ${N.tpl.defaultsPending ? '<button id="ntConfirm">확인 완료 (임시 표시 없애기)</button>' : ''}
+        <button class="danger" id="ntReset">기본 틀로 되돌리기</button></div>
+      <p class="hint">항목을 누르면 고칠 수 있습니다. ▲▼로 순서를 바꾸면 메모 문장 순서도 바뀝니다.</p>
+      <div class="lk-list">${rows || '<div class="empty">항목이 없습니다.</div>'}</div>`;
+  }
+
+  /* ---------- 항목 편집 창 ---------- */
+  function openEdit(it) {
+    N.editing = it ? JSON.parse(JSON.stringify(it)) : { id: uid(), group: groups()[0] || '기타', label: '', kind: 'one', options: [{ label: '', text: '' }], fields: [], template: '', isNew: true };
+    paintEdit(); $('#ntDlg').showModal();
+  }
+  function paintEdit() {
+    const e = N.editing;
+    $('#ntDlgTitle').textContent = e.isNew ? '항목 추가' : '항목 고치기';
+    const opt = e.options.map((o, k) => `<div class="nt-orow"><input data-o="${k}" data-f="label" value="${esc(o.label)}" placeholder="보기 (예: 양호)"><input data-o="${k}" data-f="text" value="${esc(o.text)}" placeholder="${e.kind === 'many' && e.template.includes('{선택}') ? '(문장 틀을 쓰면 비워도 됨)' : '만들어질 문장 (예: 수면 양호하다고 함.)'}"><button type="button" class="small" data-odel="${k}" title="빼기">✕</button></div>`).join('');
+    const fld = e.fields.map((f, k) => `<div class="nt-orow"><input data-fl="${k}" data-f="label" value="${esc(f.label)}" placeholder="칸 이름 (예: 수축기)"><input data-fl="${k}" data-f="unit" value="${esc(f.unit)}" placeholder="단위 (예: mmHg)"><button type="button" class="small" data-fdel="${k}" title="빼기">✕</button></div>`).join('');
+    $('#ntDlgBody').innerHTML = `<div class="grid2">
+        <label class="f">항목 이름<input id="neLabel" value="${esc(e.label)}" maxlength="40"></label>
+        <label class="f">묶음<input id="neGroup" value="${esc(e.group)}" maxlength="30" list="ntGroups"><datalist id="ntGroups">${groups().map(g => `<option value="${esc(g)}">`).join('')}</datalist></label>
+        <label class="f">고르는 방식<select id="neKind">${Object.keys(KINDS).map(k => `<option value="${k}"${e.kind === k ? ' selected' : ''}>${KINDS[k]}</option>`).join('')}</select></label>
+      </div>
+      ${e.kind === 'num' ? `<h4 style="margin:14px 0 6px">입력 칸</h4>${fld}<button type="button" class="small" id="neFAdd">+ 칸 추가</button>
+        <label class="f" style="margin-top:10px">문장 틀 <span class="hint">({1}, {2}… 자리에 입력한 숫자가 들어감)</span><input id="neTpl" value="${esc(e.template)}" placeholder="예: 혈압 {1}/{2}mmHg 측정함."></label>`
+      : `<h4 style="margin:14px 0 6px">보기와 문장</h4><p class="hint" style="margin-top:0">문장을 비우면 그 보기를 골라도 메모에 아무것도 안 들어갑니다(예: 흡연 ‘안 함’).</p>${opt}<button type="button" class="small" id="neOAdd">+ 보기 추가</button>
+        ${e.kind === 'many' ? `<label class="f" style="margin-top:10px">문장 틀 (선택) <span class="hint">({선택} 자리에 고른 보기 이름이 쉼표로 이어져 들어감)</span><input id="neTpl" value="${esc(e.template)}" placeholder="예: {선택} 교육함."></label>` : ''}`}`;
+    $('#ntDel').hidden = !!e.isNew;
+  }
+  function readEdit() {
+    const e = N.editing; const v = id => ($('#' + id) || {}).value;
+    e.label = (v('neLabel') || '').trim(); e.group = (v('neGroup') || '').trim() || '기타'; e.kind = v('neKind') || e.kind;
+    if ($('#neTpl')) e.template = $('#neTpl').value.trim();
+    $$('#ntDlgBody [data-o]').forEach(i => { e.options[+i.dataset.o][i.dataset.f] = i.value; });
+    $$('#ntDlgBody [data-fl]').forEach(i => { e.fields[+i.dataset.fl][i.dataset.f] = i.value; });
+  }
+
+  /* ---------- 이벤트 ---------- */
+  function bind() {
+    const b = box();
+    b.addEventListener('click', async ev => {
+      const t = ev.target.closest('button,[data-edit]'); if (!t) return;
+      if (t.dataset.ntview) { N.view = t.dataset.ntview; render(); return; }
+      if (t.dataset.it) {   // 보기 고르기 (다시 누르면 해제)
+        const it = N.tpl.items.find(i => i.id === t.dataset.it), k = +t.dataset.k;
+        if (it.kind === 'one') N.pick[it.id] = N.pick[it.id] === k ? undefined : k;
+        else { const a = new Set(N.pick[it.id] || []); a.has(k) ? a.delete(k) : a.add(k); N.pick[it.id] = [...a].sort((x, y) => x - y); }
+        $$(`[data-it="${it.id}"]`).forEach(x => { const on = it.kind === 'one' ? N.pick[it.id] === +x.dataset.k : (N.pick[it.id] || []).includes(+x.dataset.k); x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); });
+        refreshOut(); return;
+      }
+      if (t.id === 'ntCopy') {
+        const txt = $('#ntOut').value; if (!txt.trim()) { toast('복사할 문장이 없습니다. 항목을 골라 주세요.'); return; }
+        try { await navigator.clipboard.writeText(txt); } catch (e) { const ta = $('#ntOut'); ta.focus(); ta.select(); document.execCommand('copy'); }
+        toast('복사했습니다. 전용앱 메모란에 붙여 넣으세요.'); return;
+      }
+      if (t.id === 'ntClear') { N.pick = {}; N.extra = ''; N.edited = false; render(); toast('모두 지웠습니다.'); return; }
+      if (t.id === 'ntRegen') { refreshOut(true); return; }
+      if (t.id === 'ntAdd') { openEdit(null); return; }
+      if (t.id === 'ntConfirm') { N.tpl.defaultsPending = false; await saveTpl('확인 완료로 표시했습니다.'); render(); return; }
+      if (t.id === 'ntReset') { if (!confirm('지금 항목을 모두 지우고 기본 틀로 되돌릴까요?')) return; N.tpl = defaults(); N.pick = {}; await saveTpl('기본 틀로 되돌렸습니다.'); render(); return; }
+      if (t.dataset.move != null) { const k = +t.dataset.move, j = k + +t.dataset.dir, a = N.tpl.items; if (j < 0 || j >= a.length) return; [a[k], a[j]] = [a[j], a[k]]; await saveTpl(); render(); return; }
+      if (t.dataset.edit) { openEdit(N.tpl.items.find(i => i.id === t.dataset.edit)); return; }
+    });
+    b.addEventListener('input', ev => {
+      const t = ev.target;
+      if (t.dataset.num) { const a = (N.pick[t.dataset.num] || []).slice(); a[+t.dataset.k] = t.value.replace(/[^\d.]/g, ''); if (a[+t.dataset.k] !== t.value) t.value = a[+t.dataset.k]; N.pick[t.dataset.num] = a; refreshOut(); }
+      else if (t.id === 'ntExtra') { N.extra = t.value; refreshOut(); }
+      else if (t.id === 'ntOut') { N.edited = true; $('#ntRegen').hidden = false; $('#ntCount').textContent = t.value.length + '자'; }
+    });
+    b.addEventListener('change', async ev => { if (ev.target.id === 'ntJoin') { N.tpl.joiner = ev.target.value; await saveTpl(); } });
+    // 편집 창
+    $('#ntDlgBody').addEventListener('click', ev => {
+      const t = ev.target.closest('button'); if (!t) return; readEdit(); const e = N.editing;
+      if (t.id === 'neOAdd') e.options.push({ label: '', text: '' });
+      else if (t.id === 'neFAdd') e.fields.push({ label: '', unit: '' });
+      else if (t.dataset.odel != null) e.options.splice(+t.dataset.odel, 1);
+      else if (t.dataset.fdel != null) e.fields.splice(+t.dataset.fdel, 1);
+      else return;
+      paintEdit();
+    });
+    $('#ntDlgBody').addEventListener('change', ev => {
+      if (ev.target.id !== 'neKind') return; readEdit(); const e = N.editing;
+      if (e.kind === 'num' && !e.fields.length) { e.fields = [{ label: e.label || '값', unit: '' }]; if (!e.template) e.template = (e.label || '값') + ' {1} 측정함.'; }
+      if (e.kind !== 'num' && !e.options.length) e.options = [{ label: '', text: '' }];
+      paintEdit();
+    });
+    $('#ntSave').onclick = async () => {
+      readEdit(); const e = N.editing;
+      e.options = e.options.filter(o => o.label.trim()); e.fields = e.fields.filter(f => f.label.trim());
+      if (!e.label) return alert('항목 이름을 적어 주세요.');
+      if (e.kind === 'num' && (!e.fields.length || !e.template)) return alert('입력 칸과 문장 틀을 적어 주세요.');
+      if (e.kind !== 'num' && !e.options.length) return alert('보기를 하나 이상 적어 주세요.');
+      const isNew = e.isNew; delete e.isNew; const it = clean({ items: [e] }).items[0]; it.id = e.id;
+      const k = N.tpl.items.findIndex(i => i.id === it.id);
+      if (k >= 0) N.tpl.items[k] = it; else N.tpl.items.push(it);
+      delete N.pick[it.id];
+      $('#ntDlg').close(); await saveTpl(isNew ? '항목을 추가했습니다.' : '항목을 고쳤습니다.'); render();
+    };
+    $('#ntDel').onclick = async () => {
+      if (!confirm('이 항목을 지울까요?')) return;
+      N.tpl.items = N.tpl.items.filter(i => i.id !== N.editing.id); delete N.pick[N.editing.id];
+      $('#ntDlg').close(); await saveTpl('항목을 지웠습니다.'); render();
+    };
+  }
+
+  window.NOTES = { open, bind, _state: N, _compose: compose, _defaults: defaults };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind); else bind();
 })();
 
 </script>
