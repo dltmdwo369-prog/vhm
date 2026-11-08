@@ -2513,6 +2513,8 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
   const gripItem = () => ({ id: uid(), group: '측정', label: '악력', kind: 'num', options: [], template: '*악력\n-Rt: {1}kg, Lt: {2}kg', fields: [
     { label: '오른손', unit: 'kg', norm: 'gripR' }, { label: '왼손', unit: 'kg', norm: 'gripL' },
     { label: '성별', type: 'pick', options: '남,여' }, { label: '나이', unit: '세' }] });
+  const DISEASES = ['고혈압', '당뇨병', '이상지질혈증', '관절염', '척추질환', '골다공증', '뇌졸중', '심장질환', '치매', '암', '만성폐질환', '만성콩팥병', '갑상선질환', '전립선비대증', '우울증'];
+  const diseaseItem = () => ({ id: uid(), group: '건강 상태', label: '만성질환', kind: 'many', options: DISEASES.map(d => ({ label: d, text: '' })), fields: [], template: '*주질환\n-{선택}' });
   const stopItem = () => ({ id: uid(), group: '복약', label: '투약 중단', kind: 'one', options: [{ label: '약 부작용', text: '약 부작용으로 인해 투약 중단했다고 함.' }, { label: '증상 호전', text: '증상 호전으로 인해 투약 중단했다고 함.' }], fields: [], template: '' });
   const drugItem = () => ({ id: uid(), group: '복약', label: '처방약', kind: 'drugs', options: [], fields: [], template: '*복용약\n-{목록}' });
   function defaults() {
@@ -2521,7 +2523,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
     const num = (group, label, fields, template) => ({ id: uid(), group, label, kind: 'num', options: [], fields: fields.map(f => Array.isArray(f) ? { label: f[0], unit: f[1] } : f), template });
     // 정상 범위: 대한고혈압학회 2022 진료지침(정상 <120/80, 주의·전단계 ~139/89, 고혈압 ≥140/90), 대한당뇨병학회 진단기준(공복 100~125·식후2시간 140~199 = 주의, 그 이상 = 높음, 70 미만 = 저혈당), 맥박 성인 60~100회/분
     const R = (min, max, warn) => ({ min: min == null ? '' : String(min), max: max == null ? '' : String(max), warn: warn == null ? '' : String(warn) });
-    return { schema: 5, updatedAt: null, defaultsPending: true, joiner: ' ', flagInMemo: false, drugs: [], items: [
+    return { schema: 6, updatedAt: null, defaultsPending: true, joiner: ' ', flagInMemo: false, drugs: [], items: [
       num('측정', 'Vital', [
         { label: '수축기', unit: 'mmHg', range: R(90, 119, 139) },
         { label: '이완기', unit: 'mmHg', range: R(60, 79, 89) },
@@ -2531,6 +2533,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
       ], '*Vital\n-BP: {1}/{2}mmHg, PR: {3}회/분, BST({5}): {4}mg/dL'),
       gripItem(),
       num('측정', '체중', [['체중', 'kg']], '체중 {1}kg 측정함.'),
+      diseaseItem(),
       one('건강 상태', '전반적 컨디션', [['양호', '전반적인 컨디션 양호하다고 함.'], ['보통', '컨디션 보통이라고 함.'], ['저하', '최근 컨디션 저하 호소함.']]),
       one('건강 상태', '통증', [['없음', '특별한 통증 호소 없음.'], ['있음', '통증 호소하여 부위·정도 확인함.']]),
       one('건강 상태', '수면', [['양호', '수면 양호하다고 함.'], ['불량', '잠들기 어렵거나 자주 깬다고 함.']]),
@@ -2552,7 +2555,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
     const base = defaults(); if (!d || !Array.isArray(d.items)) return base;
     if (d.defaultsPending && !(d.schema >= 2)) return base;   // 아직 손대지 않은 예전 임시 틀은 새 기본 틀로
     const rg = r => ({ min: String((r && r.min) ?? '').slice(0, 8), max: String((r && r.max) ?? '').slice(0, 8), warn: String((r && r.warn) ?? '').slice(0, 8) });
-    const out = { schema: 5, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ', flagInMemo: !!d.flagInMemo,
+    const out = { schema: 6, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ', flagInMemo: !!d.flagInMemo,
       drugs: (Array.isArray(d.drugs) ? d.drugs : []).map(x => ({ name: String(x.name || '').slice(0, 60), note: String(x.note || '').slice(0, 40) })).filter(x => x.name).slice(0, 500),
       items: d.items.map(i => ({ id: i.id || uid(), group: String(i.group || '기타').slice(0, 30), label: String(i.label || '').slice(0, 40), kind: KINDS[i.kind] ? i.kind : 'one',
         options: (i.options || []).map(o => ({ label: String(o.label || '').slice(0, 40), text: String(o.text || '').slice(0, 200) })).filter(o => o.label),
@@ -2566,6 +2569,9 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
     out.items.forEach(i => { if (i.kind === 'drugs' && i.template === '복용약: {목록}') i.template = '*복용약\n-{목록}'; });   // 예전 기본 형식 → *복용약 묶음 (사용자 요청)
     if (!(d.schema >= 3) && !out.items.some(i => i.kind === 'drugs')) {   // 예전 틀에 '처방약' 검색 항목 추가 (손댄 내용은 그대로)
       const k = out.items.findIndex(i => i.label === '복약'); out.items.splice(k >= 0 ? k + 1 : out.items.length, 0, drugItem());
+    }
+    if (!(d.schema >= 6) && !out.items.some(i => i.label === '만성질환')) {   // 사용자 요청(2026-11-09): 건강 상태 맨 앞에 '만성질환' → *주질환
+      const k = out.items.findIndex(i => i.group === '건강 상태'); out.items.splice(k >= 0 ? k : out.items.length, 0, diseaseItem());
     }
     if (!(d.schema >= 5) && !out.items.some(i => i.fields.some(f => f.norm))) {   // 사용자 요청(2026-11-09): 측정에 '악력' 추가 (Vital 다음)
       const k = out.items.findIndex(i => i.label === 'Vital'); out.items.splice(k >= 0 ? k + 1 : 0, 0, gripItem());
@@ -2826,7 +2832,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
         <label class="f" style="margin-top:10px">문장 틀 <span class="hint">({1}, {2}… 자리에 입력한 값이 들어감. 줄을 바꾸면 메모도 줄이 바뀜. ‘, ’로 나눈 조각은 숫자를 안 적으면 빠짐. 고르기 칸을 안 고르면 ‘({5})’ 부분만 빠짐)</span><textarea id="neTpl" rows="3" placeholder="예: *Vital&#10;-BP: {1}/{2}mmHg, PR: {3}회/분">${esc(e.template)}</textarea></label>
         <p class="hint" style="margin:6px 0 0">정상 범위: 최소보다 낮으면 ‘낮음’, 최대보다 높으면 ‘주의’(주의 상한까지) 또는 ‘높음’. 비워 두면 판정하지 않습니다.</p>`
       : `<h4 style="margin:14px 0 6px">보기와 문장</h4><p class="hint" style="margin-top:0">문장을 비우면 그 보기를 골라도 메모에 아무것도 안 들어갑니다(예: 흡연 ‘안 함’).</p>${opt}<button type="button" class="small" id="neOAdd">+ 보기 추가</button>
-        ${e.kind === 'many' ? `<label class="f" style="margin-top:10px">문장 틀 (선택) <span class="hint">({선택} 자리에 고른 보기 이름이 쉼표로 이어져 들어감)</span><input id="neTpl" value="${esc(e.template)}" placeholder="예: {선택} 교육함."></label>` : ''}`}`;
+        ${e.kind === 'many' ? `<label class="f" style="margin-top:10px">문장 틀 (선택) <span class="hint">({선택} 자리에 고른 보기 이름이 쉼표로 이어져 들어감. 줄을 바꾸면 메모도 줄이 바뀜)</span><textarea id="neTpl" rows="2" placeholder="예: {선택} 교육함.">${esc(e.template)}</textarea></label>` : ''}`}`;
     $('#ntDel').hidden = !!e.isNew;
   }
   function readEdit() {
@@ -2919,7 +2925,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
       if (e.kind === 'num' && (!e.fields.length || !e.template)) return alert('입력 칸과 문장 틀을 적어 주세요.');
       if (e.kind === 'one' || e.kind === 'many') { if (!e.options.length) return alert('보기를 하나 이상 적어 주세요.'); }
       if (e.kind === 'drugs' && !e.template.includes('{목록}')) return alert('문장 틀에 {목록}을 넣어 주세요.');
-      const isNew = e.isNew; delete e.isNew; const it = clean({ schema: 5, items: [e] }).items[0]; it.id = e.id;
+      const isNew = e.isNew; delete e.isNew; const it = clean({ schema: 6, items: [e] }).items[0]; it.id = e.id;
       const k = N.tpl.items.findIndex(i => i.id === it.id);
       if (k >= 0) N.tpl.items[k] = it; else N.tpl.items.push(it);
       delete N.pick[it.id];
