@@ -205,6 +205,14 @@ table.files td.name{word-break:break-all}
 table.files td.acts{white-space:nowrap;text-align:right}
 table.files select{padding:3px 6px;font-size:12px}
 
+.bd-list{max-height:min(46vh,340px);overflow:auto;border:1px solid var(--line);border-radius:8px;padding:4px 8px;margin:6px 0}
+.bd-item{display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px dashed var(--line);font-size:14px;cursor:pointer}
+.bd-item:last-child{border-bottom:0}.bd-item input{width:18px;height:18px;flex:none}
+.bd-time{color:var(--sub);font-variant-numeric:tabular-nums;min-width:82px}
+.undo-bar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:#1c2230;color:#fff;padding:8px 10px 8px 16px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.25);font-size:14px;z-index:101;max-width:calc(100vw - 32px)}
+.undo-bar{width:max-content;box-sizing:border-box}.undo-bar span{min-width:0}
+.undo-bar .undo-btn{white-space:nowrap;flex:none;background:#fff;color:#1c2230;border:0;font-weight:700;padding:6px 12px;border-radius:8px}
+.undo-bar .undo-x{background:transparent;color:#cfd6e4;border:0;padding:4px 6px}
 .connect{margin:14px 20px 0;padding:14px 16px;background:#fff;border:1px solid #cfdcf3;border-left:4px solid var(--accent);border-radius:10px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .connect p{margin:2px 0 0;color:var(--sub);font-size:13px}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#1c2230;color:#fff;padding:10px 16px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.25);font-size:13.5px;z-index:100;max-width:calc(100vw - 32px)}
@@ -747,7 +755,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     <section class="card"><div id="monthView"></div><div id="listView" class="list-view" hidden></div></section>
     <aside class="side">
       <section class="card">
-        <div class="card-head"><h3 id="dayTitle"></h3><button class="small primary" id="btnAddDay">+ 이 날짜에 추가</button></div>
+        <div class="card-head"><h3 id="dayTitle"></h3><div class="row" style="gap:6px"><button class="small danger" id="btnBulkDel" hidden title="이 날짜 일정을 골라서 한꺼번에 삭제">일괄 삭제</button><button class="small primary" id="btnAddDay">+ 이 날짜에 추가</button></div></div>
         <div class="card-body" id="dayList"></div>
       </section>
       <section class="card">
@@ -1153,7 +1161,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
   async function lockState() { const m = await lockMeta(); return { setup: !!m, open: !!Lock.key, bio: bioInfo() }; }
   async function decObj(o) {
     if (!o || !o.memo || !o.memo.startsWith(LOCK_PREFIX)) { if (o) o.memoLock = ''; return o; }
-    if (Lock.key) { try { o.memo = await decWith(Lock.key, o.memo.slice(LOCK_PREFIX.length)); o.memoLock = 'open'; return o; } catch (e) { o.memoLock = 'bad'; } }
+    if (Lock.key) { try { const raw = o.memo; o.memo = await decWith(Lock.key, o.memo.slice(LOCK_PREFIX.length)); o.memoLock = 'open'; o.memoRaw = raw; return o; } catch (e) { o.memoLock = 'bad'; } }
     else o.memoLock = 'locked';
     o.memoCipher = o.memo; o.memo = ''; return o;
   }
@@ -1313,20 +1321,33 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     let added = 0, skipped = 0, failed = 0;
     for (const e of evs) {
       if (e.uid && have[e.uid]) { skipped++; continue; }
-      const copy = Object.assign({}, e); delete copy.id; delete copy.updated;
-      try {
+      try { const r = await restoreOne(e); if (r) { added++; have[r] = true; } else failed++; }
+      catch (err) { if (err.authNeeded) throw err; failed++; }
+    }
+    return { added, skipped, failed };
+  }
+  // 지운 일정 하나를 다시 만듦 (백업 복원·일괄 삭제 되돌리기). 메모는 원래 암호문 그대로
+  async function restoreOne(e) {
+    const copy = Object.assign({}, e); delete copy.id; delete copy.updated;
+    if (copy.memoRaw) { copy.memoCipher = copy.memoRaw; copy.memo = ''; } delete copy.memoRaw;
+    {
+      {
         if (copy.kind === 'work' && !copy.type) {
           // 유형 없는(휴대폰에서 만든) 일정은 원래 제목 그대로 되살림
           const c = await ensureCalendars();
           const start = copy.start ? { dateTime: copy.date + 'T' + copy.start + ':00' + OFFSET, timeZone: TZ } : { date: copy.date };
           const end = copy.start ? { dateTime: copy.date + 'T' + (copy.end || plus30(copy.start)) + ':00' + OFFSET, timeZone: TZ } : { date: addDays(copy.date, 1) };
-          await api('POST', '/calendars/' + encodeURIComponent(c.work) + '/events', { body: { summary: copy.rawTitle || copy.target || '(제목 없음)', start, end, reminders: { useDefault: true } } });
-          added++; continue;
+          const ev = await api('POST', '/calendars/' + encodeURIComponent(c.work) + '/events', { body: { summary: copy.rawTitle || copy.target || '(제목 없음)', start, end, reminders: { useDefault: true } } });
+          return ev.id;
         }
-        const r = await saveEvent(copy, true, { allowPlain: true }); if (r.ok) { added++; have[r.event.uid] = true; } else failed++;
-      } catch (err) { if (err.authNeeded) throw err; failed++; }
+        const r = await saveEvent(copy, true, { allowPlain: true }); return r.ok ? r.event.uid : null;
+      }
     }
-    return { added, skipped, failed };
+  }
+  async function restoreEvents(list) {
+    let added = 0, failed = 0;
+    for (const e of list || []) { try { (await restoreOne(e)) ? added++ : failed++; } catch (err) { if (err.authNeeded) throw err; failed++; } }
+    return { added, failed };
   }
 
   /* ---------- 구글 드라이브: 연계서비스 목록·양식 ---------- */
@@ -1434,7 +1455,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     async saveEvent(e, force) { const r = await saveEvent(e, force); if (r.event) await decObj(r.event); if (r.current) await decObj(r.current); return r; },
     async setStatus(id, st, up) { const r = await setStatus(id, st, up); if (r.event) await decObj(r.event); if (r.current) await decObj(r.current); return r; },
     async deleteEvent(id, up) { const r = await deleteEvent(id, up); if (r.current) await decObj(r.current); return r; },
-    getStats, exportBackup, restoreBackup,
+    getStats, exportBackup, restoreBackup, restoreEvents,
     lockState, lockSetup, lockUnlock, lockNow, lockAll, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
     linksLoad, linksSave, uploadForm, downloadForm, trashForm, notesLoad, notesSave,
     hasDrive: () => Auth.hasDrive,
@@ -1715,6 +1736,47 @@ function renderDay() {
   $('#dayTitle').textContent = fmtDateK(S.selected) + (S.selected === todayStr() ? ' · 오늘' : '');
   const evs = visible().filter(e => e.date === S.selected);
   $('#dayList').innerHTML = evs.length ? evs.map(itemHtml).join('') : '<div class="empty">일정이 없습니다.</div>';
+  $('#btnBulkDel').hidden = !evs.length;
+}
+
+/* ---------- 한 날짜 일괄 삭제 + 되돌리기 ---------- */
+async function bulkDelete() {
+  const date = S.selected, evs = visible().filter(e => e.date === date); if (!evs.length) return;
+  const hiddenN = S.events.filter(e => e.date === date).length - evs.length;
+  const html = `<p style="margin-top:0">${esc(fmtDateK(date))} 일정 중 지울 것을 고르세요. <b>구글 캘린더에서도 삭제됩니다.</b></p>
+    <label class="bd-item" style="font-weight:700"><input type="checkbox" id="bdAll" checked> 모두 선택 (${evs.length}개)</label>
+    <div class="bd-list">${evs.map(e => `<label class="bd-item"><input type="checkbox" class="bd-ck" value="${esc(e.id)}" checked><span class="bd-time">${esc(e.start ? e.start + (e.end ? '~' + e.end : '') : '종일')}</span><span>${esc(labelOf(e))}${e.kind === 'personal' ? ' <span class="hint">(개인)</span>' : ''}</span></label>`).join('')}</div>
+    ${hiddenN > 0 ? `<p class="hint">필터·보기 설정으로 지금 화면에 안 보이는 일정 ${hiddenN}개는 지우지 않습니다.</p>` : ''}
+    <p class="hint" style="margin-bottom:0">지운 뒤 화면 아래 <b>되돌리기</b>를 누르면 30초 안에 다시 만들 수 있습니다.</p>`;
+  const pick = choose('이 날짜 일정 일괄 삭제', html, [{ label:'취소', value:null }, { label:'선택한 일정 삭제', value:'del', cls:'danger' }]);
+  const sync = () => { const cks = $$('#chooseBody .bd-ck'), n = cks.filter(c => c.checked).length; $('#bdAll').checked = n === cks.length; $('#bdAll').indeterminate = n > 0 && n < cks.length; const btn = $$('#chooseBtns button').find(b => b.classList.contains('danger')); if (btn) { btn.textContent = n ? `선택한 ${n}개 삭제` : '고른 일정 없음'; btn.disabled = !n; } };
+  $('#bdAll').onchange = ev => { $$('#chooseBody .bd-ck').forEach(c => { c.checked = ev.target.checked; }); sync(); };
+  $$('#chooseBody .bd-ck').forEach(c => { c.onchange = sync; }); sync();
+  if (!(await pick)) return;
+  const ids = $$('#chooseBody .bd-ck').filter(c => c.checked).map(c => c.value);
+  const targets = evs.filter(e => ids.includes(e.id)); if (!targets.length) return;
+  const done = [], skipped = [];
+  try {
+    await run(`${targets.length}개 삭제 중…`, async () => {
+      for (const e of targets) { const r = await call('deleteEvent', e.id, e.updated); if (r && r.conflict) skipped.push(e); else done.push(e); }
+    });
+  } catch (e) {}
+  await loadEvents().catch(() => {});
+  if (done.length) showUndo(done, skipped.length);
+  else if (skipped.length) toast('다른 기기에서 먼저 바뀐 일정이라 지우지 않았습니다. 새로고침 후 다시 해 주세요.', 5000);
+}
+function showUndo(list, skippedN) {
+  $$('.undo-bar').forEach(x => x.remove());
+  const bar = document.createElement('div'); bar.className = 'undo-bar'; bar.setAttribute('role', 'status');
+  bar.innerHTML = `<span>일정 ${list.length}개를 삭제했습니다.${skippedN ? ` (다른 기기에서 바뀐 ${skippedN}개는 건너뜀)` : ''}</span><button type="button" class="undo-btn">되돌리기</button><button type="button" class="undo-x" aria-label="닫기">✕</button>`;
+  document.body.appendChild(bar);
+  const timer = setTimeout(() => bar.remove(), 30000);
+  bar.querySelector('.undo-x').onclick = () => { clearTimeout(timer); bar.remove(); };
+  bar.querySelector('.undo-btn').onclick = async () => {
+    clearTimeout(timer); bar.remove();
+    try { const r = await run('되돌리는 중…', () => call('restoreEvents', list)); await loadEvents();
+      toast(r.failed ? `${r.added}개를 다시 만들었고 ${r.failed}개는 실패했습니다.` : `${r.added}개를 다시 만들었습니다.`, 4000); } catch (e) {}
+  };
 }
 
 /* ---------- 실적 ---------- */
@@ -1999,6 +2061,7 @@ function bind() {
 
   $('#btnNew').onclick = () => openEvent(null);
   $('#btnAddDay').onclick = () => openEvent(null, { date:S.selected });
+  $('#btnBulkDel').onclick = () => bulkDelete();
   $$('#eventForm input[name=kind]').forEach(r => r.onchange = syncKindUI);
   $$('#eventForm .tin').forEach(inp => inp.addEventListener('input', () => {   // 숫자 4개를 치면 바로 12:34 로
     if (/^\d{4}$/.test(inp.value)) { const v = parseTime(inp.value); if (v) { inp.value = v; inp.classList.remove('bad'); inp.dispatchEvent(new Event('change', { bubbles: true })); } }
