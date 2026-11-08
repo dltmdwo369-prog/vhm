@@ -2441,6 +2441,15 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
   const KINDS = { one: '하나 고르기', many: '여러 개 고르기', num: '숫자 입력', drugs: '약 검색' };
 
   // 기본 틀 (임시 — 사용자가 확인 후 고침)
+  /* 악력 참고치: 한국인 국민건강영양조사 2014–2015 (PLoS ONE 2018, PMC6101358) 표 3 — 오른손·왼손 평균과 하위 20%(lowest quintile), kg
+     근력 저하: AWGS 2019(아시아 근감소증 진단 기준, 대한근감소증학회 진료지침도 같은 기준) 양손 중 최댓값 남 28kg·여 18kg 미만 */
+  const GRIP = {
+    남: { R: [[60, 39.3, 33.8], [65, 36.8, 32.1], [70, 33.9, 28.9], [75, 31.4, 26.1], [80, 27.4, 22.1]], L: [[60, 37.7, 32.6], [65, 35.1, 29.7], [70, 32.5, 27.7], [75, 30.7, 25.8], [80, 26.3, 21.9]], cut: 28 },
+    여: { R: [[60, 24.6, 21.2], [65, 23.2, 19.4], [70, 21.6, 18.2], [75, 19.8, 15.5], [80, 16.9, 13.0]], L: [[60, 23.1, 20.0], [65, 21.6, 18.1], [70, 20.1, 16.5], [75, 18.7, 15.1], [80, 15.8, 12.4]], cut: 18 }
+  };
+  const gripItem = () => ({ id: uid(), group: '측정', label: '악력', kind: 'num', options: [], template: '*악력\n-Rt: {1}kg, Lt: {2}kg', fields: [
+    { label: '오른손', unit: 'kg', norm: 'gripR' }, { label: '왼손', unit: 'kg', norm: 'gripL' },
+    { label: '성별', type: 'pick', options: '남,여' }, { label: '나이', unit: '세' }] });
   const stopItem = () => ({ id: uid(), group: '복약', label: '투약 중단', kind: 'one', options: [{ label: '약 부작용', text: '약 부작용으로 인해 투약 중단했다고 함.' }, { label: '증상 호전', text: '증상 호전으로 인해 투약 중단했다고 함.' }], fields: [], template: '' });
   const drugItem = () => ({ id: uid(), group: '복약', label: '처방약', kind: 'drugs', options: [], fields: [], template: '*복용약\n-{목록}' });
   function defaults() {
@@ -2449,7 +2458,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
     const num = (group, label, fields, template) => ({ id: uid(), group, label, kind: 'num', options: [], fields: fields.map(f => Array.isArray(f) ? { label: f[0], unit: f[1] } : f), template });
     // 정상 범위: 대한고혈압학회 2022 진료지침(정상 <120/80, 주의·전단계 ~139/89, 고혈압 ≥140/90), 대한당뇨병학회 진단기준(공복 100~125·식후2시간 140~199 = 주의, 그 이상 = 높음, 70 미만 = 저혈당), 맥박 성인 60~100회/분
     const R = (min, max, warn) => ({ min: min == null ? '' : String(min), max: max == null ? '' : String(max), warn: warn == null ? '' : String(warn) });
-    return { schema: 4, updatedAt: null, defaultsPending: true, joiner: ' ', flagInMemo: false, drugs: [], items: [
+    return { schema: 5, updatedAt: null, defaultsPending: true, joiner: ' ', flagInMemo: false, drugs: [], items: [
       num('측정', 'Vital', [
         { label: '수축기', unit: 'mmHg', range: R(90, 119, 139) },
         { label: '이완기', unit: 'mmHg', range: R(60, 79, 89) },
@@ -2457,6 +2466,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
         { label: '혈당', unit: 'mg/dL', range: R(70, 139, 199), rangeBy: 5, ranges: { '공복': R(70, 99, 125), '식후': R(70, 139, 199) } },
         { label: '혈당 시점', type: 'pick', options: '공복,식후' }
       ], '*Vital\n-BP: {1}/{2}mmHg, PR: {3}회/분, BST({5}): {4}mg/dL'),
+      gripItem(),
       num('측정', '체중', [['체중', 'kg']], '체중 {1}kg 측정함.'),
       one('건강 상태', '전반적 컨디션', [['양호', '전반적인 컨디션 양호하다고 함.'], ['보통', '컨디션 보통이라고 함.'], ['저하', '최근 컨디션 저하 호소함.']]),
       one('건강 상태', '통증', [['없음', '특별한 통증 호소 없음.'], ['있음', '통증 호소하여 부위·정도 확인함.']]),
@@ -2479,19 +2489,23 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
     const base = defaults(); if (!d || !Array.isArray(d.items)) return base;
     if (d.defaultsPending && !(d.schema >= 2)) return base;   // 아직 손대지 않은 예전 임시 틀은 새 기본 틀로
     const rg = r => ({ min: String((r && r.min) ?? '').slice(0, 8), max: String((r && r.max) ?? '').slice(0, 8), warn: String((r && r.warn) ?? '').slice(0, 8) });
-    const out = { schema: 4, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ', flagInMemo: !!d.flagInMemo,
+    const out = { schema: 5, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ', flagInMemo: !!d.flagInMemo,
       drugs: (Array.isArray(d.drugs) ? d.drugs : []).map(x => ({ name: String(x.name || '').slice(0, 60), note: String(x.note || '').slice(0, 40) })).filter(x => x.name).slice(0, 500),
       items: d.items.map(i => ({ id: i.id || uid(), group: String(i.group || '기타').slice(0, 30), label: String(i.label || '').slice(0, 40), kind: KINDS[i.kind] ? i.kind : 'one',
         options: (i.options || []).map(o => ({ label: String(o.label || '').slice(0, 40), text: String(o.text || '').slice(0, 200) })).filter(o => o.label),
         fields: (i.fields || []).map(f => {
           const o = { label: String(f.label || '').slice(0, 20), unit: String(f.unit || '').slice(0, 10) };
           if (f.type === 'pick') { o.type = 'pick'; o.options = String(f.options || '').slice(0, 80); return o; }
+          if (f.norm === 'gripR' || f.norm === 'gripL') { o.norm = f.norm; return o; }
           o.range = rg(f.range); if (+f.rangeBy > 0) { o.rangeBy = +f.rangeBy; o.ranges = {}; Object.keys(f.ranges || {}).forEach(k => { o.ranges[String(k).slice(0, 20)] = rg(f.ranges[k]); }); }
           return o; }).filter(f => f.label),
         template: String(i.template || '').slice(0, 200) })).filter(i => i.label) };
     out.items.forEach(i => { if (i.kind === 'drugs' && i.template === '복용약: {목록}') i.template = '*복용약\n-{목록}'; });   // 예전 기본 형식 → *복용약 묶음 (사용자 요청)
     if (!(d.schema >= 3) && !out.items.some(i => i.kind === 'drugs')) {   // 예전 틀에 '처방약' 검색 항목 추가 (손댄 내용은 그대로)
       const k = out.items.findIndex(i => i.label === '복약'); out.items.splice(k >= 0 ? k + 1 : out.items.length, 0, drugItem());
+    }
+    if (!(d.schema >= 5) && !out.items.some(i => i.fields.some(f => f.norm))) {   // 사용자 요청(2026-11-09): 측정에 '악력' 추가 (Vital 다음)
+      const k = out.items.findIndex(i => i.label === 'Vital'); out.items.splice(k >= 0 ? k + 1 : 0, 0, gripItem());
     }
     if (!(d.schema >= 4) && !out.items.some(i => i.label === '투약 중단')) {   // 사용자 요청(2026-11-09): 복약 다음에 '투약 중단' 추가
       const k = out.items.findIndex(i => i.label === '복약'); out.items.splice(k >= 0 ? k + 1 : out.items.length, 0, stopItem());
@@ -2544,7 +2558,31 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
     if (f.rangeBy && f.ranges) { const sel = String(v[f.rangeBy - 1] || ''); if (sel && f.ranges[sel]) r = f.ranges[sel]; }
     return r && (r.min !== '' || r.max !== '') ? r : null;
   }
+  // 악력: 같은 항목의 '성별'(고르기)·'나이' 칸으로 또래 기준을 찾음
+  function gripCtx(it, v) {
+    const si = it.fields.findIndex(f => f.type === 'pick' && /성별/.test(f.label)), ai = it.fields.findIndex(f => f.type !== 'pick' && /나이/.test(f.label));
+    const sex = si >= 0 ? String(v[si] || '') : '', age = ai >= 0 ? +String(v[ai] || '').trim() : NaN;
+    return { sex: GRIP[sex] ? sex : '', age: isNaN(age) ? null : age };
+  }
+  function gripRow(it, f, v) {
+    const c = gripCtx(it, v); if (!c.sex || c.age == null || c.age < 60) return null;
+    const rows = GRIP[c.sex][f.norm === 'gripL' ? 'L' : 'R']; let r = rows[0]; rows.forEach(x => { if (c.age >= x[0]) r = x; });
+    return { group: r[0] === 80 ? '80세 이상' : r[0] + '~' + (r[0] + 4) + '세', mean: r[1], low: r[2], sex: c.sex };
+  }
+  function gripFlag(it, k, v) {
+    const f = it.fields[k], x = +String(v[k] || '').trim(); const g = gripRow(it, f, v); if (!g || isNaN(x)) return null;
+    if (x < g.low) return { cls: 'low', text: '또래 하위 20%', arrow: '↓' };
+    return x >= g.mean ? { cls: 'ok', text: '또래 평균 이상', arrow: '' } : { cls: 'ok', text: '또래 보통', arrow: '' };
+  }
+  function gripTitle(it, k, v) { const g = gripRow(it, it.fields[k], v); return g ? `${g.sex} ${g.group} ${it.fields[k].label} 평균 ${g.mean}kg, 하위 20% ${g.low}kg 미만 (국민건강영양조사 2014–15)` : '성별과 나이(60세 이상)를 넣으면 또래 기준으로 판정합니다'; }
+  function gripSummary(it, v) {   // 근력 저하 (AWGS 2019): 양손 중 큰 값
+    const c = gripCtx(it, v); if (!c.sex) return null;
+    const vals = it.fields.map((f, k) => f.norm ? +String(v[k] || '').trim() : NaN).filter(x => !isNaN(x) && x > 0); if (!vals.length) return null;
+    const m = Math.max(...vals), cut = GRIP[c.sex].cut;
+    return m < cut ? { cls: 'high', text: `근력 저하 (최댓값 ${m}kg < ${cut}kg)` } : { cls: 'ok', text: `근력 저하 기준 아님 (최댓값 ${m}kg ≥ ${cut}kg)` };
+  }
   function flagOf(it, k, v) {
+    if (it.fields[k] && it.fields[k].norm) return gripFlag(it, k, v);
     const raw = String(v[k] || '').trim(); if (raw === '') return null; const x = +raw; const r = rangeOf(it, k, v); if (!r || isNaN(x)) return null;
     if (r.min !== '' && x < +r.min) return { cls: 'low', text: '낮음', arrow: '↓' };
     if (r.max !== '' && x > +r.max) return r.warn !== '' && x <= +r.warn ? { cls: 'warn', text: '주의', arrow: '↑' } : { cls: 'high', text: '높음', arrow: '↑' };
@@ -2576,8 +2614,16 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
     $$('#tab-note [data-flag]').forEach(el => {
       const [id, k] = el.dataset.flag.split(':'); const it = N.tpl.items.find(i => i.id === id); if (!it) return;
       const v = N.pick[id] || [], f = flagOf(it, +k, v), r = rangeOf(it, +k, v);
-      el.className = 'nt-flag' + (f ? ' ' + f.cls : ''); el.textContent = f ? f.text : ''; el.title = rangeText(r);
-      const inp = el.parentElement.querySelector('input'); if (inp) inp.title = rangeText(r);
+      const ttl = it.fields[+k].norm ? gripTitle(it, +k, v) : rangeText(r);
+      el.className = 'nt-flag' + (f ? ' ' + f.cls : ''); el.textContent = f ? f.text : ''; el.title = ttl;
+      const inp = el.parentElement.querySelector('input'); if (inp) inp.title = ttl;
+    });
+    $$('#tab-note [data-gsum]').forEach(el => {
+      const it = N.tpl.items.find(i => i.id === el.dataset.gsum); if (!it) return; const v = N.pick[it.id] || [];
+      const sm = gripSummary(it, v), c = gripCtx(it, v), hasVal = it.fields.some((f, k) => f.norm && String(v[k] || '').trim());
+      el.className = 'nt-flag' + (sm ? ' ' + sm.cls : '');
+      el.textContent = sm ? sm.text : hasVal && (!c.sex || c.age == null) ? '성별·나이를 넣으면 판정합니다' : '';
+      if (!sm && el.textContent) el.className = 'nt-flag warn';
     });
   }
   function refreshOut(force) {
@@ -2649,7 +2695,8 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
       if (it.kind === 'num') { const v = N.pick[it.id] || [];
         ctl = it.fields.map((f, k) => f.type === 'pick'
           ? `<span class="nt-num">${esc(f.label)} ${String(f.options || '').split(',').map(x => x.trim()).filter(Boolean).map(o => `<button type="button" class="nt-chip sm${v[k] === o ? ' on' : ''}" data-pickf="${it.id}" data-k="${k}" data-v="${esc(o)}" aria-pressed="${v[k] === o}">${esc(o)}</button>`).join('')}</span>`
-          : `<label class="nt-num">${esc(f.label)}<input inputmode="decimal" data-num="${it.id}" data-k="${k}" value="${esc(v[k] || '')}" autocomplete="off" title="${esc(rangeText(rangeOf(it, k, v)))}"><span>${esc(f.unit)}</span><span class="nt-flag" data-flag="${it.id}:${k}"></span></label>`).join(''); }
+          : `<label class="nt-num">${esc(f.label)}<input inputmode="decimal" data-num="${it.id}" data-k="${k}" value="${esc(v[k] || '')}" autocomplete="off" title="${esc(rangeText(rangeOf(it, k, v)))}"><span>${esc(f.unit)}</span><span class="nt-flag" data-flag="${it.id}:${k}"></span></label>`).join('')
+          + (it.fields.some(f => f.norm) ? `<span class="nt-flag" data-gsum="${it.id}"></span>` : ''); }
       else if (it.kind === 'drugs') { const a = N.pick[it.id] || [];
         ctl = `<div class="nt-drugs">${a.map((x, k) => `<div class="nt-drug"><input data-dname="${it.id}" data-k="${k}" value="${esc(x.name)}" aria-label="약 이름">(<input data-dnote="${it.id}" data-k="${k}" value="${esc(x.note)}" placeholder="무슨 약" aria-label="무슨 약인지 메모">)<button type="button" class="small" data-ddel="${it.id}" data-k="${k}" title="빼기">✕</button></div>`).join('')}
           <div class="nt-dsearch"><input data-dq="${it.id}" placeholder="약 이름·성분·초성으로 검색 (예: 노바스크, 암로디핀, ㄴㅂㅅㅋ)" autocomplete="off"><div class="nt-dlist" data-dlist="${it.id}" hidden></div></div></div>`; }
@@ -2660,6 +2707,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
     return `<div class="nt-layout"><div class="card"><div class="card-body">
         ${groups().map(g => `<div class="nt-group"><div class="lk-cat-h">${esc(g)}</div>${items(g)}</div>`).join('')}
         ${N.tpl.items.some(i => i.kind === 'num' && i.fields.some(f => f.range && (f.range.min !== '' || f.range.max !== ''))) ? '<p class="hint" style="margin:4px 0 0">수치 옆 정상·주의·높음·낮음은 참고용입니다. 기본 기준: 대한고혈압학회 2022 진료지침(정상 120/80 미만, 140/90 이상 고혈압), 대한당뇨병학회 진단기준(공복 100~125·식후 2시간 140~199 주의, 70 미만 저혈당), 성인 맥박 60~100회/분. 기준은 ‘항목 편집’에서 바꿀 수 있습니다.</p>' : ''}
+        ${N.tpl.items.some(i => i.fields.some(f => f.norm)) ? '<p class="hint" style="margin:4px 0 0">악력: 각 손의 최댓값(kg)을 적고 성별·나이를 넣으세요. 또래 기준은 한국인 국민건강영양조사 2014–2015 악력 참고치(60세 이상, 5세 간격, 하위 20% 미만이면 ‘또래 하위 20%’), 근력 저하는 AWGS 2019 아시아 근감소증 기준(양손 중 큰 값이 남 28kg·여 18kg 미만). 성별·나이는 판정에만 쓰고 메모에는 넣지 않습니다.</p>' : ''}
         <label class="f" style="margin-top:8px">추가로 적을 내용<textarea id="ntExtra" rows="2" maxlength="300" placeholder="체크 항목에 없는 내용을 직접 적으세요">${esc(N.extra)}</textarea></label>
       </div></div>
       <div class="card nt-outcard"><div class="card-body">
@@ -2704,7 +2752,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
     const rIn = (k, key, r, opt) => `<input class="nt-r" data-rk="${k}" data-rf="${key}"${opt != null ? ` data-ro="${esc(opt)}"` : ''} value="${esc(r ? r[key] : '')}" inputmode="decimal" placeholder="${key === 'min' ? '최소' : key === 'max' ? '최대' : '주의 상한'}">`;
     const rRow = (k, r, opt) => `<div class="nt-rrow">${opt != null ? `<b>${esc(opt)}</b>` : '정상 범위'} ${rIn(k, 'min', r, opt)} ~ ${rIn(k, 'max', r, opt)} <span class="hint">주의</span> ~ ${rIn(k, 'warn', r, opt)}</div>`;
     const fld = e.fields.map((f, k) => `<div class="nt-fbox"><div class="nt-orow"><span class="hint">{${k + 1}}</span><input data-fl="${k}" data-f="label" value="${esc(f.label)}" placeholder="칸 이름 (예: 수축기)"><select data-fl="${k}" data-f="type"><option value="num"${f.type !== 'pick' ? ' selected' : ''}>숫자</option><option value="pick"${f.type === 'pick' ? ' selected' : ''}>고르기</option></select>${f.type === 'pick' ? `<input data-fl="${k}" data-f="options" value="${esc(f.options || '')}" placeholder="보기 (쉼표로: 공복,식후)">` : `<input data-fl="${k}" data-f="unit" value="${esc(f.unit)}" placeholder="단위 (예: mmHg)">`}<button type="button" class="small" data-fdel="${k}" title="빼기">✕</button></div>
-      ${f.type === 'pick' ? '' : `${rRow(k, f.range)}${picks.length ? `<label class="hint nt-rrow"><input type="checkbox" data-rby="${k}"${f.rangeBy ? ' checked' : ''}> 고르기 칸 {${(f.rangeBy || picks[0] + 1)}}에 따라 기준 다르게</label>` : ''}${f.rangeBy && e.fields[f.rangeBy - 1] && e.fields[f.rangeBy - 1].type === 'pick' ? String(e.fields[f.rangeBy - 1].options || '').split(',').map(x => x.trim()).filter(Boolean).map(o => rRow(k, (f.ranges || {})[o], o)).join('') : ''}`}</div>`).join('');
+      ${f.type === 'pick' ? '' : f.norm ? '<div class="nt-rrow hint">기준: 한국인 악력 참고치(성별·나이) + AWGS 2019 근력 저하 기준 — 같은 항목의 ‘성별’(고르기: 남,여)·‘나이’ 칸을 씁니다.</div>' : `${rRow(k, f.range)}${picks.length ? `<label class="hint nt-rrow"><input type="checkbox" data-rby="${k}"${f.rangeBy ? ' checked' : ''}> 고르기 칸 {${(f.rangeBy || picks[0] + 1)}}에 따라 기준 다르게</label>` : ''}${f.rangeBy && e.fields[f.rangeBy - 1] && e.fields[f.rangeBy - 1].type === 'pick' ? String(e.fields[f.rangeBy - 1].options || '').split(',').map(x => x.trim()).filter(Boolean).map(o => rRow(k, (f.ranges || {})[o], o)).join('') : ''}`}</div>`).join('');
     $('#ntDlgBody').innerHTML = `<div class="grid2">
         <label class="f">항목 이름<input id="neLabel" value="${esc(e.label)}" maxlength="40"></label>
         <label class="f">묶음<input id="neGroup" value="${esc(e.group)}" maxlength="30" list="ntGroups"><datalist id="ntGroups">${groups().map(g => `<option value="${esc(g)}">`).join('')}</datalist></label>
@@ -2808,7 +2856,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
       if (e.kind === 'num' && (!e.fields.length || !e.template)) return alert('입력 칸과 문장 틀을 적어 주세요.');
       if (e.kind === 'one' || e.kind === 'many') { if (!e.options.length) return alert('보기를 하나 이상 적어 주세요.'); }
       if (e.kind === 'drugs' && !e.template.includes('{목록}')) return alert('문장 틀에 {목록}을 넣어 주세요.');
-      const isNew = e.isNew; delete e.isNew; const it = clean({ items: [e] }).items[0]; it.id = e.id;
+      const isNew = e.isNew; delete e.isNew; const it = clean({ schema: 5, items: [e] }).items[0]; it.id = e.id;
       const k = N.tpl.items.findIndex(i => i.id === it.id);
       if (k >= 0) N.tpl.items[k] = it; else N.tpl.items.push(it);
       delete N.pick[it.id];
