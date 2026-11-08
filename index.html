@@ -119,6 +119,17 @@ dialog{border:0;border-radius:14px;padding:0;box-shadow:0 20px 60px rgba(10,20,4
 .nt-rrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px;margin-top:4px}
 .nt-r{width:64px;padding:5px 6px}
 @media (max-width:560px){.nt-fbox .nt-orow{grid-template-columns:auto minmax(0,1fr) auto}.nt-fbox .nt-orow>input[data-f="unit"],.nt-fbox .nt-orow>input[data-f="options"]{grid-column:2}}
+.nt-drugs{display:flex;flex-direction:column;gap:6px;width:100%}
+.nt-drug{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.nt-drug input{padding:6px 8px;font-size:14px}
+.nt-drug input[data-dname]{flex:1 1 160px;min-width:0}
+.nt-drug input[data-dnote]{flex:1 1 120px;min-width:0}
+.nt-dsearch{position:relative;width:100%}
+.nt-dsearch input{width:100%;box-sizing:border-box;padding:8px 10px;font-size:14px}
+.nt-dlist{position:absolute;left:0;right:0;top:100%;z-index:20;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);max-height:300px;overflow:auto;margin-top:2px}
+.nt-dopt{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:#fff;padding:8px 10px;font-size:14px;border-radius:0;cursor:pointer}
+.nt-dopt.first{background:#f3f7ff}.nt-dopt:hover{background:#eaf2ff}
+.nt-dlink{color:var(--accent);text-decoration:none;font-size:13px}
 .nt-group{margin-bottom:12px}
 .nt-row{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)}
 @media (max-width:560px){.nt-row{grid-template-columns:1fr;gap:4px}}
@@ -2413,6 +2424,11 @@ async function boot() {
 
 </script>
 <script>
+/* 처방약 기본 목록 — 의약품안전나라(nedrug.mfds.go.kr) 의약품등 정보검색에서 제품명·성분을 확인함 (2026-11-08).
+ * 참고용 목록입니다. 목록에 없는 약은 직접 추가하면 그 기기·드라이브의 '내 약 목록'에 남습니다. */
+window.VHM_DRUGS = [["노바스크정", "암로디핀", "고혈압약"], ["아모디핀정", "암로디핀", "고혈압약"], ["코자뉴정", "로사르탄", "고혈압약"], ["디오반필름코팅정", "발사르탄", "고혈압약"], ["아타칸정", "칸데사르탄", "고혈압약"], ["아타칸플러스정", "칸데사르탄", "고혈압약"], ["미카르디스정", "텔미사르탄", "고혈압약"], ["미카르디스플러스정", "텔미사르탄", "고혈압약"], ["올메텍정", "올메사르탄", "고혈압약"], ["올메텍플러스정", "올메사르탄", "고혈압약"], ["아프로벨정", "이르베사르탄", "고혈압약"], ["카나브정", "피마사르탄", "고혈압약"], ["카나브플러스정", "피마사르탄", "고혈압약"], ["트윈스타정", "텔미사르탄·암로디핀", "고혈압약"], ["엑스포지정", "암로디핀·발사르탄", "고혈압약"], ["세비카정", "올메사르탄·암로디핀", "고혈압약"], ["세비카에이치씨티정", "올메사르탄·암로디핀", "고혈압약"], ["아모잘탄정", "암로디핀·로사르탄", "고혈압약"], ["딜라트렌정", "카르베딜롤", "고혈압·심장약"], ["딜라트렌에스알정", "카르베딜롤", "고혈압·심장약"], ["딜라트렌에스알캡슐", "카르베딜롤", "고혈압·심장약"], ["콩코르정", "비소프롤롤", "고혈압·심장약"], ["라식스정", "푸로세미드", "이뇨제"], ["알닥톤필름코팅정", "스피로노락톤", "이뇨제"], ["다이아벡스정", "메트포르민", "당뇨약"], ["다이아벡스엑스알서방정", "메트포르민", "당뇨약"], ["글루코파지정", "메트포르민", "당뇨약"], ["글루코파지엑스알서방정", "메트포르민", "당뇨약"], ["아마릴정", "글리메피리드", "당뇨약"], ["아마릴엠정", "글리메피리드·메트포르민", "당뇨약"], ["아마릴-멕스서방정", "글리메피리드·메트포르민", "당뇨약"], ["자누비아정", "시타글립틴", "당뇨약"], ["자누메트정", "시타글립틴·메트포르민", "당뇨약"], ["자누메트엑스알서방정", "시타글립틴·메트포르민", "당뇨약"], ["트라젠타정", "리나글립틴", "당뇨약"], ["트라젠타듀오정", "리나글립틴·메트포르민", "당뇨약"], ["가브스정", "빌다글립틴", "당뇨약"], ["가브스메트정", "빌다글립틴·메트포르민", "당뇨약"], ["제미글로정", "제미글립틴", "당뇨약"], ["제미메트서방정", "제미글립틴·메트포르민", "당뇨약"], ["자디앙정", "엠파글리플로진", "당뇨약"], ["자디앙듀오정", "엠파글리플로진·메트포르민", "당뇨약"], ["포시가정", "다파글리플로진", "당뇨약"], ["액토스정", "피오글리타존", "당뇨약"], ["액토스메트정", "피오글리타존·메트포르민", "당뇨약"], ["액토스릴정", "피오글리타존·글리메피리드", "당뇨약"], ["슈글렛정", "이프라글리플로진", "당뇨약"], ["리피토정", "아토르바스타틴", "고지혈증약"], ["리피토플러스정", "아토르바스타틴·에제티미브", "고지혈증약"], ["크레스토정", "로수바스타틴", "고지혈증약"], ["리바로정", "피타바스타틴", "고지혈증약"], ["바이토린정", "에제티미브·심바스타틴", "고지혈증약"], ["로수젯정", "로수바스타틴·에제티미브", "고지혈증약"], ["이지트롤정", "에제티미브", "고지혈증약"], ["아스피린프로텍트정", "아스피린", "항혈소판제(피떡 방지)"], ["플라빅스정", "클로피도그렐", "항혈소판제(피떡 방지)"], ["플라빅스에이정", "클로피도그렐·아스피린", "항혈소판제(피떡 방지)"], ["브릴린타정", "티카그렐러", "항혈소판제(피떡 방지)"], ["엘리퀴스정", "아픽사반", "항응고제(피떡 방지)"], ["자렐토정", "리바록사반", "항응고제(피떡 방지)"], ["릭시아나정", "에독사반", "항응고제(피떡 방지)"], ["프라닥사캡슐", "다비가트란", "항응고제(피떡 방지)"], ["타이레놀정", "아세트아미노펜", "해열진통제"], ["울트라셋정", "트라마돌·아세트아미노펜", "진통제"], ["울트라셋이알서방정", "트라마돌·아세트아미노펜", "진통제"], ["울트라셋세미정", "트라마돌·아세트아미노펜", "진통제"], ["쎄레브렉스캡슐", "세레콕시브", "소염진통제(관절)"], ["아셀렉스캡슐", "폴마콕시브", "소염진통제(관절)"], ["아셀렉스정", "폴마콕시브", "소염진통제(관절)"], ["리리카캡슐", "프레가발린", "신경통약"], ["리리카CR서방정", "프레가발린", "신경통약"], ["뉴론틴캡슐", "가바펜틴", "신경통약"], ["뉴론틴정", "가바펜틴", "신경통약"], ["넥시움정", "에스오메프라졸", "위장약(위산 억제)"], ["케이캡정", "테고프라잔", "위장약(위산 억제)"], ["케이캡구강붕해정", "테고프라잔", "위장약(위산 억제)"], ["펙수클루정", "펙수프라잔", "위장약(위산 억제)"], ["가스터디정", "파모티딘", "위장약(위산 억제)"], ["무코스타정", "레바미피드", "위장약(위점막 보호)"], ["무코스타서방정", "레바미피드", "위장약(위점막 보호)"], ["스티렌정", "애엽추출물", "위장약(위점막 보호)"], ["스티렌투엑스정", "애엽추출물", "위장약(위점막 보호)"], ["가스모틴정", "모사프리드", "위장약(소화 운동)"], ["가스모틴에스알정", "모사프리드", "위장약(소화 운동)"], ["아리셉트정", "도네페질", "치매약"], ["아리셉트에비스정", "도네페질", "치매약"], ["엑셀론캡슐", "리바스티그민", "치매약"], ["엑셀론패취", "리바스티그민", "치매약"], ["레미닐피알서방캡슐", "갈란타민", "치매약"], ["에빅사정", "메만틴", "치매약"], ["글리아타민연질캡슐", "콜린알포세레이트", "뇌기능 개선제"], ["글리아타민정", "콜린알포세레이트", "뇌기능 개선제"], ["하루날디정", "탐스로신", "전립선약(배뇨)"], ["아보다트연질캡슐", "두타스테리드", "전립선약(배뇨)"], ["프로스카정", "피나스테리드", "전립선약(배뇨)"], ["베시케어정", "솔리페나신", "과민성방광약"], ["베타미가서방정", "미라베그론", "과민성방광약"], ["씬지로이드정", "레보티록신", "갑상선호르몬제"], ["포사맥스플러스정", "알렌드론산", "골다공증약"], ["포사맥스플러스디정", "알렌드론산", "골다공증약"], ["본비바정", "이반드론산", "골다공증약"], ["본비바플러스정", "이반드론산", "골다공증약"], ["악토넬정", "리세드론산", "골다공증약"], ["악토넬EC정", "리세드론산", "골다공증약"], ["스틸녹스정", "졸피뎀", "수면제"], ["스틸녹스CR정", "졸피뎀", "수면제"], ["자낙스정", "알프라졸람", "신경안정제"], ["리보트릴정", "클로나제팜", "신경안정제"], ["렉사프로정", "에스시탈로프람", "항우울제"], ["트리티코정", "트라조돈", "항우울제"], ["트리티코서방정", "트라조돈", "항우울제"]];
+window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고혈압약"], ["발사르탄", "고혈압약"], ["칸데사르탄", "고혈압약"], ["텔미사르탄", "고혈압약"], ["올메사르탄", "고혈압약"], ["이르베사르탄", "고혈압약"], ["피마사르탄", "고혈압약"], ["카르베딜롤", "고혈압·심장약"], ["비소프롤롤", "고혈압·심장약"], ["푸로세미드", "이뇨제"], ["스피로노락톤", "이뇨제"], ["메트포르민", "당뇨약"], ["글리메피리드", "당뇨약"], ["시타글립틴", "당뇨약"], ["리나글립틴", "당뇨약"], ["빌다글립틴", "당뇨약"], ["제미글립틴", "당뇨약"], ["엠파글리플로진", "당뇨약"], ["다파글리플로진", "당뇨약"], ["피오글리타존", "당뇨약"], ["이프라글리플로진", "당뇨약"], ["아토르바스타틴", "고지혈증약"], ["로수바스타틴", "고지혈증약"], ["피타바스타틴", "고지혈증약"], ["에제티미브", "고지혈증약"], ["아스피린", "항혈소판제(피떡 방지)"], ["클로피도그렐", "항혈소판제(피떡 방지)"], ["티카그렐러", "항혈소판제(피떡 방지)"], ["아픽사반", "항응고제(피떡 방지)"], ["리바록사반", "항응고제(피떡 방지)"], ["에독사반", "항응고제(피떡 방지)"], ["다비가트란", "항응고제(피떡 방지)"], ["아세트아미노펜", "해열진통제"], ["세레콕시브", "소염진통제(관절)"], ["폴마콕시브", "소염진통제(관절)"], ["프레가발린", "신경통약"], ["가바펜틴", "신경통약"], ["에스오메프라졸", "위장약(위산 억제)"], ["테고프라잔", "위장약(위산 억제)"], ["펙수프라잔", "위장약(위산 억제)"], ["파모티딘", "위장약(위산 억제)"], ["레바미피드", "위장약(위점막 보호)"], ["애엽추출물", "위장약(위점막 보호)"], ["모사프리드", "위장약(소화 운동)"], ["도네페질", "치매약"], ["리바스티그민", "치매약"], ["갈란타민", "치매약"], ["메만틴", "치매약"], ["콜린알포세레이트", "뇌기능 개선제"], ["탐스로신", "전립선약(배뇨)"], ["두타스테리드", "전립선약(배뇨)"], ["피나스테리드", "전립선약(배뇨)"], ["솔리페나신", "과민성방광약"], ["미라베그론", "과민성방광약"], ["레보티록신", "갑상선호르몬제"], ["알렌드론산", "골다공증약"], ["이반드론산", "골다공증약"], ["리세드론산", "골다공증약"], ["졸피뎀", "수면제"], ["알프라졸람", "신경안정제"], ["클로나제팜", "신경안정제"], ["에스시탈로프람", "항우울제"], ["트라조돈", "항우울제"], ["와파린", "항응고제(피떡 방지)"], ["히드로클로로티아지드", "이뇨제(혈압약)"]];
+
 /* =====================================================================
  * 상담 메모: 체크리스트를 고르면 메모 문장이 자동으로 만들어지고, 복사해서 기관 전용앱에 붙여 넣음
  * - 체크·입력한 내용과 만들어진 문장은 저장·전송하지 않음 (화면에서만 만들고, 탭을 닫으면 사라짐)
@@ -2422,16 +2438,17 @@ async function boot() {
   'use strict';
   const LS = 'vhm-notes-tpl';
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3);
-  const KINDS = { one: '하나 고르기', many: '여러 개 고르기', num: '숫자 입력' };
+  const KINDS = { one: '하나 고르기', many: '여러 개 고르기', num: '숫자 입력', drugs: '약 검색' };
 
   // 기본 틀 (임시 — 사용자가 확인 후 고침)
+  const drugItem = () => ({ id: uid(), group: '복약', label: '처방약', kind: 'drugs', options: [], fields: [], template: '복용약: {목록}' });
   function defaults() {
     const one = (group, label, opts) => ({ id: uid(), group, label, kind: 'one', options: opts.map(([l, t]) => ({ label: l, text: t })), fields: [], template: '' });
     const many = (group, label, opts, template) => ({ id: uid(), group, label, kind: 'many', options: opts.map(([l, t]) => ({ label: l, text: t || '' })), fields: [], template: template || '' });
     const num = (group, label, fields, template) => ({ id: uid(), group, label, kind: 'num', options: [], fields: fields.map(f => Array.isArray(f) ? { label: f[0], unit: f[1] } : f), template });
     // 정상 범위: 대한고혈압학회 2022 진료지침(정상 <120/80, 주의·전단계 ~139/89, 고혈압 ≥140/90), 대한당뇨병학회 진단기준(공복 100~125·식후2시간 140~199 = 주의, 그 이상 = 높음, 70 미만 = 저혈당), 맥박 성인 60~100회/분
     const R = (min, max, warn) => ({ min: min == null ? '' : String(min), max: max == null ? '' : String(max), warn: warn == null ? '' : String(warn) });
-    return { schema: 2, updatedAt: null, defaultsPending: true, joiner: ' ', flagInMemo: false, items: [
+    return { schema: 3, updatedAt: null, defaultsPending: true, joiner: ' ', flagInMemo: false, drugs: [], items: [
       num('측정', 'Vital', [
         { label: '수축기', unit: 'mmHg', range: R(90, 119, 139) },
         { label: '이완기', unit: 'mmHg', range: R(60, 79, 89) },
@@ -2448,6 +2465,7 @@ async function boot() {
       one('건강 상태', '기분·정서', [['안정', '정서 안정적임.'], ['우울감', '우울감 호소하여 경청 및 정서 지지함.'], ['불안', '불안감 호소하여 경청 및 정서 지지함.']]),
       one('건강 상태', '최근 낙상', [['없음', '최근 낙상 경험 없다고 함.'], ['있음', '최근 낙상 경험 있다고 하여 낙상 예방 교육함.']]),
       one('복약', '복약', [['규칙적', '처방약 규칙적으로 복용 중이라 함.'], ['가끔 거름', '복약을 가끔 거른다고 하여 규칙적 복약 교육함.'], ['복용약 없음', '현재 복용 중인 약 없다고 함.']]),
+      drugItem(),
       one('생활 습관', '운동', [['하고 있음', '걷기 등 꾸준히 운동하고 계심.'], ['안 함', '규칙적인 운동 하지 않는다고 하여 운동 권유함.']]),
       one('생활 습관', '흡연', [['안 함', ''], ['함', '흡연 중이라 하여 금연 권유함.']]),
       one('생활 습관', '음주', [['안 함', ''], ['가끔', '가끔 음주한다고 함.'], ['자주', '음주 잦다고 하여 절주 교육함.']]),
@@ -2459,7 +2477,8 @@ async function boot() {
     const base = defaults(); if (!d || !Array.isArray(d.items)) return base;
     if (d.defaultsPending && !(d.schema >= 2)) return base;   // 아직 손대지 않은 예전 임시 틀은 새 기본 틀로
     const rg = r => ({ min: String((r && r.min) ?? '').slice(0, 8), max: String((r && r.max) ?? '').slice(0, 8), warn: String((r && r.warn) ?? '').slice(0, 8) });
-    return { schema: 2, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ', flagInMemo: !!d.flagInMemo,
+    const out = { schema: 3, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ', flagInMemo: !!d.flagInMemo,
+      drugs: (Array.isArray(d.drugs) ? d.drugs : []).map(x => ({ name: String(x.name || '').slice(0, 60), note: String(x.note || '').slice(0, 40) })).filter(x => x.name).slice(0, 500),
       items: d.items.map(i => ({ id: i.id || uid(), group: String(i.group || '기타').slice(0, 30), label: String(i.label || '').slice(0, 40), kind: KINDS[i.kind] ? i.kind : 'one',
         options: (i.options || []).map(o => ({ label: String(o.label || '').slice(0, 40), text: String(o.text || '').slice(0, 200) })).filter(o => o.label),
         fields: (i.fields || []).map(f => {
@@ -2468,6 +2487,10 @@ async function boot() {
           o.range = rg(f.range); if (+f.rangeBy > 0) { o.rangeBy = +f.rangeBy; o.ranges = {}; Object.keys(f.ranges || {}).forEach(k => { o.ranges[String(k).slice(0, 20)] = rg(f.ranges[k]); }); }
           return o; }).filter(f => f.label),
         template: String(i.template || '').slice(0, 200) })).filter(i => i.label) };
+    if (!(d.schema >= 3) && !out.items.some(i => i.kind === 'drugs')) {   // 예전 틀에 '처방약' 검색 항목 추가 (손댄 내용은 그대로)
+      const k = out.items.findIndex(i => i.label === '복약'); out.items.splice(k >= 0 ? k + 1 : out.items.length, 0, drugItem());
+    }
+    return out;
   }
 
   const N = { tpl: null, view: 'write', pick: {}, extra: '', edited: false, synced: false, editing: null };
@@ -2499,6 +2522,7 @@ async function boot() {
   /* ---------- 문장 만들기 ---------- */
   function sentenceOf(it) {
     const p = N.pick[it.id];
+    if (it.kind === 'drugs') { const a = (p || []).filter(x => x.name.trim()); if (!a.length) return ''; const list = a.map(x => x.name.trim() + (x.note.trim() ? '(' + x.note.trim() + ')' : '')).join(', '); return (it.template || '{목록}').includes('{목록}') ? it.template.replace('{목록}', list) : list; }
     if (it.kind === 'one') { if (p == null) return ''; const o = it.options[p]; return o ? o.text.trim() : ''; }
     if (it.kind === 'many') {
       const sel = (p || []).map(k => it.options[k]).filter(Boolean); if (!sel.length) return '';
@@ -2558,6 +2582,49 @@ async function boot() {
     $('#ntCount').textContent = ta.value.length + '자';
   }
 
+  /* ---------- 처방약 검색 ---------- */
+  const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+  const chosung = t => [...String(t)].map(c => { const x = c.charCodeAt(0) - 0xac00; return x >= 0 && x < 11172 ? CHO[Math.floor(x / 588)] : c; }).join('');
+  const norm = t => String(t || '').toLowerCase().replace(/[\s·\-]/g, '');
+  function drugPool() {
+    const out = [], seen = new Set(), add = (name, ing, note, tag) => { const k = norm(name); if (!k || seen.has(k)) return; seen.add(k); out.push({ name, ing, note, tag }); };
+    (N.tpl.drugs || []).forEach(d => add(d.name, '', d.note, '내 목록'));
+    (window.VHM_DRUGS || []).forEach(([n, i, note]) => add(n, i, note, ''));
+    (window.VHM_DRUG_INGS || []).forEach(([i, note]) => add(i, i, note, '성분명'));
+    return out;
+  }
+  function searchDrugs(q) {
+    const nq = norm(q); if (!nq) return [];
+    const cho = /^[ㄱ-ㅎ]+$/.test(nq);
+    const hit = d => cho ? chosung(norm(d.name)).includes(nq) : (norm(d.name).includes(nq) || norm(d.ing).includes(nq) || norm(d.note).includes(nq));
+    const pool = drugPool().filter(hit);
+    pool.sort((a, b) => (norm(b.name).startsWith(nq) - norm(a.name).startsWith(nq)) || ((b.tag === '내 목록') - (a.tag === '내 목록')) || a.name.localeCompare(b.name, 'ko'));
+    return pool.slice(0, 8);
+  }
+  let dRes = [], saveT = null;
+  function showDrugList(id, q) {
+    const box = $(`[data-dlist="${id}"]`); if (!box) return;
+    dRes = searchDrugs(q); const raw = q.trim();
+    if (!raw) { box.hidden = true; return; }
+    box.innerHTML = dRes.map((d, k) => `<button type="button" class="nt-dopt${k === 0 ? ' first' : ''}" data-dadd="${id}" data-k="${k}"><b>${esc(d.name)}</b><span class="hint">${esc([d.tag, d.ing && d.ing !== d.name ? d.ing : '', d.note].filter(Boolean).join(' · '))}</span></button>`).join('')
+      + `<button type="button" class="nt-dopt" data-draw="${id}">‘${esc(raw)}’ 그대로 추가</button>`
+      + `<a class="nt-dopt nt-dlink" href="https://nedrug.mfds.go.kr/searchDrug?itemName=${encodeURIComponent(raw)}" target="_blank" rel="noopener">의약품안전나라에서 ‘${esc(raw)}’ 찾아보기 ↗</a>`;
+    box.hidden = false;
+  }
+  function rememberDrug(d) {   // 기본 목록에 없거나 메모를 바꾼 약은 '내 약 목록'에 (약 이름·메모만, 대상자 정보 없음)
+    const name = d.name.trim(), note = d.note.trim(); if (!name) return;
+    const base = (window.VHM_DRUGS || []).find(x => x[0] === name);
+    const list = N.tpl.drugs = N.tpl.drugs || []; const k = list.findIndex(x => x.name === name);
+    if (base && base[2] === note) { if (k >= 0) { list.splice(k, 1); queueSave(); } return; }
+    if (k >= 0) { if (list[k].note === note) return; list[k].note = note; } else list.unshift({ name, note });
+    queueSave();
+  }
+  function queueSave() { clearTimeout(saveT); saveT = setTimeout(() => saveTpl(), 800); }
+  function addDrug(id, d) {
+    const a = (N.pick[id] || []).slice(); if (!a.some(x => x.name === d.name)) a.push({ name: d.name, note: d.note || '' }); N.pick[id] = a;
+    rememberDrug(a[a.length - 1]); render(); const inp = $(`[data-dq="${id}"]`); if (inp) inp.focus();
+  }
+
   /* ---------- 화면 ---------- */
   function groups() { const g = []; N.tpl.items.forEach(i => { if (!g.includes(i.group)) g.push(i.group); }); return g; }
   function render() {
@@ -2577,6 +2644,9 @@ async function boot() {
         ctl = it.fields.map((f, k) => f.type === 'pick'
           ? `<span class="nt-num">${esc(f.label)} ${String(f.options || '').split(',').map(x => x.trim()).filter(Boolean).map(o => `<button type="button" class="nt-chip sm${v[k] === o ? ' on' : ''}" data-pickf="${it.id}" data-k="${k}" data-v="${esc(o)}" aria-pressed="${v[k] === o}">${esc(o)}</button>`).join('')}</span>`
           : `<label class="nt-num">${esc(f.label)}<input inputmode="decimal" data-num="${it.id}" data-k="${k}" value="${esc(v[k] || '')}" autocomplete="off" title="${esc(rangeText(rangeOf(it, k, v)))}"><span>${esc(f.unit)}</span><span class="nt-flag" data-flag="${it.id}:${k}"></span></label>`).join(''); }
+      else if (it.kind === 'drugs') { const a = N.pick[it.id] || [];
+        ctl = `<div class="nt-drugs">${a.map((x, k) => `<div class="nt-drug"><input data-dname="${it.id}" data-k="${k}" value="${esc(x.name)}" aria-label="약 이름">(<input data-dnote="${it.id}" data-k="${k}" value="${esc(x.note)}" placeholder="무슨 약" aria-label="무슨 약인지 메모">)<button type="button" class="small" data-ddel="${it.id}" data-k="${k}" title="빼기">✕</button></div>`).join('')}
+          <div class="nt-dsearch"><input data-dq="${it.id}" placeholder="약 이름·성분·초성으로 검색 (예: 노바스크, 암로디핀, ㄴㅂㅅㅋ)" autocomplete="off"><div class="nt-dlist" data-dlist="${it.id}" hidden></div></div></div>`; }
       else ctl = it.options.map((o, k) => { const on = it.kind === 'one' ? N.pick[it.id] === k : (N.pick[it.id] || []).includes(k);
         return `<button type="button" class="nt-chip${on ? ' on' : ''}" data-it="${it.id}" data-k="${k}" aria-pressed="${on}">${esc(o.label)}</button>`; }).join('');
       return `<div class="nt-row"><div class="nt-label">${esc(it.label)}${it.kind === 'many' ? ' <span class="hint">(여러 개)</span>' : ''}</div><div class="nt-ctl">${ctl}</div></div>`;
@@ -2600,7 +2670,7 @@ async function boot() {
   function editHtml() {
     const rows = N.tpl.items.map((it, k) => `<div class="lk-row" data-edit="${it.id}">
         <div><b>${esc(it.label)}</b> <span class="hint">${esc(it.group)} · ${KINDS[it.kind]}</span></div>
-        <div class="hint">${esc(it.kind === 'num' ? it.template.replace(/\n/g, ' ⏎ ') : it.options.map(o => o.label).join(' / '))}</div>
+        <div class="hint">${esc(it.kind === 'num' || it.kind === 'drugs' ? it.template.replace(/\n/g, ' ⏎ ') : it.options.map(o => o.label).join(' / '))}</div>
         <div class="row" style="gap:4px"><button class="small" data-move="${k}" data-dir="-1" title="위로">▲</button><button class="small" data-move="${k}" data-dir="1" title="아래로">▼</button></div></div>`).join('');
     return `<div class="row" style="margin-bottom:10px;gap:8px;flex-wrap:wrap">
         <button class="primary" id="ntAdd">+ 항목 추가</button>
@@ -2609,7 +2679,10 @@ async function boot() {
         ${N.tpl.defaultsPending ? '<button id="ntConfirm">확인 완료 (임시 표시 없애기)</button>' : ''}
         <button class="danger" id="ntReset">기본 틀로 되돌리기</button></div>
       <p class="hint">항목을 누르면 고칠 수 있습니다. ▲▼로 순서를 바꾸면 메모 문장 순서도 바뀝니다.</p>
-      <div class="lk-list">${rows || '<div class="empty">항목이 없습니다.</div>'}</div>`;
+      <div class="lk-list">${rows || '<div class="empty">항목이 없습니다.</div>'}</div>
+      <h4 style="margin:18px 0 6px">내 약 목록 (${(N.tpl.drugs || []).length})</h4>
+      <p class="hint" style="margin-top:0">기본 목록에 없어서 직접 추가했거나, 괄호 메모를 바꾼 약입니다. 다음 검색부터 먼저 나옵니다. 약 이름과 메모만 저장되고 대상자 정보는 저장되지 않습니다.</p>
+      <div class="nt-ctl">${(N.tpl.drugs || []).map((d, k) => `<span class="lk-chip">${esc(d.name)}${d.note ? '(' + esc(d.note) + ')' : ''} <button type="button" class="link" data-mydel="${k}" title="빼기">✕</button></span>`).join('') || '<span class="hint">아직 없습니다.</span>'}</div>`;
   }
 
   /* ---------- 항목 편집 창 ---------- */
@@ -2631,7 +2704,8 @@ async function boot() {
         <label class="f">묶음<input id="neGroup" value="${esc(e.group)}" maxlength="30" list="ntGroups"><datalist id="ntGroups">${groups().map(g => `<option value="${esc(g)}">`).join('')}</datalist></label>
         <label class="f">고르는 방식<select id="neKind">${Object.keys(KINDS).map(k => `<option value="${k}"${e.kind === k ? ' selected' : ''}>${KINDS[k]}</option>`).join('')}</select></label>
       </div>
-      ${e.kind === 'num' ? `<h4 style="margin:14px 0 6px">입력 칸</h4>${fld}<button type="button" class="small" id="neFAdd">+ 칸 추가</button>
+      ${e.kind === 'drugs' ? `<label class="f" style="margin-top:10px">문장 틀 <span class="hint">({목록} 자리에 ‘약 이름(메모), …’가 들어감)</span><input id="neTpl" value="${esc(e.template)}" placeholder="예: 복용약: {목록}"></label>
+        <p class="hint">검색 목록은 의약품안전나라에서 확인한 자주 쓰는 처방약 ${(window.VHM_DRUGS || []).length}개 + 성분명 + ‘내 약 목록’입니다.</p>` : e.kind === 'num' ? `<h4 style="margin:14px 0 6px">입력 칸</h4>${fld}<button type="button" class="small" id="neFAdd">+ 칸 추가</button>
         <label class="f" style="margin-top:10px">문장 틀 <span class="hint">({1}, {2}… 자리에 입력한 값이 들어감. 줄을 바꾸면 메모도 줄이 바뀜. ‘, ’로 나눈 조각은 숫자를 안 적으면 빠짐. 고르기 칸을 안 고르면 ‘({5})’ 부분만 빠짐)</span><textarea id="neTpl" rows="3" placeholder="예: *Vital&#10;-BP: {1}/{2}mmHg, PR: {3}회/분">${esc(e.template)}</textarea></label>
         <p class="hint" style="margin:6px 0 0">정상 범위: 최소보다 낮으면 ‘낮음’, 최대보다 높으면 ‘주의’(주의 상한까지) 또는 ‘높음’. 비워 두면 판정하지 않습니다.</p>`
       : `<h4 style="margin:14px 0 6px">보기와 문장</h4><p class="hint" style="margin-top:0">문장을 비우면 그 보기를 골라도 메모에 아무것도 안 들어갑니다(예: 흡연 ‘안 함’).</p>${opt}<button type="button" class="small" id="neOAdd">+ 보기 추가</button>
@@ -2661,6 +2735,10 @@ async function boot() {
         $$(`[data-it="${it.id}"]`).forEach(x => { const on = it.kind === 'one' ? N.pick[it.id] === +x.dataset.k : (N.pick[it.id] || []).includes(+x.dataset.k); x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); });
         refreshOut(); return;
       }
+      if (t.dataset.dadd) { const d = dRes[+t.dataset.k]; if (d) addDrug(t.dataset.dadd, d); return; }
+      if (t.dataset.draw) { const q = $(`[data-dq="${t.dataset.draw}"]`).value.trim(); if (q) addDrug(t.dataset.draw, { name: q, note: '' }); return; }
+      if (t.dataset.ddel) { const a = (N.pick[t.dataset.ddel] || []).slice(); a.splice(+t.dataset.k, 1); N.pick[t.dataset.ddel] = a; render(); return; }
+      if (t.dataset.mydel != null) { N.tpl.drugs.splice(+t.dataset.mydel, 1); await saveTpl('내 약 목록에서 뺐습니다.'); render(); return; }
       if (t.dataset.pickf) {   // 숫자 항목 안의 고르기 칸 (예: 혈당 공복/식후)
         const id = t.dataset.pickf, k = +t.dataset.k, a = (N.pick[id] || []).slice(); a[k] = a[k] === t.dataset.v ? '' : t.dataset.v; N.pick[id] = a;
         $$(`[data-pickf="${id}"][data-k="${k}"]`).forEach(x => { const on = a[k] === x.dataset.v; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); });
@@ -2681,10 +2759,20 @@ async function boot() {
     });
     b.addEventListener('input', ev => {
       const t = ev.target;
+      if (t.dataset.dq) { showDrugList(t.dataset.dq, t.value); return; }
+      if (t.dataset.dname || t.dataset.dnote) { const id = t.dataset.dname || t.dataset.dnote, a = N.pick[id] || []; const x = a[+t.dataset.k]; if (x) { x[t.dataset.dname ? 'name' : 'note'] = t.value; refreshOut(); } return; }
       if (t.dataset.num) { const a = (N.pick[t.dataset.num] || []).slice(); a[+t.dataset.k] = t.value.replace(/[^\d.]/g, ''); if (a[+t.dataset.k] !== t.value) t.value = a[+t.dataset.k]; N.pick[t.dataset.num] = a; refreshOut(); }
       else if (t.id === 'ntExtra') { N.extra = t.value; refreshOut(); }
       else if (t.id === 'ntOut') { N.edited = true; $('#ntRegen').hidden = false; $('#ntCount').textContent = t.value.length + '자'; }
     });
+    b.addEventListener('keydown', ev => {
+      const t = ev.target; if (!t.dataset || !t.dataset.dq) return;
+      if (ev.key === 'Enter') { ev.preventDefault(); if (ev.isComposing) return; const q = t.value.trim(); if (!q) return; addDrug(t.dataset.dq, dRes[0] && norm(t.value) ? dRes[0] : { name: q, note: '' }); }
+      if (ev.key === 'Escape') { const l = $(`[data-dlist="${t.dataset.dq}"]`); if (l) l.hidden = true; }
+    });
+    b.addEventListener('pointerdown', ev => { if (ev.target.closest('.nt-dlist') && !ev.target.closest('a')) ev.preventDefault(); });   // 목록을 누를 때 검색칸이 먼저 닫히지 않게
+    b.addEventListener('focusout', ev => { const t = ev.target; if (t.dataset && t.dataset.dq) { const id = t.dataset.dq; setTimeout(() => { const l = $(`[data-dlist="${id}"]`), act = document.activeElement; if (l && !l.contains(act) && !(act && act.dataset && act.dataset.dq === id)) l.hidden = true; }, 200); }
+      if (t.dataset && (t.dataset.dname || t.dataset.dnote)) { const id = t.dataset.dname || t.dataset.dnote, x = (N.pick[id] || [])[+t.dataset.k]; if (x) rememberDrug(x); } });
     b.addEventListener('change', async ev => {
       if (ev.target.id === 'ntJoin') { N.tpl.joiner = ev.target.value; await saveTpl(); }
       if (ev.target.id === 'ntFlagMemo') { N.tpl.flagInMemo = ev.target.checked; await saveTpl(ev.target.checked ? '메모의 수치 옆에 ↑(높음·주의) ↓(낮음)을 붙입니다.' : '메모에는 수치만 적습니다.'); }
@@ -2703,7 +2791,8 @@ async function boot() {
       if (ev.target.dataset.f === 'type' || ev.target.dataset.rby != null || (ev.target.dataset.f === 'options')) { readEdit(); paintEdit(); return; }
       if (ev.target.id !== 'neKind') return; readEdit(); const e = N.editing;
       if (e.kind === 'num' && !e.fields.length) { e.fields = [{ label: e.label || '값', unit: '' }]; if (!e.template) e.template = (e.label || '값') + ' {1} 측정함.'; }
-      if (e.kind !== 'num' && !e.options.length) e.options = [{ label: '', text: '' }];
+      if (e.kind === 'drugs' && !e.template.includes('{목록}')) e.template = '복용약: {목록}';
+      if (e.kind !== 'num' && e.kind !== 'drugs' && !e.options.length) e.options = [{ label: '', text: '' }];
       paintEdit();
     });
     $('#ntSave').onclick = async () => {
@@ -2711,7 +2800,8 @@ async function boot() {
       e.options = e.options.filter(o => o.label.trim()); e.fields = e.fields.filter(f => f.label.trim());
       if (!e.label) return alert('항목 이름을 적어 주세요.');
       if (e.kind === 'num' && (!e.fields.length || !e.template)) return alert('입력 칸과 문장 틀을 적어 주세요.');
-      if (e.kind !== 'num' && !e.options.length) return alert('보기를 하나 이상 적어 주세요.');
+      if (e.kind === 'one' || e.kind === 'many') { if (!e.options.length) return alert('보기를 하나 이상 적어 주세요.'); }
+      if (e.kind === 'drugs' && !e.template.includes('{목록}')) return alert('문장 틀에 {목록}을 넣어 주세요.');
       const isNew = e.isNew; delete e.isNew; const it = clean({ items: [e] }).items[0]; it.id = e.id;
       const k = N.tpl.items.findIndex(i => i.id === it.id);
       if (k >= 0) N.tpl.items[k] = it; else N.tpl.items.push(it);
