@@ -2441,7 +2441,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
   const KINDS = { one: '하나 고르기', many: '여러 개 고르기', num: '숫자 입력', drugs: '약 검색' };
 
   // 기본 틀 (임시 — 사용자가 확인 후 고침)
-  const drugItem = () => ({ id: uid(), group: '복약', label: '처방약', kind: 'drugs', options: [], fields: [], template: '복용약: {목록}' });
+  const drugItem = () => ({ id: uid(), group: '복약', label: '처방약', kind: 'drugs', options: [], fields: [], template: '*복용약\n-{목록}' });
   function defaults() {
     const one = (group, label, opts) => ({ id: uid(), group, label, kind: 'one', options: opts.map(([l, t]) => ({ label: l, text: t })), fields: [], template: '' });
     const many = (group, label, opts, template) => ({ id: uid(), group, label, kind: 'many', options: opts.map(([l, t]) => ({ label: l, text: t || '' })), fields: [], template: template || '' });
@@ -2487,6 +2487,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
           o.range = rg(f.range); if (+f.rangeBy > 0) { o.rangeBy = +f.rangeBy; o.ranges = {}; Object.keys(f.ranges || {}).forEach(k => { o.ranges[String(k).slice(0, 20)] = rg(f.ranges[k]); }); }
           return o; }).filter(f => f.label),
         template: String(i.template || '').slice(0, 200) })).filter(i => i.label) };
+    out.items.forEach(i => { if (i.kind === 'drugs' && i.template === '복용약: {목록}') i.template = '*복용약\n-{목록}'; });   // 예전 기본 형식 → *복용약 묶음 (사용자 요청)
     if (!(d.schema >= 3) && !out.items.some(i => i.kind === 'drugs')) {   // 예전 틀에 '처방약' 검색 항목 추가 (손댄 내용은 그대로)
       const k = out.items.findIndex(i => i.label === '복약'); out.items.splice(k >= 0 ? k + 1 : out.items.length, 0, drugItem());
     }
@@ -2704,7 +2705,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
         <label class="f">묶음<input id="neGroup" value="${esc(e.group)}" maxlength="30" list="ntGroups"><datalist id="ntGroups">${groups().map(g => `<option value="${esc(g)}">`).join('')}</datalist></label>
         <label class="f">고르는 방식<select id="neKind">${Object.keys(KINDS).map(k => `<option value="${k}"${e.kind === k ? ' selected' : ''}>${KINDS[k]}</option>`).join('')}</select></label>
       </div>
-      ${e.kind === 'drugs' ? `<label class="f" style="margin-top:10px">문장 틀 <span class="hint">({목록} 자리에 ‘약 이름(메모), …’가 들어감)</span><input id="neTpl" value="${esc(e.template)}" placeholder="예: 복용약: {목록}"></label>
+      ${e.kind === 'drugs' ? `<label class="f" style="margin-top:10px">문장 틀 <span class="hint">({목록} 자리에 ‘약 이름(메모), …’가 들어감)</span><textarea id="neTpl" rows="2" placeholder="예: *복용약&#10;-{목록}">${esc(e.template)}</textarea></label>
         <p class="hint">검색 목록은 의약품안전나라에서 확인한 자주 쓰는 처방약 ${(window.VHM_DRUGS || []).length}개 + 성분명 + ‘내 약 목록’입니다.</p>` : e.kind === 'num' ? `<h4 style="margin:14px 0 6px">입력 칸</h4>${fld}<button type="button" class="small" id="neFAdd">+ 칸 추가</button>
         <label class="f" style="margin-top:10px">문장 틀 <span class="hint">({1}, {2}… 자리에 입력한 값이 들어감. 줄을 바꾸면 메모도 줄이 바뀜. ‘, ’로 나눈 조각은 숫자를 안 적으면 빠짐. 고르기 칸을 안 고르면 ‘({5})’ 부분만 빠짐)</span><textarea id="neTpl" rows="3" placeholder="예: *Vital&#10;-BP: {1}/{2}mmHg, PR: {3}회/분">${esc(e.template)}</textarea></label>
         <p class="hint" style="margin:6px 0 0">정상 범위: 최소보다 낮으면 ‘낮음’, 최대보다 높으면 ‘주의’(주의 상한까지) 또는 ‘높음’. 비워 두면 판정하지 않습니다.</p>`
@@ -2791,7 +2792,7 @@ window.VHM_DRUG_INGS = [["암로디핀", "고혈압약"], ["로사르탄", "고�
       if (ev.target.dataset.f === 'type' || ev.target.dataset.rby != null || (ev.target.dataset.f === 'options')) { readEdit(); paintEdit(); return; }
       if (ev.target.id !== 'neKind') return; readEdit(); const e = N.editing;
       if (e.kind === 'num' && !e.fields.length) { e.fields = [{ label: e.label || '값', unit: '' }]; if (!e.template) e.template = (e.label || '값') + ' {1} 측정함.'; }
-      if (e.kind === 'drugs' && !e.template.includes('{목록}')) e.template = '복용약: {목록}';
+      if (e.kind === 'drugs' && !e.template.includes('{목록}')) e.template = '*복용약\n-{목록}';
       if (e.kind !== 'num' && e.kind !== 'drugs' && !e.options.length) e.options = [{ label: '', text: '' }];
       paintEdit();
     });
