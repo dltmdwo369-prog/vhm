@@ -2977,7 +2977,7 @@ window.VHM_SUPPS = [
     { label: '오른손', unit: 'kg', norm: 'gripR' }, { label: '왼손', unit: 'kg', norm: 'gripL' },
     { label: '성별', type: 'pick', options: '남,여' }, { label: '나이', unit: '세' }] });
   // 서두: 입력칸 문장 + 고른 보기 → '신규등록을 위해 방문함.'
-  const leadItem = () => ({ id: uid(), group: '서두', label: '서두', kind: 'lead', options: [{ label: '방문함', text: '방문함.' }, { label: '내소함', text: '내소함.' }, { label: '동행방문함', text: '동행방문함.' }], fields: [], template: '' });
+  const leadItem = () => ({ id: uid(), group: '서두', label: '서두', kind: 'lead', options: [{ label: '방문함', text: '방문함.' }, { label: '내소함', text: '내소함.' }, { label: '동행방문함', text: '동행방문함.' }], fields: [], template: '*' });
   // 당화혈색소: 대한당뇨병학회 진단기준 — 정상 <5.7%, 당뇨병 전단계 5.7~6.4%(주의), 당뇨병 ≥6.5%(높음)
   const a1cItem = () => ({ id: uid(), group: '측정', label: '당화혈색소', kind: 'num', options: [], template: '-HbA1c: {1}%', fields: [{ label: 'HbA1c', unit: '%', range: { min: '', max: '5.6', warn: '6.4' } }] });
   const DISEASES = ['고혈압', '당뇨병', '이상지질혈증', '관절염', '척추질환', '골다공증', '뇌졸중', '심장질환', '치매', '암', '만성폐질환', '만성콩팥병', '갑상선질환', '전립선비대증', '우울증'];
@@ -2992,7 +2992,7 @@ window.VHM_SUPPS = [
     const num = (group, label, fields, template) => ({ id: uid(), group, label, kind: 'num', options: [], fields: fields.map(f => Array.isArray(f) ? { label: f[0], unit: f[1] } : f), template });
     // 정상 범위: 대한고혈압학회 2022 진료지침(정상 <120/80, 주의·전단계 ~139/89, 고혈압 ≥140/90), 대한당뇨병학회 진단기준(공복 100~125·식후2시간 140~199 = 주의, 그 이상 = 높음, 70 미만 = 저혈당), 맥박 성인 60~100회/분
     const R = (min, max, warn) => ({ min: min == null ? '' : String(min), max: max == null ? '' : String(max), warn: warn == null ? '' : String(warn) });
-    return { schema: 9, updatedAt: null, defaultsPending: true, joiner: ' ', flagInMemo: false, drugs: [], supps: [], items: [
+    return { schema: 10, updatedAt: null, defaultsPending: true, joiner: ' ', flagInMemo: false, drugs: [], supps: [], items: [
       leadItem(),
       num('측정', 'Vital', [
         { label: '수축기', unit: 'mmHg', range: R(90, 119, 139) },
@@ -3027,7 +3027,7 @@ window.VHM_SUPPS = [
     const base = defaults(); if (!d || !Array.isArray(d.items)) return base;
     if (d.defaultsPending && !(d.schema >= 2)) return base;   // 아직 손대지 않은 예전 임시 틀은 새 기본 틀로
     const rg = r => ({ min: String((r && r.min) ?? '').slice(0, 8), max: String((r && r.max) ?? '').slice(0, 8), warn: String((r && r.warn) ?? '').slice(0, 8) });
-    const out = { schema: 9, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ', flagInMemo: !!d.flagInMemo,
+    const out = { schema: 10, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ', flagInMemo: !!d.flagInMemo,
       drugs: (Array.isArray(d.drugs) ? d.drugs : []).map(x => ({ name: String(x.name || '').slice(0, 60), note: String(x.note || '').slice(0, 40) })).filter(x => x.name).slice(0, 500),
       supps: (Array.isArray(d.supps) ? d.supps : []).map(x => ({ name: String(x.name || '').slice(0, 60), note: String(x.note || '').slice(0, 40) })).filter(x => x.name).slice(0, 500),
       items: d.items.map(i => ({ id: i.id || uid(), group: String(i.group || '기타').slice(0, 30), label: String(i.label || '').slice(0, 40), kind: KINDS[i.kind] ? i.kind : 'one', ...(i.kind === 'drugs' && i.src === 'supp' ? { src: 'supp' } : {}),
@@ -3043,6 +3043,7 @@ window.VHM_SUPPS = [
     if (!(d.schema >= 3) && !out.items.some(i => i.kind === 'drugs')) {   // 예전 틀에 '처방약' 검색 항목 추가 (손댄 내용은 그대로)
       const k = out.items.findIndex(i => i.label === '복약'); out.items.splice(k >= 0 ? k + 1 : out.items.length, 0, drugItem());
     }
+    if (!(d.schema >= 10)) out.items.forEach(i => { if (i.kind === 'lead' && !i.template) i.template = '*'; });   // 사용자 요청(2026-11-09): 서두 앞에 *
     if (!(d.schema >= 7) && !out.items.some(i => i.kind === 'lead')) out.items.unshift(leadItem());   // 사용자 요청(2026-11-09): 맨 위 '서두'
     if (!(d.schema >= 6) && !out.items.some(i => i.label === '만성질환')) {   // 사용자 요청(2026-11-09): 건강 상태 맨 앞에 '만성질환' → *주질환
       const k = out.items.findIndex(i => i.group === '건강 상태'); out.items.splice(k >= 0 ? k : out.items.length, 0, diseaseItem());
@@ -3092,7 +3093,7 @@ window.VHM_SUPPS = [
   function sentenceOf(it) {
     const p = N.pick[it.id];
     if (it.kind === 'drugs') { const a = (p || []).filter(x => x.name.trim()); if (!a.length) return ''; const list = a.map(x => x.name.trim() + (x.note.trim() ? '(' + x.note.trim() + ')' : '')).join(', '); return (it.template || '{목록}').includes('{목록}') ? it.template.replace('{목록}', list) : list; }
-    if (it.kind === 'lead') { const t = String(N.lead[it.id] || '').trim(), o = p != null ? it.options[p] : null; return [t, o ? o.text.trim() : ''].filter(Boolean).join(' '); }
+    if (it.kind === 'lead') { const t = String(N.lead[it.id] || '').trim(), o = p != null ? it.options[p] : null; const body = [t, o ? o.text.trim() : ''].filter(Boolean).join(' '); return body ? (it.template || '') + body : ''; }
     if (it.kind === 'one') { if (p == null) return ''; const o = it.options[p]; return o ? o.text.trim() : ''; }
     if (it.kind === 'many') {
       const sel = (p || []).map(k => it.options[k]).filter(Boolean); if (!sel.length) return '';
@@ -3177,11 +3178,50 @@ window.VHM_SUPPS = [
       if (!sm && el.textContent) el.className = 'nt-flag warn';
     });
   }
-  function refreshOut(force) {
+  // 직접 고친 메모 + 버튼으로 바뀐 부분 합치기: 예전 자동 문장(g0) → 새 자동 문장(g1)에서 바뀐 곳만 찾아, 사용자가 고친 글(u)에 같은 자리로 반영
+  function merge(g0, u, g1) {
+    if (u === g0) return g1;
+    let p = 0; const m = Math.min(g0.length, g1.length); while (p < m && g0[p] === g1[p]) p++;
+    let q = 0; while (q < m - p && g0[g0.length - 1 - q] === g1[g1.length - 1 - q]) q++;
+    const oldMid = g0.slice(p, g0.length - q), newMid = g1.slice(p, g1.length - q);
+    const cL = n => g0.slice(Math.max(0, p - n), p), cR = n => g0.slice(g0.length - q, g0.length - q + n);
+    const tidy = t => t.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/\n{3,}/g, '\n\n');
+    // 1) 바뀌기 전 글이 사용자 글에 있으면 그 자리 (앞뒤 문맥이 맞는 곳 우선)
+    for (const [om, nm] of [[oldMid, newMid], [oldMid.trim(), newMid.trim()]]) {
+      if (!om) continue;
+      let best = -1, bestScore = -1;
+      for (let at = u.indexOf(om); at >= 0; at = u.indexOf(om, at + 1)) {
+        const before = u.slice(0, at), after = u.slice(at + om.length);
+        const sc = (cL(24) && before.endsWith(cL(24)) ? 2 : cL(8) && before.endsWith(cL(8).trim()) ? 1 : 0) + (cR(24) && after.startsWith(cR(24)) ? 2 : cR(8) && after.startsWith(cR(8).trim()) ? 1 : 0);
+        if (sc > bestScore) { bestScore = sc; best = at; }
+      }
+      if (best >= 0 && (bestScore > 0 || om.trim().length >= 6)) return tidy(u.slice(0, best) + nm + u.slice(best + om.length));
+    }
+    // 2) 앞뒤 문맥으로 자리를 찾음
+    for (const n of [24, 8]) {
+      const L = cL(n).trim() ? cL(n) : '', R = cR(n).trim() ? cR(n) : '';
+      const li = L ? u.lastIndexOf(L) : -1, ri = R ? u.indexOf(R, li >= 0 ? li + L.length : 0) : -1;
+      if (!oldMid) {
+        if (li >= 0) return tidy(u.slice(0, li + L.length) + newMid + u.slice(li + L.length));
+        if (ri >= 0) return tidy(u.slice(0, ri) + newMid + u.slice(ri));
+      } else if (li >= 0 && ri >= 0) return tidy(u.slice(0, li + L.length) + newMid + u.slice(ri));
+    }
+    return { fail: true, add: newMid };   // 자리를 못 찾음
+  }
+  function refreshOut() {
     paintFlags();
     const ta = $('#ntOut'); if (!ta) return;
-    if (!N.edited || force) { ta.value = compose(); N.edited = false; }
-    $('#ntRegen').hidden = !N.edited;
+    const g1 = compose();
+    if (!N.edited || N.gen == null) ta.value = g1;
+    else if (g1 !== N.gen) {
+      const m = merge(N.gen, ta.value, g1);
+      if (m && m.fail) {
+        if (m.add.trim()) { ta.value = ta.value.replace(/\s*$/, '') + '\n' + m.add.trim(); toast('직접 고친 부분과 겹쳐서 새 내용을 맨 아래에 붙였습니다.', 5000); }
+        else toast('직접 고친 부분이라 그 문장은 자동으로 지우지 못했습니다. 메모에서 직접 지워 주세요.', 5000);
+      } else ta.value = m;
+      if (ta.value === g1) N.edited = false;
+    }
+    N.gen = g1; N.out = ta.value;
     $('#ntCount').textContent = ta.value.length + '자';
   }
 
@@ -3268,12 +3308,11 @@ window.VHM_SUPPS = [
       </div></div>
       <div class="card nt-outcard"><div class="card-body">
         <div class="row" style="justify-content:space-between;margin-bottom:6px"><b>만들어진 메모</b><span class="hint" id="ntCount"></span></div>
-        <textarea id="ntOut" rows="7" aria-label="만들어진 메모 (직접 고칠 수 있음)"></textarea>
+        <textarea id="ntOut" rows="7" aria-label="만들어진 메모 (직접 고칠 수 있음)">${esc(N.out || '')}</textarea>
         <div class="row" style="margin-top:8px;gap:8px">
           <button class="primary" id="ntCopy" style="flex:1">복사하기</button>
           <button id="ntClear">다음 대상자 (모두 지우기)</button>
         </div>
-        <button class="link" id="ntRegen" hidden style="margin-top:6px">직접 고친 내용을 버리고 체크한 내용으로 다시 만들기</button>
         <p class="hint" style="margin:8px 0 0">체크한 내용과 문장은 <b>저장하지도, 어디로 보내지도 않습니다.</b> 복사한 문장은 기관 전용앱(전산시스템)의 메모란에만 붙여 넣으세요.</p>
       </div></div></div>`;
   }
@@ -3314,6 +3353,7 @@ window.VHM_SUPPS = [
         <label class="f">묶음<input id="neGroup" value="${esc(e.group)}" maxlength="30" list="ntGroups"><datalist id="ntGroups">${groups().map(g => `<option value="${esc(g)}">`).join('')}</datalist></label>
         <label class="f">고르는 방식<select id="neKind">${Object.keys(KINDS).map(k => `<option value="${k}"${e.kind === k ? ' selected' : ''}>${KINDS[k]}</option>`).join('')}</select></label>
       </div>
+      ${e.kind === 'lead' ? `<label class="f" style="margin-top:10px">앞에 붙일 표시 <span class="hint">(예: * → *신규등록을 위해 방문함.)</span><input id="neTpl" value="${esc(e.template)}" maxlength="10"></label>` : ''}
       ${e.kind === 'drugs' ? `<label class="f" style="margin-top:10px">문장 틀 <span class="hint">({목록} 자리에 ‘약 이름(메모), …’가 들어감)</span><textarea id="neTpl" rows="2" placeholder="예: *복용약&#10;-{목록}">${esc(e.template)}</textarea></label>
         <p class="hint">${isSupp(e) ? `검색 목록은 자주 드시는 영양제 ${(window.VHM_SUPPS || []).length}종(괄호는 식약처 건강기능식품 기능성을 줄인 참고용) + ‘내 영양제 목록’입니다.` : `검색 목록은 의약품안전나라에서 확인한 자주 쓰는 처방약 ${(window.VHM_DRUGS || []).length}개 + 성분명 + ‘내 약 목록’입니다.`}</p>` : e.kind === 'num' ? `<h4 style="margin:14px 0 6px">입력 칸</h4>${fld}<button type="button" class="small" id="neFAdd">+ 칸 추가</button>
         <label class="f" style="margin-top:10px">문장 틀 <span class="hint">({1}, {2}… 자리에 입력한 값이 들어감. 줄을 바꾸면 메모도 줄이 바뀜. ‘, ’로 나눈 조각은 숫자를 안 적으면 빠짐. 고르기 칸을 안 고르면 ‘({5})’ 부분만 빠짐)</span><textarea id="neTpl" rows="3" placeholder="예: *Vital&#10;-BP: {1}/{2}mmHg, PR: {3}회/분">${esc(e.template)}</textarea></label>
@@ -3359,8 +3399,7 @@ window.VHM_SUPPS = [
         try { await navigator.clipboard.writeText(txt); } catch (e) { const ta = $('#ntOut'); ta.focus(); ta.select(); document.execCommand('copy'); }
         toast('복사했습니다. 전용앱 메모란에 붙여 넣으세요.'); return;
       }
-      if (t.id === 'ntClear') { N.pick = {}; N.lead = {}; N.extra = ''; N.edited = false; render(); toast('모두 지웠습니다.'); return; }
-      if (t.id === 'ntRegen') { refreshOut(true); return; }
+      if (t.id === 'ntClear') { N.pick = {}; N.lead = {}; N.extra = ''; N.edited = false; N.gen = null; N.out = ''; render(); toast('모두 지웠습니다.'); return; }
       if (t.id === 'ntAdd') { openEdit(null); return; }
       if (t.id === 'ntConfirm') { N.tpl.defaultsPending = false; await saveTpl('확인 완료로 표시했습니다.'); render(); return; }
       if (t.id === 'ntReset') { if (!confirm('지금 항목을 모두 지우고 기본 틀로 되돌릴까요?')) return; N.tpl = defaults(); N.pick = {}; await saveTpl('기본 틀로 되돌렸습니다.'); render(); return; }
@@ -3374,7 +3413,7 @@ window.VHM_SUPPS = [
       if (t.dataset.dname || t.dataset.dnote) { const id = t.dataset.dname || t.dataset.dnote, a = N.pick[id] || []; const x = a[+t.dataset.k]; if (x) { x[t.dataset.dname ? 'name' : 'note'] = t.value; refreshOut(); } return; }
       if (t.dataset.num) { const a = (N.pick[t.dataset.num] || []).slice(); a[+t.dataset.k] = t.value.replace(/[^\d.]/g, ''); if (a[+t.dataset.k] !== t.value) t.value = a[+t.dataset.k]; N.pick[t.dataset.num] = a; refreshOut(); }
       else if (t.id === 'ntExtra') { N.extra = t.value; refreshOut(); }
-      else if (t.id === 'ntOut') { N.edited = true; $('#ntRegen').hidden = false; $('#ntCount').textContent = t.value.length + '자'; }
+      else if (t.id === 'ntOut') { N.out = t.value; N.edited = t.value !== N.gen; $('#ntCount').textContent = t.value.length + '자'; }
     });
     b.addEventListener('keydown', ev => {
       const t = ev.target; if (!t.dataset || !t.dataset.dq) return;
@@ -3413,7 +3452,7 @@ window.VHM_SUPPS = [
       if (e.kind === 'num' && (!e.fields.length || !e.template)) return alert('입력 칸과 문장 틀을 적어 주세요.');
       if (e.kind === 'one' || e.kind === 'many' || e.kind === 'lead') { if (!e.options.length) return alert('보기를 하나 이상 적어 주세요.'); }
       if (e.kind === 'drugs' && !e.template.includes('{목록}')) return alert('문장 틀에 {목록}을 넣어 주세요.');
-      const isNew = e.isNew; delete e.isNew; const it = clean({ schema: 9, items: [e] }).items[0]; it.id = e.id;
+      const isNew = e.isNew; delete e.isNew; const it = clean({ schema: 10, items: [e] }).items[0]; it.id = e.id;
       const k = N.tpl.items.findIndex(i => i.id === it.id);
       if (k >= 0) N.tpl.items[k] = it; else N.tpl.items.push(it);
       delete N.pick[it.id];
