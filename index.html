@@ -124,6 +124,8 @@ dialog{border:0;border-radius:14px;padding:0;box-shadow:0 20px 60px rgba(10,20,4
 .nt-flag{font-size:12px;font-weight:700;border-radius:6px;padding:2px 6px;min-width:0}
 .nt-flag:empty{display:none}
 .nt-flag.ok{color:#1e6b3a;background:#e6f4ea}.nt-flag.warn{color:#8a5a00;background:#fff3d6}.nt-flag.high{color:#b3261e;background:#fde7e5}.nt-flag.low{color:#1d4ed8;background:#e3ecff}
+.nt-chip.on.done{background:#e6f4ea;border-color:#9fd0ad;color:#1e6b3a}
+.nt-chip small{font-weight:600;font-size:12px}
 .nt-chip.sm{padding:4px 10px;min-height:30px;font-size:13px}
 .nt-ctl .nt-num{margin-right:6px}
 .nt-fbox{border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px;background:#fafbfd}
@@ -1965,7 +1967,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
   function busyReason() {
     if (document.querySelector('dialog[open]')) return '열려 있는 창';
     const N = window.NOTES && NOTES._state;
-    const has = x => x != null && (typeof x === 'object' ? String(x.name || '').trim() !== '' : String(x).trim() !== '');
+    const has = x => x != null && (typeof x === 'object' ? ('name' in x ? String(x.name || '').trim() !== '' : Object.keys(x).length > 0) : String(x).trim() !== '');
     if (N && (N.edited || (N.extra || '').trim() || Object.values(N.pick || {}).some(v => Array.isArray(v) ? v.some(has) : has(v)) || Object.values(N.lead || {}).some(v => String(v || '').trim()))) return '상담 메모';
     const L = window.LINKS && LINKS._state; if (L && L.checks && L.checks.size) return '연계 안내 체크';
     const a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.value) return '입력 중';
@@ -3033,7 +3035,8 @@ window.VHM_SUPPS = [
   'use strict';
   const LS = 'vhm-notes-tpl';
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3);
-  const KINDS = { one: '하나 고르기', many: '여러 개 고르기', num: '숫자 입력', drugs: '약 검색', lead: '입력칸 + 하나 고르기' };
+  const KINDS = { one: '하나 고르기', many: '여러 개 고르기', num: '숫자 입력', drugs: '약 검색', lead: '입력칸 + 하나 고르기', acute: '여러 개 + 치료중·완치' };
+  const ACUTE_ST = ['치료중', '완치'];   // 누를 때마다: 치료중 → 완치 → 해제
 
   // 기본 틀 (임시 — 사용자가 확인 후 고침)
   /* 악력 참고치: 한국인 국민건강영양조사 2014–2015 (PLoS ONE 2018, PMC6101358) 표 3 — 오른손·왼손 평균과 하위 20%(lowest quintile), kg
@@ -3050,6 +3053,9 @@ window.VHM_SUPPS = [
   // 당화혈색소: 대한당뇨병학회 진단기준 — 정상 <5.7%, 당뇨병 전단계 5.7~6.4%(주의), 당뇨병 ≥6.5%(높음)
   const a1cItem = () => ({ id: uid(), group: '측정', label: '당화혈색소', kind: 'num', options: [], template: '-HbA1c: {1}%', fields: [{ label: 'HbA1c', unit: '%', range: { min: '', max: '5.6', warn: '6.4' } }] });
   const DISEASES = ['고혈압', '당뇨병', '이상지질혈증', '관절염', '척추질환', '골다공증', '뇌졸중', '심장질환', '치매', '암', '만성폐질환', '만성콩팥병', '갑상선질환', '전립선비대증', '우울증'];
+  // 급성질환: '*주질환' 줄에 만성질환과 함께 '폐렴(치료중), 대상포진(완치)'
+  const ACUTES = ['감기', '독감', '코로나19', '폐렴', '기관지염', '요로감염', '장염', '대상포진', '골절', '염좌', '피부질환', '결막염'];
+  const acuteItem = () => ({ id: uid(), group: '건강 상태', label: '급성질환', kind: 'acute', options: ACUTES.map(d => ({ label: d, text: '' })), fields: [], template: '*주질환\n-{선택}' });
   const diseaseItem = () => ({ id: uid(), group: '건강 상태', label: '만성질환', kind: 'many', options: DISEASES.map(d => ({ label: d, text: '' })), fields: [], template: '*주질환\n-{선택}' });
   const stopItem = () => ({ id: uid(), group: '복약', label: '투약 중단', kind: 'one', options: [{ label: '약 부작용', text: '약 부작용으로 인해 투약 중단했다고 함.' }, { label: '증상 호전', text: '증상 호전으로 인해 투약 중단했다고 함.' }], fields: [], template: '' });
   const drugItem = () => ({ id: uid(), group: '복약', label: '처방약', kind: 'drugs', options: [], fields: [], template: '*복용약\n-{목록}' });
@@ -3061,7 +3067,7 @@ window.VHM_SUPPS = [
     const num = (group, label, fields, template) => ({ id: uid(), group, label, kind: 'num', options: [], fields: fields.map(f => Array.isArray(f) ? { label: f[0], unit: f[1] } : f), template });
     // 정상 범위: 대한고혈압학회 2022 진료지침(정상 <120/80, 주의·전단계 ~139/89, 고혈압 ≥140/90), 대한당뇨병학회 진단기준(공복 100~125·식후2시간 140~199 = 주의, 그 이상 = 높음, 70 미만 = 저혈당), 맥박 성인 60~100회/분
     const R = (min, max, warn) => ({ min: min == null ? '' : String(min), max: max == null ? '' : String(max), warn: warn == null ? '' : String(warn) });
-    return { schema: 10, updatedAt: null, defaultsPending: true, joiner: ' ', flagInMemo: false, drugs: [], supps: [], items: [
+    return { schema: 11, updatedAt: null, defaultsPending: true, joiner: ' ', flagInMemo: false, dash: true, drugs: [], supps: [], items: [
       leadItem(),
       num('측정', 'Vital', [
         { label: '수축기', unit: 'mmHg', range: R(90, 119, 139) },
@@ -3074,6 +3080,7 @@ window.VHM_SUPPS = [
       gripItem(),
       num('측정', '체중', [['체중', 'kg']], '체중 {1}kg 측정함.'),
       diseaseItem(),
+      acuteItem(),
       one('건강 상태', '전반적 컨디션', [['양호', '전반적인 컨디션 양호하다고 함.'], ['보통', '컨디션 보통이라고 함.'], ['저하', '최근 컨디션 저하 호소함.']]),
       one('건강 상태', '통증', [['없음', '특별한 통증 호소 없음.'], ['있음', '통증 호소하여 부위·정도 확인함.']]),
       one('건강 상태', '수면', [['양호', '수면 양호하다고 함.'], ['불량', '잠들기 어렵거나 자주 깬다고 함.']]),
@@ -3096,7 +3103,7 @@ window.VHM_SUPPS = [
     const base = defaults(); if (!d || !Array.isArray(d.items)) return base;
     if (d.defaultsPending && !(d.schema >= 2)) return base;   // 아직 손대지 않은 예전 임시 틀은 새 기본 틀로
     const rg = r => ({ min: String((r && r.min) ?? '').slice(0, 8), max: String((r && r.max) ?? '').slice(0, 8), warn: String((r && r.warn) ?? '').slice(0, 8) });
-    const out = { schema: 10, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ', flagInMemo: !!d.flagInMemo,
+    const out = { schema: 11, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ', flagInMemo: !!d.flagInMemo, dash: d.schema >= 11 ? d.dash !== false : true,
       drugs: (Array.isArray(d.drugs) ? d.drugs : []).map(x => ({ name: String(x.name || '').slice(0, 60), note: String(x.note || '').slice(0, 40) })).filter(x => x.name).slice(0, 500),
       supps: (Array.isArray(d.supps) ? d.supps : []).map(x => ({ name: String(x.name || '').slice(0, 60), note: String(x.note || '').slice(0, 40) })).filter(x => x.name).slice(0, 500),
       items: d.items.map(i => ({ id: i.id || uid(), group: String(i.group || '기타').slice(0, 30), label: String(i.label || '').slice(0, 40), kind: KINDS[i.kind] ? i.kind : 'one', ...(i.kind === 'drugs' && i.src === 'supp' ? { src: 'supp' } : {}),
@@ -3128,6 +3135,9 @@ window.VHM_SUPPS = [
     }
     if (!(d.schema >= 8) && !out.items.some(i => i.label === '당화혈색소')) {   // 사용자 요청(2026-11-09): Vital 다음에 당화혈색소
       const k = out.items.findIndex(i => i.label === 'Vital'); out.items.splice(k >= 0 ? k + 1 : out.items.length, 0, a1cItem());
+    }
+    if (!(d.schema >= 11) && !out.items.some(i => i.kind === 'acute')) {   // 사용자 요청(2026-11-09): 만성질환 다음 '급성질환'
+      const k = out.items.findIndex(i => i.label === '만성질환'); out.items.splice(k >= 0 ? k + 1 : out.items.length, 0, acuteItem());
     }
     return out;
   }
@@ -3164,9 +3174,12 @@ window.VHM_SUPPS = [
     if (it.kind === 'drugs') { const a = (p || []).filter(x => x.name.trim()); if (!a.length) return ''; const list = a.map(x => x.name.trim() + (x.note.trim() ? '(' + x.note.trim() + ')' : '')).join(', '); return (it.template || '{목록}').includes('{목록}') ? it.template.replace('{목록}', list) : list; }
     if (it.kind === 'lead') { const t = String(N.lead[it.id] || '').trim(), o = p != null ? it.options[p] : null; const body = [t, o ? o.text.trim() : ''].filter(Boolean).join(' '); return body ? (it.template || '') + body : ''; }
     if (it.kind === 'one') { if (p == null) return ''; const o = it.options[p]; return o ? o.text.trim() : ''; }
+    if (it.kind === 'acute') { if (acuteHost()) return ''; const a = acuteList(it); return a.length ? (it.template.includes('{선택}') ? it.template.replace('{선택}', a.join(', ')) : a.join(', ')) : ''; }
     if (it.kind === 'many') {
-      const sel = (p || []).map(k => it.options[k]).filter(Boolean); if (!sel.length) return '';
-      if (it.template.includes('{선택}')) return it.template.replace('{선택}', sel.map(o => o.label).join(', ')).trim();
+      const sel = (p || []).map(k => it.options[k]).filter(Boolean);
+      const extra = acuteHost() === it ? N.tpl.items.filter(i => i.kind === 'acute').flatMap(acuteList) : [];
+      if (!sel.length && !extra.length) return '';
+      if (it.template.includes('{선택}')) return it.template.replace('{선택}', sel.map(o => o.label).concat(extra).join(', ')).trim();
       return sel.map(o => (o.text || o.label).trim()).filter(Boolean).join(N.tpl.joiner);
     }
     return numText(it, p || []);
@@ -3224,8 +3237,12 @@ window.VHM_SUPPS = [
     }).filter(Boolean);
     return any ? out.map(o => o.text).join('\n').trim() : '';
   }
+  // 급성질환은 '*주질환'(만성질환) 줄에 붙음
+  function acuteHost() { return N.tpl.items.find(i => i.kind === 'many' && /주질환/.test(i.template) && i.template.includes('{선택}')) || null; }
+  function acuteList(it) { const st = N.pick[it.id] || {}; return it.options.map((o, k) => st[k] ? `${o.label}(${st[k]})` : '').filter(Boolean); }
   function compose() {
-    const parts = N.tpl.items.map(sentenceOf).filter(Boolean);
+    // 하나·여러 개 고르기 문장 앞에 '-' (설정에서 끌 수 있음). '*'·'-'로 시작하거나 여러 줄이면 그대로
+    const parts = N.tpl.items.map(it => { const t = sentenceOf(it); if (!t) return ''; return N.tpl.dash && (it.kind === 'one' || it.kind === 'many' || it.kind === 'num') && !/^[-*•·]/.test(t) && !t.includes('\n') ? '-' + t : t; }).filter(Boolean);
     if (N.extra.trim()) parts.push(N.extra.trim());
     // 여러 줄짜리(예: *Vital 묶음)는 앞뒤를 줄바꿈으로 구분
     const block = p => p.includes('\n') || /^[-*•·]/.test(p);   // 여러 줄이거나 '-'·'*'로 시작하면 따로 한 줄
@@ -3365,6 +3382,8 @@ window.VHM_SUPPS = [
       else if (it.kind === 'drugs') { const a = N.pick[it.id] || [];
         ctl = `<div class="nt-drugs">${a.map((x, k) => `<div class="nt-drug"><input data-dname="${it.id}" data-k="${k}" value="${esc(x.name)}" aria-label="약 이름">(<input data-dnote="${it.id}" data-k="${k}" value="${esc(x.note)}" placeholder="무슨 약" aria-label="무슨 약인지 메모">)<button type="button" class="small" data-ddel="${it.id}" data-k="${k}" title="빼기">✕</button></div>`).join('')}
           <div class="nt-dsearch"><input data-dq="${it.id}" placeholder="${isSupp(it) ? '영양제 이름·기능·초성으로 검색 (예: 루테인, 눈, ㄹㅌㅇ)' : '약 이름·성분·초성으로 검색 (예: 노바스크, 암로디핀, ㄴㅂㅅㅋ)'}" autocomplete="off"><div class="nt-dlist" data-dlist="${it.id}" hidden></div></div></div>`; }
+      else if (it.kind === 'acute') { const st = N.pick[it.id] || {};
+        ctl = it.options.map((o, k) => `<button type="button" class="nt-chip${st[k] ? ' on' + (st[k] === '완치' ? ' done' : '') : ''}" data-it="${it.id}" data-k="${k}" aria-pressed="${!!st[k]}">${esc(o.label)}${st[k] ? `<small> · ${st[k]}</small>` : ''}</button>`).join('') + '<span class="hint" style="flex-basis:100%">한 번 누르면 치료중, 두 번 누르면 완치, 세 번 누르면 해제</span>'; }
       else ctl = it.options.map((o, k) => { const on = it.kind === 'one' ? N.pick[it.id] === k : (N.pick[it.id] || []).includes(k);
         return `<button type="button" class="nt-chip${on ? ' on' : ''}" data-it="${it.id}" data-k="${k}" aria-pressed="${on}">${esc(o.label)}</button>`; }).join('');
       return `<div class="nt-row"><div class="nt-label">${esc(it.label)}${it.kind === 'many' ? ' <span class="hint">(여러 개)</span>' : ''}</div><div class="nt-ctl">${ctl}</div></div>`;
@@ -3393,6 +3412,7 @@ window.VHM_SUPPS = [
     return `<div class="row" style="margin-bottom:10px;gap:8px;flex-wrap:wrap">
         <button class="primary" id="ntAdd">+ 항목 추가</button>
         <label class="row" style="gap:6px">문장 사이<select id="ntJoin"><option value=" "${N.tpl.joiner === ' ' ? ' selected' : ''}>띄어쓰기</option><option value="\n"${N.tpl.joiner === '\n' ? ' selected' : ''}>줄바꿈</option></select></label>
+        <label class="row" style="gap:6px"><input type="checkbox" id="ntDash"${N.tpl.dash ? ' checked' : ''}>문장 앞에 - 붙이기</label>
         <label class="row" style="gap:6px"><input type="checkbox" id="ntFlagMemo"${N.tpl.flagInMemo ? ' checked' : ''}>메모에도 ↑↓ 표시</label>
         ${N.tpl.defaultsPending ? '<button id="ntConfirm">확인 완료 (임시 표시 없애기)</button>' : ''}
         <button class="danger" id="ntReset">기본 틀로 되돌리기</button></div>
@@ -3449,6 +3469,12 @@ window.VHM_SUPPS = [
       if (t.dataset.ntview) { N.view = t.dataset.ntview; render(); return; }
       if (t.dataset.it) {   // 보기 고르기 (다시 누르면 해제)
         const it = N.tpl.items.find(i => i.id === t.dataset.it), k = +t.dataset.k;
+        if (it.kind === 'acute') {
+          const st = Object.assign({}, N.pick[it.id] || {}); const nx = !st[k] ? ACUTE_ST[0] : st[k] === ACUTE_ST[0] ? ACUTE_ST[1] : null;
+          if (nx) st[k] = nx; else delete st[k]; N.pick[it.id] = st;
+          t.classList.toggle('on', !!nx); t.classList.toggle('done', nx === '완치'); t.setAttribute('aria-pressed', !!nx);
+          t.innerHTML = esc(it.options[k].label) + (nx ? `<small> · ${nx}</small>` : ''); refreshOut(); return;
+        }
         if (it.kind === 'one' || it.kind === 'lead') N.pick[it.id] = N.pick[it.id] === k ? undefined : k;
         else { const a = new Set(N.pick[it.id] || []); a.has(k) ? a.delete(k) : a.add(k); N.pick[it.id] = [...a].sort((x, y) => x - y); }
         $$(`[data-it="${it.id}"]`).forEach(x => { const on = it.kind === 'one' || it.kind === 'lead' ? N.pick[it.id] === +x.dataset.k : (N.pick[it.id] || []).includes(+x.dataset.k); x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); });
@@ -3494,6 +3520,7 @@ window.VHM_SUPPS = [
       if (t.dataset && (t.dataset.dname || t.dataset.dnote)) { const id = t.dataset.dname || t.dataset.dnote, x = (N.pick[id] || [])[+t.dataset.k]; if (x) rememberDrug(x, itemOf(id)); } });
     b.addEventListener('change', async ev => {
       if (ev.target.id === 'ntJoin') { N.tpl.joiner = ev.target.value; await saveTpl(); }
+      if (ev.target.id === 'ntDash') { N.tpl.dash = ev.target.checked; await saveTpl(ev.target.checked ? '문장 앞에 -를 붙이고 한 줄씩 적습니다.' : '문장 앞에 -를 붙이지 않습니다.'); }
       if (ev.target.id === 'ntFlagMemo') { N.tpl.flagInMemo = ev.target.checked; await saveTpl(ev.target.checked ? '메모의 수치 옆에 ↑(높음·주의) ↓(낮음)을 붙입니다.' : '메모에는 수치만 적습니다.'); }
     });
     // 편집 창
@@ -3519,9 +3546,9 @@ window.VHM_SUPPS = [
       e.options = e.options.filter(o => o.label.trim()); e.fields = e.fields.filter(f => f.label.trim());
       if (!e.label) return alert('항목 이름을 적어 주세요.');
       if (e.kind === 'num' && (!e.fields.length || !e.template)) return alert('입력 칸과 문장 틀을 적어 주세요.');
-      if (e.kind === 'one' || e.kind === 'many' || e.kind === 'lead') { if (!e.options.length) return alert('보기를 하나 이상 적어 주세요.'); }
+      if (e.kind === 'one' || e.kind === 'many' || e.kind === 'lead' || e.kind === 'acute') { if (!e.options.length) return alert('보기를 하나 이상 적어 주세요.'); }
       if (e.kind === 'drugs' && !e.template.includes('{목록}')) return alert('문장 틀에 {목록}을 넣어 주세요.');
-      const isNew = e.isNew; delete e.isNew; const it = clean({ schema: 10, items: [e] }).items[0]; it.id = e.id;
+      const isNew = e.isNew; delete e.isNew; const it = clean({ schema: 11, items: [e] }).items[0]; it.id = e.id;
       const k = N.tpl.items.findIndex(i => i.id === it.id);
       if (k >= 0) N.tpl.items[k] = it; else N.tpl.items.push(it);
       delete N.pick[it.id];
