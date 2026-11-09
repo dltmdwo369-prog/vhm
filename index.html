@@ -937,6 +937,8 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     <h3 style="margin:4px 0 10px">구글 캘린더 연결 상태</h3>
     <div class="infobox" id="setStatus"></div>
     <div class="row" style="margin-top:8px"><button id="btnSignOut">이 기기에서 연결 해제</button><span class="hint">구글 캘린더의 일정은 그대로 남습니다. 다시 쓰려면 ‘구글 계정으로 연결’을 누르세요.</span></div>
+    <h3 style="margin:18px 0 8px">연결 유지</h3>
+    <div class="infobox" id="keepSet"></div>
     <h3 style="margin:18px 0 8px">일정 기본값 <span class="hint" style="font-weight:400">(이 설정은 기기마다 따로 저장됩니다)</span></h3>
     <label class="f" style="max-width:240px">새 일정의 기본 알림<select id="setReminder">
       <option value="-1">알림 없음</option><option value="0">정각</option><option value="10">10분 전</option><option value="30">30분 전</option><option value="60">1시간 전</option><option value="1440">하루 전</option></select></label>
@@ -1070,15 +1072,18 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     load() { try { const t = JSON.parse(sessionStorage.getItem(TOKEN_KEY) || 'null'); if (t && t.exp > Date.now() + 60e3) { this.token = t.token; this.exp = t.exp; this.hasDrive = !!t.drive; } } catch (e) {} },
     valid() { return !!this.token && Date.now() < this.exp - 60e3; },
     /** kind: 'base'(캘린더) | 'drive'(드라이브 추가). 구글 로그인 페이지로 이동합니다. */
-    request(kind) {
+    /** 연결 유지용: 구글 화면을 띄우지 않고(prompt=none) 조용히 다시 받음. 구글 로그인이 살아 있어야 함 */
+    canSilent() { try { return !!CFG.clientId && !!localStorage.getItem('vhm-consented') && !!localStorage.getItem('vhm-email'); } catch (e) { return false; } },
+    request(kind, opt) {
       if (!CFG.clientId) return Promise.reject(new Error('config.js 에 클라이언트 ID가 없습니다.'));
+      const silent = !!(opt && opt.silent);
       const drive = kind === 'drive';
       const st = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
       let consented = false, hint = '';
       try { consented = !!localStorage.getItem(drive ? 'vhm-consented-drive' : 'vhm-consented'); hint = localStorage.getItem('vhm-email') || '';
-        sessionStorage.setItem(STATE_KEY, JSON.stringify({ st, drive, at: Date.now() })); } catch (e) {}
+        sessionStorage.setItem(STATE_KEY, JSON.stringify({ st, drive, silent, at: Date.now() })); } catch (e) {}
       const q = new URLSearchParams({ client_id: CFG.clientId, redirect_uri: REDIRECT, response_type: 'token', scope: drive ? DRIVE_SCOPE : CAL_SCOPE, include_granted_scopes: 'true', state: st });
-      if (!consented) q.set('prompt', 'consent');
+      if (silent) q.set('prompt', 'none'); else if (!consented) q.set('prompt', 'consent');
       if (hint) q.set('login_hint', hint);
       location.assign(AUTH_URL + '?' + q.toString());
       return new Promise(() => {});   // 페이지가 이동하므로 끝나지 않음
@@ -1089,8 +1094,9 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       const p = new URLSearchParams(h); let saved = null;
       try { saved = JSON.parse(sessionStorage.getItem(STATE_KEY) || 'null'); sessionStorage.removeItem(STATE_KEY); } catch (e) {}
       try { history.replaceState(null, '', REDIRECT + location.search); } catch (e) {}
-      const res = { drive: !!(saved && saved.drive), error: '', driveError: '' };
+      const res = { drive: !!(saved && saved.drive), silent: !!(saved && saved.silent), error: '', driveError: '' };
       if (!saved || p.get('state') !== saved.st) { res.error = '로그인 응답을 확인하지 못했습니다. 다시 연결해 주세요.'; return res; }
+      if (p.get('error') && res.silent) { res.silentFailed = true; res.error = '자동으로 다시 연결하지 못했습니다. 이 브라우저의 구글 로그인이 풀렸을 수 있습니다. ‘구글 계정으로 연결’ 버튼을 눌러 주세요.'; return res; }
       if (p.get('error')) { res.error = p.get('error') === 'access_denied' ? '구글 로그인이 취소되었거나, 이 계정이 테스트 사용자로 등록되어 있지 않습니다.' : '구글 로그인 오류: ' + p.get('error'); return res; }
       const scopes = String(p.get('scope') || '').split(/[ +]/);
       if (scopes.indexOf(CAL_SCOPE) < 0) { res.error = '캘린더 권한이 허용되지 않았습니다. 다시 연결하고 캘린더 체크박스를 켜 주세요.'; return res; }
@@ -1290,6 +1296,12 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     return true;
   }
   function lockNow() { Lock.key = null; Lock.raw = null; }
+  // 연결 유지로 페이지가 다시 열릴 때만 잠금 키를 잠깐 넘겨줌 (이 탭의 sessionStorage, 돌아오자마자 지움)
+  function lockStash() { try { if (Lock.raw) sessionStorage.setItem('vhm-lk-tmp', b64(Lock.raw)); } catch (e) {} }
+  async function lockResume() {
+    let v = null; try { v = sessionStorage.getItem('vhm-lk-tmp'); sessionStorage.removeItem('vhm-lk-tmp'); } catch (e) {}
+    if (!v) return false; try { return await useRaw(ub64(v)); } catch (e) { return false; }
+  }
   async function lockState() { const m = await lockMeta(); return { setup: !!m, open: !!Lock.key, bio: bioInfo() }; }
   async function decObj(o) {
     if (!o || !o.memo || !o.memo.startsWith(LOCK_PREFIX)) { if (o) o.memoLock = ''; return o; }
@@ -1588,7 +1600,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     async setStatus(id, st, up) { const r = await setStatus(id, st, up); if (r.event) await decObj(r.event); if (r.current) await decObj(r.current); return r; },
     async deleteEvent(id, up) { const r = await deleteEvent(id, up); if (r.current) await decObj(r.current); return r; },
     getStats, exportBackup, restoreBackup, restoreEvents,
-    lockState, lockSetup, lockUnlock, lockNow, lockAll, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
+    lockState, lockSetup, lockUnlock, lockNow, lockAll, lockStash, lockResume, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
     linksLoad, linksSave, uploadForm, downloadForm, trashForm, notesLoad, notesSave,
     hasDrive: () => Auth.hasDrive,
     _resetCache() { CAL = null; LINK = null; NOTE_ID = null; Lock.meta = undefined; lockNow(); }
@@ -1709,6 +1721,94 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       if (S.editing && S.editing.memoLock === '' && S.editing.memo === e.memo) return true;   // 예전 일반 메모 그대로
       return openNow(state.setup ? '메모를 저장하려면 잠금을 풀어 주세요.' : '메모는 잠금 암호로 잠가서 저장합니다. 처음 한 번 암호를 만들어 주세요.');
     } };
+})();
+
+</script>
+<script>
+/* =====================================================================
+ * 업무시간 연결 유지
+ * - 구글이 주는 연결(토큰)은 1시간이면 끝남. 끝나기 몇 분 전에, 업무시간이고 작성 중인 내용이 없으면
+ *   구글 화면 없이(prompt=none) 조용히 다시 연결하고 같은 탭·날짜로 돌아옴.
+ * - 이 브라우저에서 구글 로그인이 살아 있어야 함. 안 되면 예전처럼 '구글 계정으로 연결' 버튼을 보여 줌.
+ * - 설정은 기기마다(이 브라우저) 저장.
+ * ===================================================================== */
+(function () {
+  'use strict';
+  const KEY = 'vhm-keep', RESUME = 'vhm-resume', FAIL = 'vhm-silent-fail', LEAD_MS = 8 * 60e3;
+  const def = { on: true, from: '08:00', to: '19:00', weekdays: true };
+  const pad = n => String(n).padStart(2, '0');
+  function cfg() { try { return Object.assign({}, def, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { return Object.assign({}, def); } }
+  function setCfg(p) { const c = Object.assign(cfg(), p); try { localStorage.setItem(KEY, JSON.stringify(c)); } catch (e) {} return c; }
+  function inHours(d) {
+    d = d || new Date(); const c = cfg(); if (!c.on) return false;
+    if (c.weekdays && (d.getDay() === 0 || d.getDay() === 6)) return false;
+    const hm = pad(d.getHours()) + ':' + pad(d.getMinutes());
+    return hm >= c.from && hm < c.to;
+  }
+  function failedRecently() { try { return Date.now() - (+sessionStorage.getItem(FAIL) || 0) < 30 * 60e3; } catch (e) { return false; } }
+  // 다시 연결하면 페이지를 새로 읽으므로, 저장 안 된 작성 내용이 있으면 미룸
+  function busyReason() {
+    if (document.querySelector('dialog[open]')) return '열려 있는 창';
+    const N = window.NOTES && NOTES._state;
+    const has = x => x != null && (typeof x === 'object' ? String(x.name || '').trim() !== '' : String(x).trim() !== '');
+    if (N && (N.edited || (N.extra || '').trim() || Object.values(N.pick || {}).some(v => Array.isArray(v) ? v.some(has) : has(v)) || Object.values(N.lead || {}).some(v => String(v || '').trim()))) return '상담 메모';
+    const L = window.LINKS && LINKS._state; if (L && L.checks && L.checks.size) return '연계 안내 체크';
+    const a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.value) return '입력 중';
+    return '';
+  }
+  function curTab() { const b = document.querySelector('.tabs button[aria-selected="true"]'); return b ? b.dataset.tab : 'cal'; }
+  function refreshNow() {
+    try {
+      sessionStorage.setItem(RESUME, JSON.stringify({ tab: curTab(), selected: S.selected, cursor: S.cursor && S.cursor.toISOString(), y: window.scrollY, at: Date.now() }));
+    } catch (e) {}
+    if (window.SERVER && SERVER.lockStash) SERVER.lockStash();
+    VHM_AUTH.request('base', { silent: true });
+  }
+  let warned = false;
+  function tick() {
+    if (!window.VHM_AUTH || !VHM_AUTH.canSilent() || !inHours() || failedRecently()) return;
+    const left = (VHM_AUTH.exp || 0) - Date.now();
+    if (VHM_AUTH.token && left > LEAD_MS) { warned = false; return; }
+    const why = busyReason();
+    if (!why) { refreshNow(); return; }
+    if (!warned) { warned = true; toast(`구글 연결 시간이 곧 끝납니다. 하던 작업(${why})을 마치면 자동으로 다시 연결합니다.`, 6000); }
+  }
+  // 처음 열 때: 연결이 없고 업무시간이면 바로 조용히 연결 시도. 시도했으면 true
+  function autoStart(rr) {
+    if (rr && rr.silentFailed) { try { sessionStorage.setItem(FAIL, String(Date.now())); } catch (e) {} return false; }
+    if (VHM_AUTH.valid() || !VHM_AUTH.canSilent() || !inHours() || failedRecently()) return false;
+    refreshNow(); return true;
+  }
+  // 다시 연결해서 돌아왔을 때 원래 화면으로
+  async function resume() {
+    let r = null; try { r = JSON.parse(sessionStorage.getItem(RESUME) || 'null'); sessionStorage.removeItem(RESUME); } catch (e) {}
+    if (window.SERVER && SERVER.lockResume && (await SERVER.lockResume()) && window.MEMOLOCK) { await MEMOLOCK.refresh(); await loadEvents().catch(() => {}); }
+    if (!r || Date.now() - r.at > 10 * 60e3) return;
+    if (r.selected) S.selected = r.selected;
+    if (r.cursor) { const c = new Date(r.cursor); if (!isNaN(c)) { const cur = S.cursor; S.cursor = c; if (!cur || cur.getTime() !== c.getTime()) await loadEvents().catch(() => {}); } }
+    render(); if (r.tab && r.tab !== 'cal') showTab(r.tab);
+    setTimeout(() => window.scrollTo(0, r.y || 0), 50);
+  }
+  function settingsHtml() {
+    const c = cfg();
+    return `<label class="row" style="gap:8px"><input type="checkbox" id="kaOn"${c.on ? ' checked' : ''}> 업무시간에는 구글 연결을 자동으로 유지</label>
+      <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><label class="row" style="gap:6px">시작 <input type="time" id="kaFrom" value="${c.from}" step="600"></label>
+        <label class="row" style="gap:6px">끝 <input type="time" id="kaTo" value="${c.to}" step="600"></label>
+        <label class="row" style="gap:6px"><input type="checkbox" id="kaWk"${c.weekdays ? ' checked' : ''}> 평일만</label></div>
+      <p class="hint" style="margin:6px 0 0">구글 연결은 1시간이면 끝납니다. 이 시간 안에는 끝나기 몇 분 전에 구글 화면 없이 조용히 다시 연결하고, 보던 탭과 날짜로 돌아옵니다. 메모 잠금도 열린 상태로 유지됩니다.
+        상담 메모를 쓰고 있거나 창이 열려 있으면 다 마칠 때까지 기다립니다. 이 브라우저에서 구글 로그인이 풀려 있으면 예전처럼 버튼을 눌러야 합니다. 기기(브라우저)마다 따로 정합니다.</p>`;
+  }
+  function bindSettings() {
+    const box = document.getElementById('keepSet'); if (!box) return;
+    box.innerHTML = settingsHtml();
+    box.addEventListener('change', () => {
+      const c = setCfg({ on: document.getElementById('kaOn').checked, from: document.getElementById('kaFrom').value || def.from, to: document.getElementById('kaTo').value || def.to, weekdays: document.getElementById('kaWk').checked });
+      toast(c.on ? `연결 유지: ${c.weekdays ? '평일 ' : ''}${c.from}~${c.to}` : '연결 유지를 껐습니다.');
+    });
+  }
+  window.KEEP = { cfg, setCfg, inHours, busyReason, tick, autoStart, resume, bindSettings, refreshNow };
+  setInterval(tick, 30e3);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tick(); });
 })();
 
 </script>
@@ -2270,11 +2370,12 @@ async function boot() {
   $('#connectBox').hidden = true;
   S.settings = b.settings; renderSettings(b); render(); await loadEvents();
   if (window.MEMOLOCK) await MEMOLOCK.refresh();
+  if (window.KEEP) await KEEP.resume();
 }
 (async function start() {
   const d = new Date(); S.cursor = new Date(d.getFullYear(), d.getMonth(), 1);
   S.settings = Object.assign({ show:'all', view:'month', defaultReminder:30, titleAlias:false, timeStep:10 }, (() => { try { return JSON.parse(localStorage.getItem('vhm-settings') || '{}'); } catch (e) { return {}; } })());
-  bind(); if (window.MEMOLOCK) MEMOLOCK.bind(); render();
+  bind(); if (window.MEMOLOCK) MEMOLOCK.bind(); if (window.KEEP) KEEP.bindSettings(); render();
   $('#btnConnect').onclick = async () => {
     $('#btnConnect').disabled = true;
     try { await VHM_AUTH.request('base'); $('#connectBox').hidden = true; await boot(); }
@@ -2291,11 +2392,13 @@ async function boot() {
     $('#btnConnect').disabled = true; syncState('err', '설정 필요'); return;
   }
   const rr = VHM_AUTH.redirectResult;
+  if (window.KEEP && KEEP.autoStart(rr)) { showConnect('업무시간이라 구글에 자동으로 다시 연결하는 중입니다…'); syncState('', '자동 연결 중…'); return; }
   if (rr && rr.error) { showConnect(rr.error); syncState('err', '구글 캘린더 연결 필요'); if (!VHM_AUTH.valid()) return; }
   if (!VHM_AUTH.valid()) { showConnect('처음 한 번, 그리고 1시간쯤 지나면 다시 연결이 필요합니다. 버튼을 누르면 구글 로그인 페이지로 이동했다가 돌아옵니다.'); syncState('err', '구글 캘린더 연결 필요'); return; }
   try {
     await boot();
     if (rr && rr.drive) { showTab('link'); if (rr.driveError) toast(rr.driveError, 6000); }
+    if (rr && rr.silentFailed) toast('자동으로 다시 연결하지 못했습니다. 지금 연결은 곧 끝납니다. 끝나면 ‘구글 계정으로 연결’을 눌러 주세요.', 9000);
   } catch (e) {}
 })();
 </script>
