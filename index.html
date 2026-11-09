@@ -94,7 +94,7 @@ a{color:var(--accent)}
 .badge.prio-high{color:#b3261e;border-color:#f2b8b5;background:#fde7e5;font-weight:700}.badge.prio-low{color:#6b7280;background:#f3f4f6}
 .chip.prio-high{font-weight:700;box-shadow:inset 0 0 0 1px #e57373}
 .agecalc{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 12px;margin:12px 20px 0;border:1px solid var(--line);border-radius:10px;background:#fafbfd;font-size:14px}
-.agecalc input{width:150px;padding:6px 8px;font-size:15px;letter-spacing:1px}
+.agecalc input{width:210px;max-width:100%;padding:6px 8px;font-size:15px;letter-spacing:1px}
 .agecalc .age-main{font-weight:700;font-size:15px}
 .warn-text{color:var(--warn,#b45309);font-size:13px}
 .badge{font-size:11px;padding:0 6px;border-radius:999px;border:1px solid var(--line);color:var(--sub);font-weight:500;background:#fff}
@@ -1190,11 +1190,15 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
         </div>
         <div class="full infobox" id="parentInfo" hidden></div>
         <div class="full warnbox" id="phoneInfo" hidden></div>
-        <label class="f">날짜<input type="date" name="date" required></label>
+        <div class="row" style="gap:8px;flex-wrap:nowrap;align-items:flex-start;min-width:0">
+          <label class="f" style="flex:1;min-width:0">날짜<input type="date" name="date" required></label>
+          <label class="f personal-only" style="flex:1;min-width:0">끝나는 날<input type="date" name="endDate"></label>
+        </div>
         <div class="row" style="gap:8px;flex-wrap:nowrap;align-items:flex-start;min-width:0">
           <label class="f" style="flex:1;min-width:0">시작<input name="start" class="tin" inputmode="numeric" maxlength="12" placeholder="예: 14:30" autocomplete="off"></label>
           <label class="f" style="flex:1;min-width:0">종료<input name="end" class="tin" inputmode="numeric" maxlength="12" placeholder="비우면 30분 뒤" autocomplete="off"></label>
         </div>
+        <div class="full hint personal-only" style="margin-top:-6px">여러 날 이어지는 일정은 ‘끝나는 날’을 고르세요. 같은 날이면 하루 일정입니다. 시간을 적으면 첫날 시작 시간부터 끝나는 날 종료 시간까지입니다.</div>
         <div class="full hint" style="margin-top:-6px">시간은 직접 적으세요. 1430, 14:30, 2:30, 오후 2시 30분 모두 됩니다. 비우면 종일 일정입니다.</div>
         <label class="f work-only">유형<select name="type"></select></label>
         <label class="f work-only">상태<select name="status"></select></label>
@@ -1390,7 +1394,10 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       if (ev.reminders.useDefault) reminder = -2;
       else { const pop = (ev.reminders.overrides || []).filter(o => o.method === 'popup').map(o => o.minutes); if (pop.length) reminder = Math.min(...pop); }
     }
-    const o = { id: ev.id, ical: ev.iCalUID || '', kind, uid: tag('uid') || ev.iCalUID || ev.id, date: s.date, start: s.time, end: e.time, endDate: e.date,
+    // 기간 일정: 종일이면 구글의 끝 날짜는 '다음 날'이라 하루 빼서 '끝나는 날'로
+    let endDate = allDay ? (ev.end && ev.end.date ? addDays(ev.end.date, -1) : '') : e.date;
+    if (!endDate || endDate <= s.date) endDate = '';
+    const o = { id: ev.id, ical: ev.iCalUID || '', kind, uid: tag('uid') || ev.iCalUID || ev.id, date: s.date, start: s.time, end: e.time, endDate,
       memo: tag('memo'), parentId: tag('parent'), reminder, updated: ev.etag, fromApp: tag('kind') !== '' };
     const title = ev.summary || '';
     if (kind === 'work') {
@@ -1431,7 +1438,9 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
   function validate(e) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date || '')) throw new Error('날짜가 올바르지 않습니다.');
     ['start', 'end'].forEach(k => { if (e[k] && !/^\d{2}:\d{2}$/.test(e[k])) throw new Error('시간이 올바르지 않습니다.'); });
-    if (e.start && e.end && e.end < e.start) throw new Error('종료 시간이 시작 시간보다 빠릅니다.');
+    // 끝나는 날: 시작 날짜보다 뒤일 때만 (최대 1년). 화면에서는 개인 일정·메모에서 고름(업무는 휴대폰에서 만든 기간 일정을 그대로 유지)
+    e.endDate = /^\d{4}-\d{2}-\d{2}$/.test(e.endDate || '') && e.endDate > e.date && e.endDate <= addDays(e.date, 366) ? e.endDate : '';
+    if (e.start && e.end && e.end < e.start && !e.endDate) throw new Error('종료 시간이 시작 시간보다 빠릅니다.');
     if (e.kind === 'work') {
       if (TYPES.indexOf(e.type) < 0) throw new Error('유형을 선택하세요.');
       if (STATUSES.indexOf(e.status) < 0) e.status = '예정';
@@ -1457,7 +1466,8 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     if (e.kind === 'work') Object.assign(priv, { vhm_type: e.type, vhm_status: e.status, vhm_group: e.group, vhm_target: e.target, vhm_birth: e.birth || '', vhm_sex: e.sex || '', vhm_prio: e.prio || 'normal' });
     else priv.vhm_ptype = e.ptype;
     const start = e.start ? { dateTime: e.date + 'T' + e.start + ':00' + OFFSET, timeZone: TZ } : { date: e.date };
-    const end = e.start ? { dateTime: e.date + 'T' + (e.end || plus30(e.start)) + ':00' + OFFSET, timeZone: TZ } : { date: addDays(e.date, 1) };
+    const last = e.endDate && e.endDate > e.date ? e.endDate : e.date;   // 기간 일정이면 끝나는 날까지
+    const end = e.start ? { dateTime: last + 'T' + (e.end || plus30(e.start)) + ':00' + OFFSET, timeZone: TZ } : { date: addDays(last, 1) };
     const reminders = e.reminder === -2 ? { useDefault: true } : { useDefault: false, overrides: e.reminder >= 0 ? [{ method: 'popup', minutes: e.reminder }] : [] };
     return { summary, start, end, reminders, extendedProperties: { private: priv } };
   }
@@ -2138,7 +2148,10 @@ function labelOf(e) {
   if (e.kind === 'work') return e.type ? `${e.type}${e.target ? ' · ' + e.target : ''}` : (e.rawTitle || '(제목 없음)');
   return (e.ptype === '메모' ? '📝 ' : '') + (e.title || '(제목 없음)');
 }
-const timeOf = e => e.start ? e.start + (e.end ? '~' + e.end : '') : (e.kind === 'personal' && e.ptype === '메모' ? '메모' : '종일');
+const isSpan = e => !!(e.endDate && e.endDate > e.date);
+const onDate = (e, ds) => ds >= e.date && ds <= (isSpan(e) ? e.endDate : e.date);
+const md = ds => +ds.slice(5, 7) + '/' + +ds.slice(8, 10);
+const timeOf = e => (isSpan(e) ? md(e.date) + '~' + md(e.endDate) + (e.start ? ' ' : '') : '') + (e.start ? e.start + (e.end ? '~' + e.end : '') : (isSpan(e) ? '' : e.kind === 'personal' && e.ptype === '메모' ? '메모' : '종일'));
 const statusCls = { '완료':'done', '취소':'cancel', '부재':'absent', '예정':'' };
 
 function render() {
@@ -2153,13 +2166,13 @@ function render() {
 }
 function renderMonth() {
   const m = S.cursor.getMonth(); const [from] = gridRange(); const start = parseYmd(from);
-  const byDate = {}; visible().forEach(e => (byDate[e.date] ||= []).push(e));
+  const byDate = {}; visible().forEach(e => { if (!isSpan(e)) { (byDate[e.date] ||= []).push(e); return; } for (let d = e.date, n = 0; d <= e.endDate && n < 400; d = addDays(d, 1), n++) (byDate[d] ||= []).push(e); });
   const today = todayStr(); const cells = (Math.ceil((new Date(S.cursor.getFullYear(), m, 1).getDay() + new Date(S.cursor.getFullYear(), m + 1, 0).getDate()) / 7)) * 7;
   let html = DOW.map((d, i) => `<div class="dow ${i===0?'sun':i===6?'sat':''}">${d}</div>`).join('');
   for (let i = 0; i < cells; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i); const ds = ymd(d); const evs = byDate[ds] || [];
     const cls = ['day', d.getMonth() !== m ? 'other' : '', ds === today ? 'today' : '', ds === S.selected ? 'selected' : '', d.getDay()===0?'sun':d.getDay()===6?'sat':''].join(' ');
-    const chips = evs.slice(0, 3).map(e => `<div class="chip ${e.kind==='personal'?'personal':''} ${e.kind==='work'?statusCls[e.status]:''}${e.kind==='work'&&e.prio==='high'?' prio-high':''}" style="--c:${colorOf(e)}" title="${esc((e.kind==='work'&&e.prio==='high'?'[중요] ':'')+timeOf(e)+' '+labelOf(e)+(e.kind==='work'?' ['+e.status+']':''))}">${e.kind==='work'&&e.prio==='high'?'★':''}${e.start?esc(e.start)+' ':''}${esc(labelOf(e))}</div>`).join('');
+    const chips = evs.slice(0, 3).map(e => `<div class="chip ${e.kind==='personal'?'personal':''} ${e.kind==='work'?statusCls[e.status]:''}${e.kind==='work'&&e.prio==='high'?' prio-high':''}" style="--c:${colorOf(e)}" title="${esc((e.kind==='work'&&e.prio==='high'?'[중요] ':'')+timeOf(e)+' '+labelOf(e)+(e.kind==='work'?' ['+e.status+']':''))}">${e.kind==='work'&&e.prio==='high'?'★':''}${isSpan(e)&&ds!==e.date?'↳ ':''}${e.start&&(!isSpan(e)||ds===e.date)?esc(e.start)+' ':''}${esc(labelOf(e))}</div>`).join('');
     html += `<div class="${cls}" data-date="${ds}" role="button" tabindex="0" aria-label="${fmtDateK(ds)} 일정 ${evs.length}건"><span class="num">${d.getDate()}</span>${chips}${evs.length > 3 ? `<div class="more">+${evs.length - 3}건</div>` : ''}</div>`;
   }
   $('#monthView').innerHTML = `<div class="month">${html}</div>`;
@@ -2215,14 +2228,14 @@ function itemHtml(e) {
 }
 function renderList() {
   const y = S.cursor.getFullYear(), m = S.cursor.getMonth(); const from = ymd(new Date(y, m, 1)), to = ymd(new Date(y, m + 1, 0));
-  const evs = visible().filter(e => e.date >= from && e.date <= to);
+  const evs = visible().filter(e => e.date <= to && (isSpan(e) ? e.endDate : e.date) >= from);
   if (!evs.length) { $('#listView').innerHTML = '<div class="empty">이 달에 표시할 일정이 없습니다.</div>'; return; }
   let html = '', cur = ''; evs.forEach(e => { if (e.date !== cur) { cur = e.date; html += `<div class="list-date">${fmtDateK(cur)}</div>`; } html += itemHtml(e); });
   $('#listView').innerHTML = html; fitLines($('#listView'));
 }
 function renderDay() {
   $('#dayTitle').textContent = fmtDateK(S.selected) + (S.selected === todayStr() ? ' · 오늘' : '');
-  const evs = visible().filter(e => e.date === S.selected);
+  const evs = visible().filter(e => onDate(e, S.selected));
   $('#dayList').innerHTML = evs.length ? evs.map(itemHtml).join('') : '<div class="empty">일정이 없습니다.</div>';
   $('#btnBulkDel').hidden = !evs.length;
   fitLines($('#dayList').parentElement.parentElement);
@@ -2230,8 +2243,8 @@ function renderDay() {
 
 /* ---------- 한 날짜 일괄 삭제 + 되돌리기 ---------- */
 async function bulkDelete() {
-  const date = S.selected, evs = visible().filter(e => e.date === date); if (!evs.length) return;
-  const hiddenN = S.events.filter(e => e.date === date).length - evs.length;
+  const date = S.selected, evs = visible().filter(e => onDate(e, date)); if (!evs.length) return;
+  const hiddenN = S.events.filter(e => onDate(e, date)).length - evs.length;
   const html = `<p style="margin-top:0">${esc(fmtDateK(date))} 일정 중 지울 것을 고르세요. <b>구글 캘린더에서도 삭제됩니다.</b></p>
     <label class="bd-item" style="font-weight:700"><input type="checkbox" id="bdAll" checked> 모두 선택 (${evs.length}개)</label>
     <div class="bd-list">${evs.map(e => `<label class="bd-item"><input type="checkbox" class="bd-ck" value="${esc(e.id)}" checked><span class="bd-time">${esc(e.start ? e.start + (e.end ? '~' + e.end : '') : '종일')}</span><span>${esc(labelOf(e))}${e.kind === 'personal' ? ' <span class="hint">(개인)</span>' : ''}</span></label>`).join('')}</div>
@@ -2343,7 +2356,7 @@ function syncPersonHint() {
 function openEvent(ev, defaults = {}) {
   const f = $('#eventForm'); f.reset(); S.editing = ev || null;
   const d = ev ? Object.assign({}, ev) : Object.assign({ kind:'work', date:S.selected, start:'', end:'', type:'방문', status:'예정', group:'미지정', prio:'normal', target:'', birth:'', sex:'', ptype:'일정', title:'', memo:'', reminder:S.settings.defaultReminder, parentId:'' }, defaults);
-  f.kind.value = d.kind; f.date.value = d.date; f.start.value = d.start || ''; f.end.value = d.end || ''; $$('#eventForm .tin').forEach(x => x.classList.remove('bad'));
+  f.kind.value = d.kind; f.date.value = d.date; f.endDate.value = d.endDate || d.date; f.endDate.min = d.date; f.start.value = d.start || ''; f.end.value = d.end || ''; $$('#eventForm .tin').forEach(x => x.classList.remove('bad'));
   f.type.value = d.type || ''; f.status.value = d.status || '예정'; f.group.value = d.group || '미지정'; f.prio.value = d.prio || 'normal'; f.target.value = d.target || ''; f.birth.value = d.birth || ''; f.sex.value = d.sex || '';
   f.ptype.value = d.ptype || '일정'; f.title.value = d.title || ''; f.memo.value = d.memo || ''; f.reminder.value = String(d.reminder ?? 30);
   if (!f.reminder.value) f.reminder.value = '30';
@@ -2368,9 +2381,12 @@ function readForm() {
   if (!f.date.value) { alert('날짜를 입력하세요.'); return null; }
   const st = tidyTime(f.start), en = tidyTime(f.end);
   if (st === null || en === null) { alert('시간을 알아볼 수 없습니다. 14:30처럼 적어 주세요.'); return null; }
-  if (f.start.value && f.end.value && f.end.value < f.start.value) { alert('종료 시간이 시작 시간보다 빠릅니다.'); return null; }
+  const endD = f.kind.value === 'personal' ? f.endDate.value : ((S.editing && S.editing.endDate) || '');
+  if (endD && endD < f.date.value) { alert('끝나는 날이 시작 날짜보다 빠릅니다.'); return null; }
+  const multi = endD && endD > f.date.value;
+  if (!multi && f.start.value && f.end.value && f.end.value < f.start.value) { alert('종료 시간이 시작 시간보다 빠릅니다.'); return null; }
   if (!f.start.value && f.end.value) { alert('시작 시간을 입력하세요.'); return null; }
-  const e = { kind:f.kind.value, date:f.date.value, start:f.start.value, end:f.end.value, memo:f.memo.value.trim(), reminder:+f.reminder.value, parentId:f.dataset.parentId || '' };
+  const e = { kind:f.kind.value, date:f.date.value, endDate: multi ? endD : '', start:f.start.value, end:f.end.value, memo:f.memo.value.trim(), reminder:+f.reminder.value, parentId:f.dataset.parentId || '' };
   if (S.editing) { e.id = S.editing.id; e.updated = S.editing.updated; e.uid = S.editing.uid; }
   if (f.memo.dataset.cipher === '1' && S.editing) { e.memo = ''; e.memoCipher = S.editing.memoCipher; }
   if (e.kind === 'work') {
@@ -2382,7 +2398,7 @@ function readForm() {
   return e;
 }
 function describe(e) {
-  return [['날짜', e.date], ['시간', timeOf(e)], ['유형', e.type || (e.kind === 'personal' ? '개인' : '미분류')], ['상태', e.status || ''], ['대상자·제목', (e.kind === 'work' ? personOf(e) : '') || e.title || ''], ['메모', e.memo || '']];
+  return [['날짜', e.date + (isSpan(e) ? ' ~ ' + e.endDate : '')], ['시간', timeOf(e)], ['유형', e.type || (e.kind === 'personal' ? '개인' : '미분류')], ['상태', e.status || ''], ['대상자·제목', (e.kind === 'work' ? personOf(e) : '') || e.title || ''], ['메모', e.memo || '']];
 }
 async function resolveConflict(mine, current) {
   const a = describe(mine), b = describe(current);
@@ -2555,6 +2571,7 @@ function bind() {
   $('#btnAddDay').onclick = () => openEvent(null, { date:S.selected });
   $('#ageIn').addEventListener('input', () => { AGE.century = null; calcAge(); });
   $('#btnBulkDel').onclick = () => bulkDelete();
+  $('#eventForm').date.addEventListener('change', () => { const f = $('#eventForm'); f.endDate.min = f.date.value; if (!f.endDate.value || f.endDate.value < f.date.value) f.endDate.value = f.date.value; });
   let fitT; window.addEventListener('resize', () => { clearTimeout(fitT); fitT = setTimeout(() => fitLines(), 150); });
   $$('#eventForm input[name=kind]').forEach(r => r.onchange = syncKindUI);
   $$('#eventForm .tin').forEach(inp => inp.addEventListener('input', () => {   // 숫자 4개를 치면 바로 12:34 로
