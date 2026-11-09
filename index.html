@@ -56,6 +56,8 @@ a{color:var(--accent)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
 .card h3{margin:0;font-size:15px}
 .card-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.card-head:has(#dayTitle){flex-wrap:wrap;row-gap:8px}
+.card-head > .row{flex:none;margin-left:auto}
 .card-body{padding:10px 14px 14px}
 .side{display:flex;flex-direction:column;gap:16px}
 .page{padding:16px 20px 28px}
@@ -82,7 +84,11 @@ a{color:var(--accent)}
 .item.personal{border-left-style:dashed}
 .item .time{font-size:12px;color:var(--sub);min-width:44px;padding-top:1px}
 .item .main{flex:1;min-width:0}
-.item .title{font-weight:600;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.item .title{font-weight:600;display:flex;gap:4px 6px;flex-wrap:wrap;align-items:center}
+.item .t-line{flex:1 1 100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
+.item .title .quick{margin-left:auto;display:flex;gap:4px}
+.item .t-meta{font-weight:500;color:var(--sub);font-size:.86em;margin-left:4px}
+#dayTitle{white-space:nowrap;flex:1 0 auto;margin:0}
 .item .memo{color:var(--sub);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .item.cancel .title{text-decoration:line-through;color:var(--faint)}
 .badge.prio-high{color:#b3261e;border-color:#f2b8b5;background:#fde7e5;font-weight:700}.badge.prio-low{color:#6b7280;background:#f3f4f6}
@@ -2179,6 +2185,20 @@ function calcAge() {
   const bt = $('#ageCent'); if (bt) bt.onclick = () => { AGE.century = cent === 1900 ? 2000 : 1900; calcAge(); };
 }
 
+// 목록 제목: '전화 · 김O봉' + 작은 글씨 '(여·1936년생·만 90세)'를 한 줄로 (넘치면 fitLines가 글자를 줄임)
+function titleLine(e) {
+  if (!(e.kind === 'work' && e.type)) return `<span class="t-line"><span class="t-main">${esc(labelOf(e))}</span></span>`;
+  const bits = []; if (e.sex) bits.push(e.sex); const a = ageOf(e.birth); if (a) bits.push(e.birth + '년생·만 ' + a.after + '세');
+  return `<span class="t-line"><span class="t-main">${esc(e.type + (e.target ? ' · ' + e.target : ''))}</span>${bits.length ? `<span class="t-meta">(${esc(bits.join('·'))})</span>` : ''}</span>`;
+}
+// 한 줄에 안 들어가면 글자 크기를 조금씩 줄임 (최소 10.5px)
+function fitLines(root) {
+  (root || document).querySelectorAll('.t-line').forEach(el => {
+    el.style.fontSize = ''; let fs = parseFloat(getComputedStyle(el).fontSize) || 14;
+    for (let i = 0; i < 12 && el.scrollWidth > el.clientWidth + 1 && fs > 10.5; i++) { fs -= 0.5; el.style.fontSize = fs + 'px'; }
+  });
+}
+
 function itemHtml(e) {
   const b = [];
   if (e.kind === 'work') {
@@ -2189,20 +2209,21 @@ function itemHtml(e) {
   if (!e.fromApp) b.push('<span class="badge" title="휴대폰·구글 캘린더에서 직접 만든 일정">휴대폰 등록</span>');
   const quick = (e.kind === 'work' && e.type && e.status === '예정') ? `<div class="quick"><button class="small" data-quick="완료" data-id="${esc(e.id)}">완료</button><button class="small" data-quick="부재" data-id="${esc(e.id)}">부재</button></div>` : '';
   return `<div class="item ${e.kind==='personal'?'personal':''} ${e.kind==='work'?statusCls[e.status]:''}" style="--c:${colorOf(e)}" data-id="${esc(e.id)}" role="button" tabindex="0">
-    <div class="time">${esc(timeOf(e))}</div><div class="main"><div class="title">${esc(e.kind === 'work' && e.type ? e.type + (personOf(e) ? ' · ' + personOf(e) : '') : labelOf(e))} ${b.join('')}</div>${e.memo ? `<div class="memo">${esc(e.memo)}</div>` : ''}${e.memoLock === 'locked' || e.memoLock === 'bad' ? '<div class="memo">🔒 잠긴 메모</div>' : ''}</div>${quick}</div>`;
+    <div class="time">${esc(timeOf(e))}</div><div class="main"><div class="title">${titleLine(e)}${b.join('')}${quick}</div>${e.memo ? `<div class="memo">${esc(e.memo)}</div>` : ''}${e.memoLock === 'locked' || e.memoLock === 'bad' ? '<div class="memo">🔒 잠긴 메모</div>' : ''}</div></div>`;
 }
 function renderList() {
   const y = S.cursor.getFullYear(), m = S.cursor.getMonth(); const from = ymd(new Date(y, m, 1)), to = ymd(new Date(y, m + 1, 0));
   const evs = visible().filter(e => e.date >= from && e.date <= to);
   if (!evs.length) { $('#listView').innerHTML = '<div class="empty">이 달에 표시할 일정이 없습니다.</div>'; return; }
   let html = '', cur = ''; evs.forEach(e => { if (e.date !== cur) { cur = e.date; html += `<div class="list-date">${fmtDateK(cur)}</div>`; } html += itemHtml(e); });
-  $('#listView').innerHTML = html;
+  $('#listView').innerHTML = html; fitLines($('#listView'));
 }
 function renderDay() {
   $('#dayTitle').textContent = fmtDateK(S.selected) + (S.selected === todayStr() ? ' · 오늘' : '');
   const evs = visible().filter(e => e.date === S.selected);
   $('#dayList').innerHTML = evs.length ? evs.map(itemHtml).join('') : '<div class="empty">일정이 없습니다.</div>';
   $('#btnBulkDel').hidden = !evs.length;
+  fitLines($('#dayList').parentElement.parentElement);
 }
 
 /* ---------- 한 날짜 일괄 삭제 + 되돌리기 ---------- */
@@ -2532,6 +2553,7 @@ function bind() {
   $('#btnAddDay').onclick = () => openEvent(null, { date:S.selected });
   $('#ageIn').addEventListener('input', () => { AGE.century = null; calcAge(); });
   $('#btnBulkDel').onclick = () => bulkDelete();
+  let fitT; window.addEventListener('resize', () => { clearTimeout(fitT); fitT = setTimeout(() => fitLines(), 150); });
   $$('#eventForm input[name=kind]').forEach(r => r.onchange = syncKindUI);
   $$('#eventForm .tin').forEach(inp => inp.addEventListener('input', () => {   // 숫자 4개를 치면 바로 12:34 로
     if (/^\d{4}$/.test(inp.value)) { const v = parseTime(inp.value); if (v) { inp.value = v; inp.classList.remove('bad'); inp.dispatchEvent(new Event('change', { bubbles: true })); } }
