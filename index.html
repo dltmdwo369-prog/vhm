@@ -240,6 +240,12 @@ table.files select{padding:3px 6px;font-size:12px}
 .bd-item{display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px dashed var(--line);font-size:14px;cursor:pointer}
 .bd-item:last-child{border-bottom:0}.bd-item input{width:18px;height:18px;flex:none}
 .bd-time{color:var(--sub);font-variant-numeric:tabular-nums;min-width:82px}
+.due-box .due-row{gap:6px;flex-wrap:wrap;margin-top:4px}.due-box input[type=date]{width:auto}.due-box .due-tin{width:72px}.due-box select{width:auto;max-width:100%}
+.badge.due-over{background:#fde8e8;color:#b42318;border-color:#f5b5b0}.badge.due-today{background:#fff3e0;color:#9a4b00;border-color:#f6c98f}.badge.due-soon{background:#fff8e6;color:#8a5a00}
+#dueList{display:flex;flex-direction:column;gap:6px}
+.due-item{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:2px;width:100%;border:1px solid var(--line);border-left:4px solid #c9a227;border-radius:8px;padding:7px 10px;background:#fff;cursor:pointer}
+.due-item.due-over{border-left-color:#d92d20;background:#fff7f6}.due-item.due-today{border-left-color:#e07b00}
+.due-when{font-size:12px;font-weight:700}.due-item.due-over .due-when{color:#b42318}.due-what{font-size:14px}
 .done-head{padding:6px 2px 10px}.done-move{margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.done-head .hint{margin-top:2px}
 .item.in-done{background:#f7f9f7}
 .undo-bar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:#1c2230;color:#fff;padding:8px 10px 8px 16px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.25);font-size:14px;z-index:101;max-width:calc(100vw - 32px)}
@@ -1120,6 +1126,10 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
   <main class="layout">
     <section class="card"><div id="monthView"></div><div id="listView" class="list-view" hidden></div></section>
     <aside class="side">
+      <section class="card" id="dueCard" hidden>
+        <div class="card-head"><h3>⏰ 다가오는 기한</h3><button class="small" id="btnDueNoti" hidden title="사이트가 열려 있을 때 이 기기에도 알림">이 기기 알림 켜기</button></div>
+        <div class="card-body" id="dueList"></div>
+      </section>
       <section class="card">
         <div class="card-head"><h3 id="dayTitle"></h3><div class="row" style="gap:6px"><button class="small danger" id="btnBulkDel" hidden title="이 날짜 일정을 골라서 한꺼번에 삭제">일괄 삭제</button><button class="small primary" id="btnAddDay">+ 이 날짜에 추가</button></div></div>
         <div class="card-body" id="dayList"></div>
@@ -1237,6 +1247,14 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
           <option value="-2">캘린더 기본 알림</option><option value="-1">알림 없음</option><option value="0">정각</option><option value="10">10분 전</option><option value="30">30분 전</option>
           <option value="60">1시간 전</option><option value="1440">하루 전</option></select></label>
         <div></div>
+        <div class="f full due-box"><span>기한 <span class="hint">(정하면 그 시각에 휴대폰 구글 캘린더로 알림 · 완료하면 알림도 사라짐)</span></span>
+          <div class="row due-row">
+            <input type="date" name="dueDate" aria-label="기한 날짜"><input name="dueTime" class="tin due-tin" placeholder="09:00" inputmode="numeric" maxlength="5" autocomplete="off" aria-label="기한 시각">
+            <select name="dueRem" aria-label="기한 알림"><option value="0">기한 시각에 알림</option><option value="60,0">1시간 전·기한 시각</option><option value="1440,0">1일 전·기한 시각</option>
+              <option value="4320,1440,0">3일 전·1일 전·기한 시각</option><option value="10080,1440,0">1주 전·1일 전·기한 시각</option><option value="">알림 없이 표시만</option></select>
+            <label class="row" style="gap:4px"><input type="checkbox" name="dueMail" style="width:auto"> 이메일로도</label>
+            <button type="button" class="small" id="dueClear">기한 지우기</button>
+          </div></div>
         <div class="f full"><span>메모 <span class="hint">(잠금 암호로 잠가서 저장 — 구글·Claude도 읽을 수 없음, 200자까지 · Enter는 줄바꿈, <b>Ctrl+Enter</b>(맥은 ⌘+Enter)는 저장)</span> <button type="button" class="link" id="memoUnlock" hidden>🔓 잠금 풀기</button></span><textarea name="memo" maxlength="200" placeholder="본인 확인용 짧은 메모 (상담 내용은 기관 전산시스템에)"></textarea></div>
       </div>
     </div>
@@ -1284,6 +1302,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
  * 구글 캘린더 직접 연결 (Code.gs 와 같은 함수 이름·같은 결과 형식)
  * - 로그인: Google Identity Services 토큰 방식 (클라이언트 ID만 사용, 비밀 키 없음)
  * - 일정 저장소: 기존과 같은 캘린더 '방문건강관리(업무)', '방문건강관리(개인)'
+ * - 기한: 일정·메모에 기한을 정하면 '방문건강관리(기한)' 캘린더에 알림용 일정을 따로 만듦(제목은 업무 유형만, 대상자 정보 없음)
  * - 완료한 일정·메모는 '방문건강관리(완료)' 캘린더로 옮김 (휴대폰 구글 캘린더에서 체크를 끄면 안 보임, 실적에는 포함)
  * - 숨은 정보: 이벤트 extendedProperties.private 의 vhm_* (Apps Script 의 setTag 와 같은 곳)
  * ===================================================================== */
@@ -1291,7 +1310,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
   'use strict';
   const CFG = window.VHM_CONFIG || {};
   const TZ = 'Asia/Seoul', OFFSET = '+09:00';
-  const WORK = '방문건강관리(업무)', PERS = '방문건강관리(개인)', DONE = '방문건강관리(완료)';
+  const WORK = '방문건강관리(업무)', PERS = '방문건강관리(개인)', DONE = '방문건강관리(완료)', DUE = '방문건강관리(기한)';
   const CAL_SCOPE = 'https://www.googleapis.com/auth/calendar';
   const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';   // 이 앱이 만든 파일에만 접근
   // 로그인은 캘린더 권한만. 드라이브 권한은 '연계 안내'에서 따로 요청 (드라이브 승인이 막혀도 일정은 쓰도록)
@@ -1394,8 +1413,8 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     const primary = items.find(c => c.primary);
     const find = name => items.find(c => c.summary === name && (c.accessRole === 'owner' || c.accessRole === 'writer'));
     const make = async name => { const c = await api('POST', '/calendars', { body: { summary: name, timeZone: TZ } }); return c.id; };
-    const w = find(WORK), p = find(PERS), d = find(DONE);
-    CAL = { work: w ? w.id : await make(WORK), personal: p ? p.id : await make(PERS), done: d ? d.id : '', email: primary ? primary.id : '' };
+    const w = find(WORK), p = find(PERS), d = find(DONE), du = find(DUE);
+    CAL = { work: w ? w.id : await make(WORK), personal: p ? p.id : await make(PERS), done: d ? d.id : '', due: du ? du.id : '', email: primary ? primary.id : '' };
     return CAL;
   }
   // 완료 캘린더는 처음 완료할 때 만듦
@@ -1403,6 +1422,11 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     const c = await ensureCalendars();
     if (!c.done) c.done = (await api('POST', '/calendars', { body: { summary: DONE, timeZone: TZ, description: '방문건강관리 일정표에서 완료 처리한 일정·메모가 모이는 곳입니다. 휴대폰 구글 캘린더에서 이 캘린더 체크를 끄면 보이지 않습니다. 실적 집계에는 포함됩니다.' } })).id;
     return c.done;
+  }
+  async function ensureDue() {
+    const c = await ensureCalendars();
+    if (!c.due) c.due = (await api('POST', '/calendars', { body: { summary: DUE, timeZone: TZ, description: '방문건강관리 일정표에서 정한 기한 알림이 모이는 곳입니다. 원래 일정을 완료하거나 기한을 지우면 함께 지워집니다.' } })).id;
+    return c.due;
   }
   const isDone = e => e.kind === 'work' ? e.status === '완료' : !!e.done;
   const tagKind = ev => { const p = ev.extendedProperties && ev.extendedProperties.private; return p && p.vhm_kind === 'personal' ? 'personal' : 'work'; };
@@ -1429,7 +1453,8 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     let endDate = allDay ? (ev.end && ev.end.date ? addDays(ev.end.date, -1) : '') : e.date;
     if (!endDate || endDate <= s.date) endDate = '';
     const o = { id: ev.id, ical: ev.iCalUID || '', kind, uid: tag('uid') || ev.iCalUID || ev.id, date: s.date, start: s.time, end: e.time, endDate,
-      memo: tag('memo'), parentId: tag('parent'), reminder, updated: ev.etag, fromApp: tag('kind') !== '', doneAt: tag('done_at') };
+      memo: tag('memo'), parentId: tag('parent'), reminder, updated: ev.etag, fromApp: tag('kind') !== '', doneAt: tag('done_at'),
+      due: tag('due'), dueRem: tag('duerem'), dueMail: tag('duemail') === '1', dueId: tag('dueid') };
     if (inDone) { o.inDone = true; if (tag('prevrem') !== '' && isFinite(+tag('prevrem'))) o.reminder = +tag('prevrem'); }   // 완료하면 알림을 끄고, 원래 알림은 기억
     const title = ev.summary || '';
     if (kind === 'work') {
@@ -1501,8 +1526,13 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     }
     e.memo = String(e.memo || ''); if (!e.memo.startsWith(LOCK_PREFIX)) e.memo = e.memo.slice(0, 500);
     e.reminder = Number(e.reminder); if (!isFinite(e.reminder)) e.reminder = -1;
+    // 기한: 'YYYY-MM-DDTHH:MM', 알림(분 전, 쉼표), 이메일로도
+    e.due = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(e.due || '') ? e.due : '';
+    e.dueRem = String(e.dueRem == null ? '0' : e.dueRem).split(',').map(x => x.trim()).filter(x => DUE_REMS.includes(x)).join(',');
+    e.dueMail = !!e.dueMail && !!e.dueRem;
     return e;
   }
+  const DUE_REMS = ['0', '60', '1440', '4320', '10080'];
   function newUid() { const a = new Uint8Array(16); crypto.getRandomValues(a); return Array.from(a, b => b.toString(16).padStart(2, '0')).join(''); }
   function bodyOf(e, settings) {
     const summary = e.kind === 'work'
@@ -1514,6 +1544,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     const fin = isDone(e);
     priv.vhm_done_at = fin ? (e.doneAt || String(Date.now())) : '';
     priv.vhm_prevrem = fin ? String(e.reminder) : '';
+    Object.assign(priv, { vhm_due: e.due || '', vhm_duerem: e.due ? (e.dueRem || '') : '', vhm_duemail: e.due && e.dueMail ? '1' : '', vhm_dueid: e.dueId || '' });
     const start = e.start ? { dateTime: e.date + 'T' + e.start + ':00' + OFFSET, timeZone: TZ } : { date: e.date };
     const last = e.endDate && e.endDate > e.date ? e.endDate : e.date;   // 기간 일정이면 끝나는 날까지
     const end = e.start ? { dateTime: last + 'T' + (e.end || plus30(e.start)) + ':00' + OFFSET, timeZone: TZ } : { date: addDays(last, 1) };
@@ -1676,7 +1707,48 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       return created;
     }
   }
+  /* ---------- 기한 알림 일정 ('방문건강관리(기한)') ---------- */
+  function dueBody(o) {
+    const [d, t] = o.due.split('T');
+    const head = o.kind === 'work' ? (o.type || '업무') : (o.title || (o.ptype === '메모' ? '메모' : '개인 일정'));   // 업무는 유형만 (대상자 정보 없음)
+    const mins = (o.dueRem || '').split(',').filter(Boolean).map(Number).slice(0, 4);
+    const overrides = mins.map(m => ({ method: 'popup', minutes: m })).concat(o.dueMail && mins.length ? [{ method: 'email', minutes: Math.max(...mins) }] : []);
+    return { summary: '[기한] ' + head, start: { dateTime: d + 'T' + t + ':00' + OFFSET, timeZone: TZ }, end: { dateTime: d + 'T' + plus30(t) + ':00' + OFFSET, timeZone: TZ },
+      description: '방문건강관리 일정표에서 정한 기한입니다. (원래 일정 ' + o.date + ')', reminders: { useDefault: false, overrides },
+      extendedProperties: { private: { vhm_kind: 'due', vhm_parent: o.id, vhm_pkind: o.kind } } };
+  }
+  async function delDue(id) {
+    const c = await ensureCalendars(); if (!id || !c.due) return;
+    try { await api('DELETE', '/calendars/' + encodeURIComponent(c.due) + '/events/' + encodeURIComponent(id)); } catch (err) { if (err.authNeeded) throw err; }
+  }
+  // 저장한 일정에 맞춰 기한 알림 일정을 만들거나 고치거나 지움. 완료한 일정은 기한 알림을 지움
+  async function syncDue(o) {
+    const c = await ensureCalendars(), want = !!o.due && !o.inDone;
+    if (!want && !o.dueId) return o;
+    let id = o.dueId || '';
+    if (want) {
+      const cal = await ensureDue(), body = dueBody(o); let ev = null;
+      if (id) { try { ev = await api('PATCH', '/calendars/' + encodeURIComponent(cal) + '/events/' + encodeURIComponent(id), { body }); if (ev && ev.status === 'cancelled') ev = null; } catch (err) { if (err.authNeeded) throw err; ev = null; } }
+      if (!ev) ev = await api('POST', '/calendars/' + encodeURIComponent(cal) + '/events', { body });
+      if (ev.id === id) return o;
+      id = ev.id;
+    } else { await delDue(id); id = ''; }
+    const calId = o.inDone ? c.done : (o.kind === 'work' ? c.work : c.personal);
+    const it = await api('PATCH', '/calendars/' + encodeURIComponent(calId) + '/events/' + encodeURIComponent(o.id), { body: { extendedProperties: { private: { vhm_dueid: id } } } });
+    o.dueId = id; o.updated = it.etag; return o;
+  }
   async function saveEvent(e, force, opt) {
+    const r = await saveCore(e, force, opt);
+    if (r.ok && r.event) { try { await syncDue(r.event); } catch (err) { if (err.authNeeded) throw err; r.dueError = '일정은 저장했지만 기한 알림을 만들지 못했습니다: ' + (err.message || err); } }
+    return r;
+  }
+  async function listDue(from, to) {
+    const c = await ensureCalendars(); if (!c.due) return [];
+    return (await listCal(c.due, from, to)).map(ev => { const p = (ev.extendedProperties && ev.extendedProperties.private) || {}, st = ev.start.dateTime || '';
+      return { dueId: ev.id, due: st.slice(0, 16), title: ev.summary || '', parentId: p.vhm_parent || '', pkind: p.vhm_pkind || '', rems: ((ev.reminders && ev.reminders.overrides) || []).filter(x => x.method === 'popup').map(x => x.minutes) }; })
+      .filter(x => x.due).sort((a, b) => a.due < b.due ? -1 : 1);
+  }
+  async function saveCore(e, force, opt) {
     e = validate(Object.assign({}, e));
     const settings = getSettings(), c = await ensureCalendars();
     const fin = isDone(e);
@@ -1687,6 +1759,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       if (!force && e.updated && f.ev.etag !== e.updated) return { ok: false, conflict: true, current: toObj(f.ev, f.kind, f.done) };
       const old = toObj(f.ev, f.kind, f.done);
       if (fin && !e.doneAt) e.doneAt = old.doneAt || '';
+      e.dueId = old.dueId || e.dueId || '';   // 기한 알림 일정은 구글에 있는 값 기준
       await sealMemo(e, old.memo, opt && opt.allowPlain);
       e.uid = e.uid || old.uid;
       const sameKind = f.kind === e.kind, sameShape = !!old.start === !!e.start;
@@ -1730,6 +1803,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     if (!f) return { ok: true, already: true };
     if (updated && f.ev.etag !== updated) return { ok: false, conflict: true, current: toObj(f.ev, f.kind, f.done) };
     await api('DELETE', '/calendars/' + encodeURIComponent(f.calId) + '/events/' + encodeURIComponent(id));
+    const p = f.ev.extendedProperties && f.ev.extendedProperties.private; if (p && p.vhm_dueid) await delDue(p.vhm_dueid);   // 기한 알림도 함께
     return { ok: true };
   }
 
@@ -1887,7 +1961,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     async getBootstrap() {
       const c = await ensureCalendars();
       try { if (c.email) localStorage.setItem('vhm-email', c.email); } catch (e) {}
-      return { settings: getSettings(), email: c.email, today: kst(new Date().toISOString()).date, calendars: { work: WORK, personal: PERS, done: DONE } };
+      return { settings: getSettings(), email: c.email, today: kst(new Date().toISOString()).date, calendars: { work: WORK, personal: PERS, done: DONE, due: DUE } };
     },
     async saveSettings(patch) {
       const s = getSettings();
@@ -1903,7 +1977,8 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     async setDone(id, d, up) { const r = await setDone(id, d, up); if (r.event) await decObj(r.event); if (r.current) await decObj(r.current); return r; },
     async listDone(f, t) { return Promise.all((await listDone(f, t)).map(decObj)); },
     async listAll(f, t) { const r = await listAll(f, t); return { active: await Promise.all(r.active.map(decObj)), done: await Promise.all(r.done.map(decObj)) }; },
-    moveDone,
+    async getEvent(id) { const f = await findEvent(id); if (!f) return null; const o = toObj(f.ev, f.kind, f.done); if (f.done) o.inDone = true; return decObj(o); },
+    moveDone, listDue, delDue: id => delDue(id).then(() => ({ ok: true })),
     async deleteEvent(id, up) { const r = await deleteEvent(id, up); if (r.current) await decObj(r.current); return r; },
     getStats, exportBackup, restoreBackup, restoreEvents,
     lockState, lockSetup, lockUnlock, lockNow, lockAll, lockStash, lockResume, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
@@ -2189,7 +2264,7 @@ function choose(title, html, buttons) {
 function fillSelect(sel, items, first) { sel.innerHTML = (first ? `<option value="">${first}</option>` : '') + items.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join(''); }
 
 /* ---------- 상태 ---------- */
-const S = { settings:null, events:[], doneEvents:[], range:null, cursor:null, selected:todayStr(), filters:{ group:'', type:'', status:'', q:'' }, editing:null, loadedAt:0 };
+const S = { settings:null, events:[], doneEvents:[], dues:[], range:null, cursor:null, selected:todayStr(), filters:{ group:'', type:'', status:'', q:'' }, editing:null, loadedAt:0 };
 
 function gridRange() {
   const y = S.cursor.getFullYear(), m = S.cursor.getMonth(); const first = new Date(y, m, 1);
@@ -2200,8 +2275,8 @@ function gridRange() {
 async function loadEvents() {
   const [from, to] = gridRange();
   let f = from, t = to; if (S.selected < f) f = S.selected; if (S.selected > t) t = S.selected;
-  const all = await run('불러오는 중…', () => call('listAll', f, t));
-  const evs = all.active; S.doneEvents = all.done;
+  const [all, dues] = await run('불러오는 중…', () => Promise.all([call('listAll', f, t), call('listDue', addDays(todayStr(), -90), addDays(todayStr(), 60)).catch(() => S.dues || [])]));
+  const evs = all.active; S.doneEvents = all.done; S.dues = dues || [];
   S.events = evs; S.range = [f, t]; S.loadedAt = Date.now();
   render(); loadStats();
 }
@@ -2243,6 +2318,7 @@ function render() {
   $('#monthView').hidden = s.view !== 'month'; $('#listView').hidden = s.view === 'month';
   $('#filterHint').textContent = workFilterOn() || S.filters.q ? '필터 적용 중' : '';
   if (s.view === 'month') renderMonth(); else if (s.view === 'done') renderDone(); else renderList();
+  renderDues();
   renderDay();
 }
 function renderMonth() {
@@ -2253,7 +2329,7 @@ function renderMonth() {
   for (let i = 0; i < cells; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i); const ds = ymd(d); const evs = byDate[ds] || [];
     const cls = ['day', d.getMonth() !== m ? 'other' : '', ds === today ? 'today' : '', ds === S.selected ? 'selected' : '', d.getDay()===0?'sun':d.getDay()===6?'sat':''].join(' ');
-    const chips = evs.slice(0, 3).map(e => `<div class="chip ${e.kind==='personal'?'personal':''} ${e.kind==='work'?statusCls[e.status]:''}${e.kind==='work'&&e.prio==='high'?' prio-high':''}" style="--c:${colorOf(e)}" title="${esc((e.kind==='work'&&e.prio==='high'?'[중요] ':'')+timeOf(e)+' '+labelOf(e)+(e.kind==='work'?' ['+e.status+']':''))}">${e.kind==='work'&&e.prio==='high'?'★':''}${isSpan(e)&&ds!==e.date?'↳ ':''}${e.start&&(!isSpan(e)||ds===e.date)?esc(e.start)+' ':''}${esc(labelOf(e))}</div>`).join('');
+    const chips = evs.slice(0, 3).map(e => `<div class="chip ${e.kind==='personal'?'personal':''} ${e.kind==='work'?statusCls[e.status]:''}${e.kind==='work'&&e.prio==='high'?' prio-high':''}" style="--c:${colorOf(e)}" title="${esc((e.kind==='work'&&e.prio==='high'?'[중요] ':'')+timeOf(e)+' '+labelOf(e)+(e.kind==='work'?' ['+e.status+']':''))}">${e.kind==='work'&&e.prio==='high'?'★':''}${e.due&&!e.inDone&&ds===e.date?'⏰':''}${isSpan(e)&&ds!==e.date?'↳ ':''}${e.start&&(!isSpan(e)||ds===e.date)?esc(e.start)+' ':''}${esc(labelOf(e))}</div>`).join('');
     html += `<div class="${cls}" data-date="${ds}" role="button" tabindex="0" aria-label="${fmtDateK(ds)} 일정 ${evs.length}건"><span class="num">${d.getDate()}</span>${chips}${evs.length > 3 ? `<div class="more">+${evs.length - 3}건</div>` : ''}</div>`;
   }
   $('#monthView').innerHTML = `<div class="month">${html}</div>`;
@@ -2295,6 +2371,19 @@ function fitLines(root) {
   });
 }
 
+// 기한 표시: 지남(빨강) / 오늘 / D-n
+function dueInfo(due) {
+  const now = new Date(), nowS = ymd(now) + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+  const d = due.slice(0, 10), t = due.slice(11, 16), days = Math.round((new Date(d + 'T00:00') - new Date(ymd(now) + 'T00:00')) / 864e5);
+  const md = (+d.slice(5, 7)) + '/' + (+d.slice(8, 10));
+  if (due <= nowS) return { cls: 'due-over', txt: `기한 지남 ${md} ${t}`, over: true };
+  if (days === 0) return { cls: 'due-today', txt: `오늘 기한 ${t}` };
+  return { cls: days <= 3 ? 'due-soon' : 'due-later', txt: `기한 ${md} ${t} · D-${days}` };
+}
+function dueBadge(e) {
+  if (e.inDone) return `<span class="badge">기한 ${(+e.due.slice(5, 7))}/${(+e.due.slice(8, 10))}</span>`;
+  const x = dueInfo(e.due); return `<span class="badge ${x.cls}">⏰ ${x.txt}</span>`;
+}
 function itemHtml(e) {
   const b = [];
   if (e.kind === 'work') {
@@ -2302,6 +2391,7 @@ function itemHtml(e) {
     else { if (e.prio === 'high') b.push('<span class="badge prio-high">★ 중요</span>'); else if (e.prio === 'low') b.push('<span class="badge prio-low">낮음</span>'); b.push(`<span class="badge s-${e.status}">${e.status}</span>`); if (e.group && e.group !== '미지정') b.push(`<span class="badge">${esc(e.group)}</span>`); }
   } else { b.push(`<span class="badge">${e.ptype === '메모' ? '메모' : '개인'}</span>`); if (e.done) b.push('<span class="badge s-완료">완료</span>'); }
   if (e.parentId) b.push('<span class="badge">후속</span>');
+  if (e.due) b.push(dueBadge(e));
   if (!e.fromApp) b.push('<span class="badge" title="휴대폰·구글 캘린더에서 직접 만든 일정">휴대폰 등록</span>');
   const quick = e.inDone ? `<div class="quick"><button class="small" data-undone="1" data-id="${esc(e.id)}" title="완료를 취소하고 원래 캘린더로 되돌립니다">되돌리기</button></div>`
     : (e.kind === 'work' && e.type && e.status === '예정') ? `<div class="quick"><button class="small" data-quick="완료" data-id="${esc(e.id)}">완료</button><button class="small" data-quick="부재" data-id="${esc(e.id)}">부재</button></div>`
@@ -2309,6 +2399,37 @@ function itemHtml(e) {
   const doneAt = e.inDone && /^\d{10,}$/.test(e.doneAt || '') ? (d => `<div class="memo">완료 ${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}</div>`)(new Date(+e.doneAt)) : '';
   return `<div class="item ${e.kind==='personal'?'personal':''} ${e.kind==='work'?statusCls[e.status]:''}${e.inDone?' in-done':''}" style="--c:${colorOf(e)}" data-id="${esc(e.id)}" role="button" tabindex="0">
     <div class="time">${esc(timeOf(e))}</div><div class="main"><div class="title">${titleLine(e)}${b.join('')}${quick}</div>${e.memo ? `<div class="memo">${esc(e.memo)}</div>` : ''}${e.memoLock === 'locked' || e.memoLock === 'bad' ? '<div class="memo">🔒 잠긴 메모</div>' : ''}${doneAt}</div></div>`;
+}
+// 다가오는 기한: 지난 것 + 앞으로 14일 (기한 캘린더 기준, 완료하면 사라짐)
+function renderDues() {
+  const lim = addDays(todayStr(), 14) + 'T23:59', list = (S.dues || []).filter(x => x.due <= lim);
+  $('#dueCard').hidden = !list.length; if (!list.length) return;
+  $('#dueList').innerHTML = list.map(x => { const i = dueInfo(x.due);
+    return `<button type="button" class="due-item ${i.cls}" data-due="${esc(x.dueId)}"><span class="due-when">${esc(i.txt)}</span><span class="due-what">${esc(x.title.replace(/^\[기한\]\s*/, ''))}</span></button>`; }).join('');
+  const nb = $('#btnDueNoti'); nb.hidden = !('Notification' in window) || Notification.permission !== 'default';
+}
+async function openDue(dueId) {
+  const x = (S.dues || []).find(d => d.dueId === dueId); if (!x) return;
+  let ev = S.events.concat(S.doneEvents).find(e => e.id === x.parentId);
+  if (!ev && x.parentId) { try { ev = await run('불러오는 중…', () => call('getEvent', x.parentId)); } catch (e) {} }
+  if (ev) { openEvent(ev); return; }
+  if (confirm('이 기한의 원래 일정이 지워졌습니다(휴대폰 등에서). 남은 기한 알림도 지울까요?')) { await run('지우는 중…', () => call('delDue', x.dueId)); await loadEvents(); }
+}
+// 사이트가 열려 있을 때: 기한 알림 시각이 되면 이 기기에도 알림(허용한 경우) + 화면 안내
+function dueTick() {
+  if (!S.dues || !S.dues.length) return;
+  let seen = {}; try { seen = JSON.parse(localStorage.getItem('vhm-due-seen') || '{}'); } catch (e) {}
+  const now = Date.now(); let changed = false;
+  S.dues.forEach(x => { const at = new Date(x.due + ':00+09:00').getTime();
+    (x.rems && x.rems.length ? x.rems : [0]).forEach(m => { const k = x.dueId + '|' + x.due + '|' + m, fire = at - m * 60000;
+      if (seen[k] || now < fire || now - fire > 15 * 60000) return;
+      seen[k] = now; changed = true;
+      const when = m === 0 ? '기한이 되었습니다' : m >= 1440 ? `기한 ${Math.round(m / 1440)}일 전입니다` : `기한 ${Math.round(m / 60)}시간 전입니다`;
+      const body = x.title.replace(/^\[기한\]\s*/, '') + ' · ' + when + ' (' + x.due.slice(5, 10).replace('-', '/') + ' ' + x.due.slice(11) + ')';
+      toast('⏰ ' + body, 8000);
+      try { if ('Notification' in window && Notification.permission === 'granted') new Notification('방문건강관리 기한 알림', { body, tag: k }); } catch (e) {}
+    }); });
+  if (changed) { Object.keys(seen).forEach(k => { if (now - seen[k] > 30 * 864e5) delete seen[k]; }); try { localStorage.setItem('vhm-due-seen', JSON.stringify(seen)); } catch (e) {} renderDues(); }
 }
 // 완료함: 완료한 업무 일정·개인 일정·메모 (이 달). 구글에서는 '방문건강관리(완료)' 캘린더에 있음
 function renderDone() {
@@ -2475,6 +2596,8 @@ function openEvent(ev, defaults = {}) {
   f.ptype.value = d.ptype || '일정'; f.done.checked = !!d.done; f.title.value = d.title || ''; f.memo.value = d.memo || ''; f.reminder.value = String(d.reminder ?? 30);
   if (!f.reminder.value) f.reminder.value = '30';
   f.dataset.parentId = d.parentId || '';
+  f.dueDate.value = d.due ? d.due.slice(0, 10) : ''; f.dueTime.value = d.due ? d.due.slice(11, 16) : '';
+  f.dueRem.value = d.due ? (d.dueRem || '') : '1440,0'; if (f.dueRem.selectedIndex < 0) f.dueRem.value = '0'; f.dueMail.checked = !!d.dueMail;
   const p = d.parentId && S.events.find(x => x.id === d.parentId || x.ical === d.parentId);
   $('#parentInfo').hidden = !d.parentId;
   if (d.parentId) $('#parentInfo').innerHTML = p ? `후속 일정 · 원래 일정: ${esc(fmtDateK(p.date))} ${esc(labelOf(p))} <button type="button" class="link" id="openParent">열기</button>` : '후속 일정 (원래 일정은 지금 보고 있는 기간 밖에 있습니다)';
@@ -2506,8 +2629,14 @@ function readForm() {
   if (!multi && f.start.value && f.end.value && f.end.value < f.start.value) { alert('종료 시간이 시작 시간보다 빠릅니다.'); return null; }
   if (!f.start.value && f.end.value) { alert('시작 시간을 입력하세요.'); return null; }
   const e = { kind:f.kind.value, date:f.date.value, endDate: multi ? endD : '', start:f.start.value, end:f.end.value, memo:f.memo.value.trim(), reminder:+f.reminder.value, parentId:f.dataset.parentId || '' };
-  if (S.editing) { e.id = S.editing.id; e.updated = S.editing.updated; e.uid = S.editing.uid; }
+  if (S.editing) { e.id = S.editing.id; e.updated = S.editing.updated; e.uid = S.editing.uid; e.dueId = S.editing.dueId || ''; }
   if (f.memo.dataset.cipher === '1' && S.editing) { e.memo = ''; e.memoCipher = S.editing.memoCipher; }
+  if (f.dueDate.value) {
+    const dt = f.dueTime.value.trim() ? tidyTime(f.dueTime) : '09:00';
+    if (!dt) { alert('기한 시각을 알아볼 수 없습니다. 14:30처럼 적거나 비워 두세요(비우면 오전 9시).'); return null; }
+    if (!S.editing && f.dueDate.value + 'T' + dt < ymd(new Date()) + 'T' + pad(new Date().getHours()) + ':' + pad(new Date().getMinutes()) && !confirm('기한이 이미 지난 시각입니다. 그래도 저장할까요?')) return null;
+    Object.assign(e, { due: f.dueDate.value + 'T' + dt, dueRem: f.dueRem.value, dueMail: f.dueMail.checked });
+  } else e.due = '';
   if (e.kind === 'work') {
     if (!f.type.value) { alert('유형을 선택하세요.'); return null; }
     f.target.value = maskName(f.target.value);
@@ -2534,6 +2663,7 @@ async function persist(e) {
     else { await loadEvents(); return null; }
   }
   if (r.gone) { alert(r.message); await loadEvents(); return null; }
+  if (r.dueError) setTimeout(() => toast(r.dueError, 6000), 2800);
   return r.event;
 }
 async function submitForm(thenFollow) {
@@ -2698,6 +2828,11 @@ function bind() {
   $('#eventForm').date.addEventListener('change', () => { const f = $('#eventForm'); f.endDate.min = f.date.value; if (!f.endDate.value || f.endDate.value < f.date.value) f.endDate.value = f.date.value; });
   let fitT; window.addEventListener('resize', () => { clearTimeout(fitT); fitT = setTimeout(() => fitLines(), 150); });
   $$('#eventForm input[name=kind]').forEach(r => r.onchange = () => { syncKindUI(); syncDoneHint(); });
+  $('#dueList').addEventListener('click', e => { const b = e.target.closest('[data-due]'); if (b) openDue(b.dataset.due); });
+  $('#btnDueNoti').onclick = async () => { try { const p = await Notification.requestPermission(); toast(p === 'granted' ? '이 기기에서 기한 알림을 받습니다(사이트가 열려 있을 때).' : '알림이 허용되지 않았습니다. 휴대폰 구글 캘린더 알림은 그대로 옵니다.', 5000); } catch (e) {} renderDues(); };
+  $('#dueClear').onclick = () => { const f = $('#eventForm'); f.dueDate.value = ''; f.dueTime.value = ''; };
+  $('#eventForm').dueDate.addEventListener('change', () => { const f = $('#eventForm'); if (f.dueDate.value && !f.dueTime.value) f.dueTime.value = '09:00'; });
+  setInterval(dueTick, 30000); setTimeout(dueTick, 3000);
   $('#eventForm').status.addEventListener('change', syncDoneHint); $('#eventForm').done.addEventListener('change', syncDoneHint);
   $$('#eventForm .tin').forEach(inp => inp.addEventListener('input', () => {   // 숫자 4개를 치면 바로 12:34 로
     if (/^\d{4}$/.test(inp.value)) { const v = parseTime(inp.value); if (v) { inp.value = v; inp.classList.remove('bad'); inp.dispatchEvent(new Event('change', { bubbles: true })); } }
