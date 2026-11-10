@@ -248,6 +248,9 @@ table.files select{padding:3px 6px;font-size:12px}
 .due-item{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:2px;width:100%;border:1px solid var(--line);border-left:4px solid #c9a227;border-radius:8px;padding:7px 10px;background:#fff;cursor:pointer}
 .due-item.due-over{border-left-color:#d92d20;background:#fff7f6}.due-item.due-today{border-left-color:#e07b00}
 .due-when{font-size:12px;font-weight:700}.due-item.due-over .due-when{color:#b42318}.due-what{font-size:14px}
+.badge.moved{background:#f1ecff;color:#5b3fa8;border-color:#d9ccfa}
+.move-list{display:flex;flex-direction:column;gap:6px;max-height:40vh;overflow:auto}.move-row{display:flex;gap:8px;align-items:center;font-size:14px}.move-row input{width:auto}
+.move-pick{gap:8px;margin-top:10px;flex-wrap:wrap}.move-pick input{flex:1 1 150px;width:auto}
 .done-head{padding:6px 2px 10px}.done-move{margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.done-head .hint{margin-top:2px}
 .item.in-done{background:#f7f9f7}
 .undo-bar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:#1c2230;color:#fff;padding:8px 10px 8px 16px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.25);font-size:14px;z-index:101;max-width:calc(100vw - 32px)}
@@ -1133,7 +1136,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
         <div class="card-body" id="dueList"></div>
       </section>
       <section class="card">
-        <div class="card-head"><h3 id="dayTitle"></h3><div class="row" style="gap:6px"><button class="small danger" id="btnBulkDel" hidden title="이 날짜 일정을 골라서 한꺼번에 삭제">일괄 삭제</button><button class="small primary" id="btnAddDay">+ 이 날짜에 추가</button></div></div>
+        <div class="card-head"><h3 id="dayTitle"></h3><div class="row" style="gap:6px"><button class="small" id="btnBulkMove" hidden title="이 날짜의 못 한 예정 일정을 다른 날로 미루기">미루기</button><button class="small danger" id="btnBulkDel" hidden title="이 날짜 일정을 골라서 한꺼번에 삭제">일괄 삭제</button><button class="small primary" id="btnAddDay">+ 이 날짜에 추가</button></div></div>
         <div class="card-body" id="dayList"></div>
       </section>
       <section class="card">
@@ -1211,6 +1214,15 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
 </section>
 
 <!-- 일정 등록·수정 -->
+<dialog id="moveDlg" aria-labelledby="moveDlgTitle">
+  <div class="dlg-head"><h3 id="moveDlgTitle">일정 미루기</h3><button type="button" class="link" data-close>닫기</button></div>
+  <div class="dlg-body">
+    <p class="hint" style="margin-top:0">날짜만 바뀌고 시간·메모·알림·기한은 그대로 둡니다.</p>
+    <div id="moveList" class="move-list"></div>
+    <button type="button" class="primary" id="moveNext" style="width:100%;margin-top:12px"></button>
+    <div class="row move-pick"><input type="date" id="moveDate" aria-label="미룰 날짜"><button type="button" id="moveGo">이 날짜로 미루기</button></div>
+  </div>
+</dialog>
 <dialog id="eventDlg" aria-labelledby="eventDlgTitle">
   <form id="eventForm" method="dialog">
     <div class="dlg-head"><h3 id="eventDlgTitle">새 일정</h3><button type="button" class="link" data-close>닫기</button></div>
@@ -1455,7 +1467,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     let endDate = allDay ? (ev.end && ev.end.date ? addDays(ev.end.date, -1) : '') : e.date;
     if (!endDate || endDate <= s.date) endDate = '';
     const o = { id: ev.id, ical: ev.iCalUID || '', kind, uid: tag('uid') || ev.iCalUID || ev.id, date: s.date, start: s.time, end: e.time, endDate,
-      memo: tag('memo'), parentId: tag('parent'), reminder, updated: ev.etag, fromApp: tag('kind') !== '', doneAt: tag('done_at'),
+      memo: tag('memo'), parentId: tag('parent'), reminder, updated: ev.etag, fromApp: tag('kind') !== '', doneAt: tag('done_at'), movedFrom: tag('from'),
       due: tag('due'), dueRem: tag('duerem'), dueMail: tag('duemail') === '1', dueId: tag('dueid') };
     if (inDone) { o.inDone = true; if (tag('prevrem') !== '' && isFinite(+tag('prevrem'))) o.reminder = +tag('prevrem'); }   // 완료하면 알림을 끄고, 원래 알림은 기억
     const title = ev.summary || '';
@@ -1532,6 +1544,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     e.due = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(e.due || '') ? e.due : '';
     e.dueRem = String(e.dueRem == null ? '0' : e.dueRem).split(',').map(x => x.trim()).filter(x => DUE_REMS.includes(x)).join(',');
     e.dueMail = !!e.dueMail && !!e.dueRem;
+    e.movedFrom = /^\d{4}-\d{2}-\d{2}$/.test(e.movedFrom || '') && e.movedFrom !== e.date ? e.movedFrom : '';
     return e;
   }
   const DUE_REMS = ['0', '60', '1440', '4320', '10080'];
@@ -1544,6 +1557,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     if (e.kind === 'work') Object.assign(priv, { vhm_type: e.type, vhm_status: e.status, vhm_group: e.group, vhm_target: e.target, vhm_birth: e.birth || '', vhm_sex: e.sex || '', vhm_prio: e.prio || 'normal' });
     else { priv.vhm_ptype = e.ptype; priv.vhm_done = e.done ? '1' : ''; }
     const fin = isDone(e);
+    priv.vhm_from = e.movedFrom || '';   // 미룬 일정: 처음 예정일
     priv.vhm_done_at = fin ? (e.doneAt || String(Date.now())) : '';
     priv.vhm_prevrem = fin ? String(e.reminder) : '';
     Object.assign(priv, { vhm_due: e.due || '', vhm_duerem: e.due ? (e.dueRem || '') : '', vhm_duemail: e.due && e.dueMail ? '1' : '', vhm_dueid: e.dueId || '' });
@@ -1792,6 +1806,25 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     return saveEvent(o, false);
   }
   // 개인 일정·메모 완료 / 완료 취소
+  // 미루기: 날짜만 바꾸고 시간·메모·알림·기한은 그대로. 여러 개 한꺼번에 가능 (to = 'YYYY-MM-DD')
+  async function postpone(list, to) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(to || '')) throw new Error('미룰 날짜가 올바르지 않습니다.');
+    const out = { moved: [], failed: 0, skipped: 0 };
+    for (const x of list || []) {
+      try {
+        const f = await findEvent(x.id); if (!f) { out.failed++; continue; }
+        if (x.updated && f.ev.etag !== x.updated) { out.failed++; continue; }
+        const o = toObj(f.ev, f.kind, f.done); if (f.done || o.date === to) { out.skipped++; continue; }
+        const shift = Math.round((Date.UTC(...to.split('-').map((v, i) => i === 1 ? v - 1 : +v)) - Date.UTC(...o.date.split('-').map((v, i) => i === 1 ? v - 1 : +v))) / 864e5);
+        const from = o.date; o.date = to; if (o.endDate) o.endDate = addDays(o.endDate, shift);
+        o.movedFrom = o.movedFrom || from; if (o.movedFrom === to) o.movedFrom = '';
+        o.updated = f.ev.etag;
+        const r = await saveEvent(o, false, { allowPlain: true });
+        if (r.ok) out.moved.push({ id: r.event.id, updated: r.event.updated, from, kind: r.event.kind }); else out.failed++;
+      } catch (err) { if (err.authNeeded) throw err; out.failed++; }
+    }
+    return out;
+  }
   async function setDone(id, done, updated) {
     const f = await findEvent(id);
     if (!f) return { ok: false, gone: true, message: '이 일정은 다른 기기에서 삭제되었습니다.' };
@@ -1980,7 +2013,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     async listDone(f, t) { return Promise.all((await listDone(f, t)).map(decObj)); },
     async listAll(f, t) { const r = await listAll(f, t); return { active: await Promise.all(r.active.map(decObj)), done: await Promise.all(r.done.map(decObj)) }; },
     async getEvent(id) { const f = await findEvent(id); if (!f) return null; const o = toObj(f.ev, f.kind, f.done); if (f.done) o.inDone = true; return decObj(o); },
-    moveDone, listDue, delDue: id => delDue(id).then(() => ({ ok: true })),
+    postpone, moveDone, listDue, delDue: id => delDue(id).then(() => ({ ok: true })),
     async deleteEvent(id, up) { const r = await deleteEvent(id, up); if (r.current) await decObj(r.current); return r; },
     getStats, exportBackup, restoreBackup, restoreEvents,
     lockState, lockSetup, lockUnlock, lockNow, lockAll, lockStash, lockResume, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
@@ -2394,10 +2427,11 @@ function itemHtml(e) {
   } else { b.push(`<span class="badge">${e.ptype === '메모' ? '메모' : '개인'}</span>`); if (e.done) b.push('<span class="badge s-완료">완료</span>'); }
   if (e.parentId) b.push('<span class="badge">후속</span>');
   if (e.due) b.push(dueBadge(e));
+  if (e.movedFrom && !e.inDone) b.push(`<span class="badge moved" title="처음 예정일 ${esc(e.movedFrom)}">↪ ${(+e.movedFrom.slice(5, 7))}/${(+e.movedFrom.slice(8, 10))}에서 미룸</span>`);
   if (!e.fromApp) b.push('<span class="badge" title="휴대폰·구글 캘린더에서 직접 만든 일정">휴대폰 등록</span>');
   const quick = e.inDone ? `<div class="quick"><button class="small" data-undone="1" data-id="${esc(e.id)}" title="완료를 취소하고 원래 캘린더로 되돌립니다">되돌리기</button></div>`
-    : (e.kind === 'work' && e.type && e.status === '예정') ? `<div class="quick"><button class="small" data-quick="완료" data-id="${esc(e.id)}">완료</button><button class="small" data-quick="부재" data-id="${esc(e.id)}">부재</button></div>`
-    : (e.kind === 'personal' && !e.done) ? `<div class="quick"><button class="small" data-quick="완료" data-id="${esc(e.id)}" title="완료하면 완료함으로 옮겨집니다">완료</button></div>` : '';
+    : (e.kind === 'work' && e.type && e.status === '예정') ? `<div class="quick"><button class="small" data-quick="완료" data-id="${esc(e.id)}">완료</button><button class="small" data-quick="부재" data-id="${esc(e.id)}">부재</button><button class="small" data-move="${esc(e.id)}" title="다음날이나 다른 날짜로 미루기 (메모 그대로)">미루기</button></div>`
+    : (e.kind === 'personal' && !e.done) ? `<div class="quick"><button class="small" data-quick="완료" data-id="${esc(e.id)}" title="완료하면 완료함으로 옮겨집니다">완료</button><button class="small" data-move="${esc(e.id)}" title="다음날이나 다른 날짜로 미루기">미루기</button></div>` : '';
   const doneAt = e.inDone && /^\d{10,}$/.test(e.doneAt || '') ? (d => `<div class="memo">완료 ${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}</div>`)(new Date(+e.doneAt)) : '';
   return `<div class="item ${e.kind==='personal'?'personal':''} ${e.kind==='work'?statusCls[e.status]:''}${e.inDone?' in-done':''}" style="--c:${colorOf(e)}" data-id="${esc(e.id)}" role="button" tabindex="0">
     <div class="time">${esc(timeOf(e))}</div><div class="main"><div class="title">${titleLine(e)}${b.join('')}${quick}</div>${e.memo ? `<div class="memo">${esc(e.memo)}</div>` : ''}${e.memoLock === 'locked' || e.memoLock === 'bad' ? '<div class="memo">🔒 잠긴 메모</div>' : ''}${doneAt}</div></div>`;
@@ -2447,6 +2481,40 @@ function renderDone() {
     try { const r = await run(`${stay.length}건 옮기는 중…`, () => call('moveDone', stay.map(e => ({ id: e.id, updated: e.updated }))));
       toast(r.failed ? `${r.moved}건을 옮겼고 ${r.failed}건은 다른 기기에서 바뀌어 건너뛰었습니다.` : `${r.moved}건을 완료 캘린더로 옮겼습니다.`, 4000); await loadEvents(); } catch (e) { mb.disabled = false; } };
 }
+// ---------- 미루기: 날짜만 바꿈 (시간·메모·알림·기한 그대로) ----------
+const canMove = e => !e.inDone && (e.kind === 'work' ? (e.type && e.status === '예정') : !e.done);
+let MOVE = [];
+function openMove(list, multi) {
+  MOVE = list; const base = list[0].date, next = addDays(base, 1);
+  $('#moveDlgTitle').textContent = multi ? `${fmtDateK(base)} 일정 미루기` : '일정 미루기';
+  $('#moveList').innerHTML = list.map(e => `<label class="move-row">${multi ? `<input type="checkbox" data-mv="${esc(e.id)}" checked>` : ''}<span>${esc(timeOf(e))} ${esc(e.kind === 'work' ? [e.type, e.target].filter(Boolean).join(' · ') : (e.title || (e.ptype === '메모' ? '메모' : '개인 일정')))}</span></label>`).join('');
+  $('#moveNext').textContent = `다음날로 미루기 — ${fmtDateK(next)}`; $('#moveNext').dataset.to = next;
+  $('#moveDate').value = ''; $('#moveDate').min = todayStr();
+  $('#moveDlg').showModal();
+}
+async function doMove(to) {
+  const pick = $$('#moveList [data-mv]'), ids = pick.length ? pick.filter(x => x.checked).map(x => x.dataset.mv) : MOVE.map(e => e.id);
+  const list = MOVE.filter(e => ids.includes(e.id)).map(e => ({ id: e.id, updated: e.updated }));
+  if (!list.length) { toast('미룰 일정을 골라 주세요.'); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(to || '')) { toast('미룰 날짜를 골라 주세요.'); return; }
+  $('#moveDlg').close();
+  try {
+    const r = await run('미루는 중…', () => call('postpone', list, to));
+    await loadEvents();
+    if (r.moved.length) showMoveUndo(r.moved, to);
+    if (r.failed) toast(`${r.failed}건은 다른 기기에서 바뀌었거나 지워져 미루지 못했습니다.`, 5000);
+  } catch (e) {}
+}
+function showMoveUndo(moved, to) {
+  $$('.undo-bar').forEach(x => x.remove());
+  const bar = document.createElement('div'); bar.className = 'undo-bar'; bar.setAttribute('role', 'status');
+  bar.innerHTML = `<span>${moved.length}건을 ${esc(fmtDateK(to))}로 미뤘습니다. 메모는 그대로입니다.</span><button type="button" class="undo-btn">되돌리기</button><button type="button" class="undo-x" aria-label="닫기">✕</button>`;
+  document.body.appendChild(bar);
+  const timer = setTimeout(() => bar.remove(), 30000);
+  bar.querySelector('.undo-x').onclick = () => { clearTimeout(timer); bar.remove(); };
+  bar.querySelector('.undo-btn').onclick = async () => { clearTimeout(timer); bar.remove();
+    try { const from = moved[0].from; const r = await run('되돌리는 중…', () => call('postpone', moved.map(m => ({ id: m.id, updated: m.updated })), from)); await loadEvents(); toast(`${r.moved.length}건을 ${fmtDateK(from)}로 되돌렸습니다.`); } catch (e) {} };
+}
 // 완료 직후: 아래에 '되돌리기' (30초)
 function showDoneUndo(ev) {
   $$('.undo-bar').forEach(x => x.remove());
@@ -2475,6 +2543,7 @@ function renderDay() {
   const evs = visible().filter(e => onDate(e, S.selected));
   $('#dayList').innerHTML = evs.length ? evs.map(itemHtml).join('') : '<div class="empty">일정이 없습니다.</div>';
   $('#btnBulkDel').hidden = !evs.length;
+  $('#btnBulkMove').hidden = !evs.some(canMove);
   fitLines($('#dayList').parentElement.parentElement);
 }
 
@@ -2631,7 +2700,7 @@ function readForm() {
   if (!multi && f.start.value && f.end.value && f.end.value < f.start.value) { alert('종료 시간이 시작 시간보다 빠릅니다.'); return null; }
   if (!f.start.value && f.end.value) { alert('시작 시간을 입력하세요.'); return null; }
   const e = { kind:f.kind.value, date:f.date.value, endDate: multi ? endD : '', start:f.start.value, end:f.end.value, memo:f.memo.value.trim(), reminder:+f.reminder.value, parentId:f.dataset.parentId || '' };
-  if (S.editing) { e.id = S.editing.id; e.updated = S.editing.updated; e.uid = S.editing.uid; e.dueId = S.editing.dueId || ''; }
+  if (S.editing) { e.id = S.editing.id; e.updated = S.editing.updated; e.uid = S.editing.uid; e.dueId = S.editing.dueId || ''; e.movedFrom = S.editing.movedFrom || ''; }
   if (f.memo.dataset.cipher === '1' && S.editing) { e.memo = ''; e.memoCipher = S.editing.memoCipher; }
   if (f.dueDate.value) {
     const dt = f.dueTime.value.trim() ? tidyTime(f.dueTime) : '09:00';
@@ -2807,6 +2876,8 @@ function bind() {
   $('#monthView').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('day')) e.target.click(); });
   const itemClick = async e => {
     const q = e.target.closest('[data-quick]');
+    const mv = e.target.closest('[data-move]');
+    if (mv) { e.stopPropagation(); const ev = S.events.find(x => x.id === mv.dataset.move); if (ev) openMove([ev], false); return; }
     const u = e.target.closest('[data-undone]');
     if (u) { e.stopPropagation(); const ev = S.doneEvents.find(x => x.id === u.dataset.id); if (!ev) return; u.disabled = true; await undoDone(ev); return; }
     if (q) { e.stopPropagation(); const ev = S.events.find(x => x.id === q.dataset.id); if (!ev) return;
@@ -2827,6 +2898,9 @@ function bind() {
   $('#btnAddDay').onclick = () => openEvent(null, { date:S.selected });
   $('#ageIn').addEventListener('input', () => { AGE.century = null; calcAge(); });
   $('#btnBulkDel').onclick = () => bulkDelete();
+  $('#btnBulkMove').onclick = () => { const evs = visible().filter(e => e.date === S.selected && canMove(e)).sort(sortEv); if (evs.length) openMove(evs, true); else toast('미룰 예정 일정이 없습니다.'); };
+  $('#moveNext').onclick = () => doMove($('#moveNext').dataset.to);
+  $('#moveGo').onclick = () => doMove($('#moveDate').value);
   $('#eventForm').date.addEventListener('change', () => { const f = $('#eventForm'); f.endDate.min = f.date.value; if (!f.endDate.value || f.endDate.value < f.date.value) f.endDate.value = f.date.value; });
   let fitT; window.addEventListener('resize', () => { clearTimeout(fitT); fitT = setTimeout(() => fitLines(), 150); });
   $$('#eventForm input[name=kind]').forEach(r => r.onchange = () => { syncKindUI(); syncDoneHint(); });
