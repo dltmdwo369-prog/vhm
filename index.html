@@ -145,6 +145,7 @@ dialog{border:0;border-radius:14px;padding:0;box-shadow:0 20px 60px rgba(10,20,4
 .nt-dopt.first{background:#f3f7ff}.nt-dopt:hover{background:#eaf2ff}
 .nt-dlink{color:var(--accent);text-decoration:none;font-size:13px}
 .nt-lead{flex:1 1 220px;min-width:0;padding:8px 10px;font-size:14px}
+.nt-caret{margin-top:4px}.nt-caret.on{color:#1e4fa8;background:#eef4ff;border-radius:6px;padding:4px 8px}.nt-caret .link{font-size:12px}
 .nt-group{margin-bottom:12px}
 .nt-row{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)}
 @media (max-width:560px){.nt-row{grid-template-columns:1fr;gap:4px}}
@@ -3313,7 +3314,9 @@ window.VHM_SUPPS = [
   'use strict';
   const LS = 'vhm-notes-tpl';
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3);
-  const KINDS = { one: '하나 고르기', many: '여러 개 고르기', num: '숫자 입력', drugs: '약 검색', lead: '입력칸 + 하나 고르기', acute: '여러 개 + 치료중·완치' };
+  const KINDS = { one: '하나 고르기', many: '여러 개 고르기', num: '숫자 입력', drugs: '약 검색', lead: '입력칸 + 하나 고르기', acute: '여러 개 + 치료중·완치', text: '직접 적기 (+ 빠른 입력)' };
+  const SCHEMA = 13;
+  const NO_HEAD = ['상담목적'];   // 이 묶음은 '*묶음이름' 머리줄 없이 (서두 줄이 이미 *로 시작)
   const ACUTE_ST = ['치료중', '완치'];   // 누를 때마다: 치료중 → 완치 → 해제
 
   // 기본 틀 (임시 — 사용자가 확인 후 고침)
@@ -3323,24 +3326,25 @@ window.VHM_SUPPS = [
     남: { R: [[60, 39.3, 33.8], [65, 36.8, 32.1], [70, 33.9, 28.9], [75, 31.4, 26.1], [80, 27.4, 22.1]], L: [[60, 37.7, 32.6], [65, 35.1, 29.7], [70, 32.5, 27.7], [75, 30.7, 25.8], [80, 26.3, 21.9]], cut: 28 },
     여: { R: [[60, 24.6, 21.2], [65, 23.2, 19.4], [70, 21.6, 18.2], [75, 19.8, 15.5], [80, 16.9, 13.0]], L: [[60, 23.1, 20.0], [65, 21.6, 18.1], [70, 20.1, 16.5], [75, 18.7, 15.1], [80, 15.8, 12.4]], cut: 18 }
   };
-  const gripItem = () => ({ id: uid(), group: '측정', label: '악력', kind: 'num', options: [], template: '*악력\n-Rt: {1}kg, Lt: {2}kg', fields: [
+  const gripItem = () => ({ id: uid(), group: '신체계측 및 신체사정', label: '악력', kind: 'num', options: [], template: '-악력 Rt: {1}kg, Lt: {2}kg', fields: [
     { label: '오른손', unit: 'kg', norm: 'gripR' }, { label: '왼손', unit: 'kg', norm: 'gripL' },
     { label: '성별', type: 'pick', options: '남,여' }, { label: '나이', unit: '세' }] });
   // 신체계측: 키·몸무게 → BMI 자동 계산. 판정은 대한비만학회 2022 진료지침(18.5 미만 저체중, 18.5~22.9 정상, 23~24.9 비만 전단계, 25~29.9 1단계 비만, 30~34.9 2단계, 35 이상 3단계)
-  const bodyItem = () => ({ id: uid(), group: '측정', label: '신체계측', kind: 'num', options: [], template: '*신체계측\n-키: {1}cm / 몸무게: {2}kg / BMI: {3}', fields: [
+  const bodyItem = () => ({ id: uid(), group: '신체계측 및 신체사정', label: '신체계측', kind: 'num', options: [], template: '-키: {1}cm / 몸무게: {2}kg / BMI: {3}', fields: [
     { label: '키', unit: 'cm' }, { label: '몸무게', unit: 'kg' }, { label: 'BMI', unit: 'kg/m²', calc: 'bmi' }] });
   // 서두: 입력칸 문장 + 고른 보기 → '신규등록을 위해 방문함.'
-  const leadItem = () => ({ id: uid(), group: '서두', label: '서두', kind: 'lead', options: [{ label: '방문함', text: '방문함.' }, { label: '내소함', text: '내소함.' }, { label: '동행방문함', text: '동행방문함.' }], fields: [], template: '*' });
+  const leadItem = () => ({ id: uid(), group: '상담목적', label: '서두', kind: 'lead', options: [{ label: '방문함', text: '방문함.' }, { label: '내소함', text: '내소함.' }, { label: '동행방문함', text: '동행방문함.' }], fields: [], template: '*' });
   // 당화혈색소: 대한당뇨병학회 진단기준 — 정상 <5.7%, 당뇨병 전단계 5.7~6.4%(주의), 당뇨병 ≥6.5%(높음)
-  const a1cItem = () => ({ id: uid(), group: '측정', label: '당화혈색소', kind: 'num', options: [], template: '-HbA1c: {1}%', fields: [{ label: 'HbA1c', unit: '%', range: { min: '', max: '5.6', warn: '6.4' } }] });
+  const a1cItem = () => ({ id: uid(), group: 'Vital', label: '당화혈색소', kind: 'num', options: [], template: '-HbA1c: {1}%', fields: [{ label: 'HbA1c', unit: '%', range: { min: '', max: '5.6', warn: '6.4' } }] });
   const DISEASES = ['고혈압', '당뇨병', '이상지질혈증', '관절염', '척추질환', '골다공증', '뇌졸중', '심장질환', '치매', '암', '만성폐질환', '만성콩팥병', '갑상선질환', '전립선비대증', '우울증'];
   // 급성질환: '*주질환' 줄에 만성질환과 함께 '폐렴(치료중), 대상포진(완치)'
   const ACUTES = ['감기', '독감', '코로나19', '폐렴', '기관지염', '요로감염', '장염', '대상포진', '골절', '염좌', '피부질환', '결막염'];
-  const acuteItem = () => ({ id: uid(), group: '건강 상태', label: '급성질환', kind: 'acute', options: ACUTES.map(d => ({ label: d, text: '' })), fields: [], template: '*주질환\n-{선택}' });
-  const diseaseItem = () => ({ id: uid(), group: '건강 상태', label: '만성질환', kind: 'many', options: DISEASES.map(d => ({ label: d, text: '' })), fields: [], template: '*주질환\n-{선택}' });
+  const acuteItem = () => ({ id: uid(), group: '주질환', label: '급성질환', kind: 'acute', options: ACUTES.map(d => ({ label: d, text: '' })), fields: [], template: '{선택}' });
+  const diseaseItem = () => ({ id: uid(), group: '주질환', label: '만성질환', kind: 'many', options: DISEASES.map(d => ({ label: d, text: '' })), fields: [], template: '{선택}' });
   const stopItem = () => ({ id: uid(), group: '복약', label: '투약 중단', kind: 'one', options: [{ label: '약 부작용', text: '약 부작용으로 인해 투약 중단했다고 함.' }, { label: '증상 호전', text: '증상 호전으로 인해 투약 중단했다고 함.' }], fields: [], template: '' });
-  const drugItem = () => ({ id: uid(), group: '복약', label: '처방약', kind: 'drugs', options: [], fields: [], template: '*복용약\n-{목록}' });
-  const suppItem = () => ({ id: uid(), group: '복약', label: '영양제', kind: 'drugs', src: 'supp', options: [], fields: [], template: '*영양제\n-{목록}' });
+  const drugItem = () => ({ id: uid(), group: '복약', label: '처방약', kind: 'drugs', options: [], fields: [], template: '복용약: {목록}' });
+  const suppItem = () => ({ id: uid(), group: '복약', label: '영양제', kind: 'drugs', src: 'supp', options: [], fields: [], template: '영양제: {목록}' });
+  const textItem = (group, label, template, opts, ph) => ({ id: uid(), group, label, kind: 'text', options: (opts || []).map(o => ({ label: o, text: '' })), fields: [], template, ph: ph || '' });
   const isSupp = it => it && it.src === 'supp';
   function defaults() {
     const one = (group, label, opts) => ({ id: uid(), group, label, kind: 'one', options: opts.map(([l, t]) => ({ label: l, text: t })), fields: [], template: '' });
@@ -3348,46 +3352,54 @@ window.VHM_SUPPS = [
     const num = (group, label, fields, template) => ({ id: uid(), group, label, kind: 'num', options: [], fields: fields.map(f => Array.isArray(f) ? { label: f[0], unit: f[1] } : f), template });
     // 정상 범위: 대한고혈압학회 2022 진료지침(정상 <120/80, 주의·전단계 ~139/89, 고혈압 ≥140/90), 대한당뇨병학회 진단기준(공복 100~125·식후2시간 140~199 = 주의, 그 이상 = 높음, 70 미만 = 저혈당), 맥박 성인 60~100회/분
     const R = (min, max, warn) => ({ min: min == null ? '' : String(min), max: max == null ? '' : String(max), warn: warn == null ? '' : String(warn) });
-    return { schema: 12, updatedAt: null, defaultsPending: true, joiner: ' ', flagInMemo: false, dash: true, drugs: [], supps: [], items: [
+    const pk = (label, options) => ({ label, type: 'pick', options });
+    // 사용자 상담기록 순서(2026-11-10): 상담목적 → Vital → 주질환 → 복약 → 신체계측 및 신체사정 → 건강상담 → 생활습관 → 서비스제공 → 기타사항
+    return { schema: SCHEMA, updatedAt: null, defaultsPending: true, joiner: ' ', flagInMemo: false, dash: true, drugs: [], supps: [], items: [
       leadItem(),
-      num('측정', 'Vital', [
+      textItem('상담목적', '상담 내용', '{입력}', [], '예: 최근 혈압 조절 안 된다고 하여 혈압 측정 및 상담함.'),
+      num('Vital', 'Vital', [
         { label: '수축기', unit: 'mmHg', range: R(90, 119, 139) },
         { label: '이완기', unit: 'mmHg', range: R(60, 79, 89) },
         { label: '맥박', unit: '회/분', range: R(60, 100) },
         { label: '혈당', unit: 'mg/dL', range: R(70, 139, 199), rangeBy: 5, ranges: { '공복': R(70, 99, 125), '식후': R(70, 139, 199) } },
         { label: '혈당 시점', type: 'pick', options: '공복,식후' }
-      ], '*Vital\n-BP: {1}/{2}mmHg, PR: {3}회/분, BST({5}): {4}mg/dL'),
+      ], '-BP: {1}/{2}mmHg, PR: {3}회/분, BST({5}): {4}mg/dL'),
       a1cItem(),
-      gripItem(),
-      bodyItem(),
       diseaseItem(),
       acuteItem(),
-      one('건강 상태', '전반적 컨디션', [['양호', '전반적인 컨디션 양호하다고 함.'], ['보통', '컨디션 보통이라고 함.'], ['저하', '최근 컨디션 저하 호소함.']]),
-      one('건강 상태', '통증', [['없음', '특별한 통증 호소 없음.'], ['있음', '통증 호소하여 부위·정도 확인함.']]),
-      one('건강 상태', '수면', [['양호', '수면 양호하다고 함.'], ['불량', '잠들기 어렵거나 자주 깬다고 함.']]),
-      one('건강 상태', '식사', [['규칙적', '식사 규칙적으로 하신다고 함.'], ['불규칙', '식사 불규칙하다고 함.'], ['식욕 저하', '식욕 저하 호소함.']]),
-      one('건강 상태', '배변', [['양호', '배변 양호함.'], ['변비', '변비 호소함.'], ['설사', '설사 증상 있다고 함.']]),
-      one('건강 상태', '기분·정서', [['안정', '정서 안정적임.'], ['우울감', '우울감 호소하여 경청 및 정서 지지함.'], ['불안', '불안감 호소하여 경청 및 정서 지지함.']]),
-      one('건강 상태', '최근 낙상', [['없음', '최근 낙상 경험 없다고 함.'], ['있음', '최근 낙상 경험 있다고 하여 낙상 예방 교육함.']]),
+      drugItem(),
       one('복약', '복약', [['규칙적', '처방약 규칙적으로 복용 중이라 함.'], ['가끔 거름', '복약을 가끔 거른다고 하여 규칙적 복약 교육함.'], ['복용약 없음', '현재 복용 중인 약 없다고 함.']]),
       stopItem(),
-      drugItem(),
       suppItem(),
-      one('생활 습관', '운동', [['하고 있음', '걷기 등 꾸준히 운동하고 계심.'], ['안 함', '규칙적인 운동 하지 않는다고 하여 운동 권유함.']]),
-      one('생활 습관', '흡연', [['안 함', ''], ['함', '흡연 중이라 하여 금연 권유함.']]),
-      one('생활 습관', '음주', [['안 함', ''], ['가끔', '가끔 음주한다고 함.'], ['자주', '음주 잦다고 하여 절주 교육함.']]),
-      many('교육·안내', '교육 내용', [['고혈압 관리'], ['당뇨 관리'], ['저염식'], ['수분 섭취'], ['규칙적 운동'], ['복약'], ['낙상 예방'], ['치매 예방'], ['감염병 예방']], '{선택} 교육함.'),
-      many('마무리', '마무리', [['다음 방문 안내', '다음 방문 일정 안내함.'], ['보건소 내소 권유', '보건소 내소 권유함.'], ['진료 권유', '병원 진료 받으시도록 권유함.'], ['서비스 연계 검토', '필요 서비스 연계 검토 예정.']])
+      bodyItem(),
+      num('신체계측 및 신체사정', '눈·귀·구강', [pk('눈', '양호,시력저하,백내장,녹내장'), pk('귀', '양호,청력저하,보청기 사용'), pk('구강건강', '양호,불량,틀니 사용,저작 불편')], '-눈: {1}, 귀: {2}, 구강건강: {3}'),
+      num('신체계측 및 신체사정', '관절', [pk('관절', '양호,통증,부종,강직,운동 제한')], '-관절: {1}'),
+      gripItem(),
+      one('건강상담', '전반적 컨디션', [['양호', '전반적인 컨디션 양호하다고 함.'], ['보통', '컨디션 보통이라고 함.'], ['저하', '최근 컨디션 저하 호소함.']]),
+      one('건강상담', '통증', [['없음', '특별한 통증 호소 없음.'], ['있음', '통증 호소하여 부위·정도 확인함.']]),
+      one('건강상담', '수면', [['양호', '수면 양호하다고 함.'], ['불량', '잠들기 어렵거나 자주 깬다고 함.']]),
+      one('건강상담', '식사', [['규칙적', '식사 규칙적으로 하신다고 함.'], ['불규칙', '식사 불규칙하다고 함.'], ['식욕 저하', '식욕 저하 호소함.']]),
+      one('건강상담', '배변', [['양호', '배변 양호함.'], ['변비', '변비 호소함.'], ['설사', '설사 증상 있다고 함.']]),
+      one('건강상담', '기분·정서', [['안정', '정서 안정적임.'], ['우울감', '우울감 호소하여 경청 및 정서 지지함.'], ['불안', '불안감 호소하여 경청 및 정서 지지함.']]),
+      one('건강상담', '낙상', [['없음', '최근 낙상 경험 없다고 함.'], ['있음', '최근 낙상 경험 있다고 하여 낙상 예방 교육함.']]),
+      one('건강상담', '건강검진', [['받음', '올해 건강검진 받았다고 함.'], ['예정', '건강검진 받을 예정이라고 함.'], ['안 받음', '올해 건강검진 받지 않아 수검 권유함.']]),
+      many('건강상담', '교육 내용', [['고혈압 관리'], ['당뇨 관리'], ['저염식'], ['수분 섭취'], ['규칙적 운동'], ['복약'], ['낙상 예방'], ['치매 예방'], ['감염병 예방']], '{선택} 교육함.'),
+      one('생활습관', '흡연', [['안 함', '비흡연.'], ['함', '흡연 중이라 하여 금연 권유함.'], ['금연', '금연 중이라고 함.']]),
+      one('생활습관', '음주', [['안 함', '음주 안 함.'], ['가끔', '가끔 음주한다고 함.'], ['자주', '음주 잦다고 하여 절주 교육함.']]),
+      one('생활습관', '신체활동', [['하고 있음', '걷기 등 꾸준히 신체활동 하고 계심.'], ['안 함', '규칙적인 신체활동 하지 않는다고 하여 신체활동 권유함.']]),
+      textItem('서비스제공', '물품', '물품: {입력}', ['혈압계', '혈당측정기', '체온계', '영양제', '구강관리용품', '미끄럼방지매트', '마스크'], '예: 혈압계 대여'),
+      textItem('서비스제공', '보건복지서비스 연계', '보건복지서비스 연계: {입력}', ['치매안심센터', '노인맞춤돌봄서비스', '정신건강복지센터', '장기요양 등급신청', '행정복지센터', '보건소 건강증진 프로그램'], '예: 치매안심센터 연계'),
+      many('기타사항', '마무리', [['다음 방문 안내', '다음 방문 일정 안내함.'], ['보건소 내소 권유', '보건소 내소 권유함.'], ['진료 권유', '병원 진료 받으시도록 권유함.'], ['서비스 연계 검토', '필요 서비스 연계 검토 예정.']])
     ] };
   }
   function clean(d) {
     const base = defaults(); if (!d || !Array.isArray(d.items)) return base;
     if (d.defaultsPending && !(d.schema >= 2)) return base;   // 아직 손대지 않은 예전 임시 틀은 새 기본 틀로
     const rg = r => ({ min: String((r && r.min) ?? '').slice(0, 8), max: String((r && r.max) ?? '').slice(0, 8), warn: String((r && r.warn) ?? '').slice(0, 8) });
-    const out = { schema: 12, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ', flagInMemo: !!d.flagInMemo, dash: d.schema >= 11 ? d.dash !== false : true,
+    const out = { schema: SCHEMA, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ', flagInMemo: !!d.flagInMemo, dash: d.schema >= 11 ? d.dash !== false : true,
       drugs: (Array.isArray(d.drugs) ? d.drugs : []).map(x => ({ name: String(x.name || '').slice(0, 60), note: String(x.note || '').slice(0, 40) })).filter(x => x.name).slice(0, 500),
       supps: (Array.isArray(d.supps) ? d.supps : []).map(x => ({ name: String(x.name || '').slice(0, 60), note: String(x.note || '').slice(0, 40) })).filter(x => x.name).slice(0, 500),
-      items: d.items.map(i => ({ id: i.id || uid(), group: String(i.group || '기타').slice(0, 30), label: String(i.label || '').slice(0, 40), kind: KINDS[i.kind] ? i.kind : 'one', ...(i.kind === 'drugs' && i.src === 'supp' ? { src: 'supp' } : {}),
+      items: d.items.map(i => ({ id: i.id || uid(), group: String(i.group || '기타').slice(0, 30), label: String(i.label || '').slice(0, 40), kind: KINDS[i.kind] ? i.kind : 'one', ...(i.kind === 'drugs' && i.src === 'supp' ? { src: 'supp' } : {}), ...(i.kind === 'text' && i.ph ? { ph: String(i.ph).slice(0, 80) } : {}),
         options: (i.options || []).map(o => ({ label: String(o.label || '').slice(0, 40), text: String(o.text || '').slice(0, 200) })).filter(o => o.label),
         fields: (i.fields || []).map(f => {
           const o = { label: String(f.label || '').slice(0, 20), unit: String(f.unit || '').slice(0, 10) };
@@ -3397,7 +3409,7 @@ window.VHM_SUPPS = [
           o.range = rg(f.range); if (+f.rangeBy > 0) { o.rangeBy = +f.rangeBy; o.ranges = {}; Object.keys(f.ranges || {}).forEach(k => { o.ranges[String(k).slice(0, 20)] = rg(f.ranges[k]); }); }
           return o; }).filter(f => f.label),
         template: String(i.template || '').slice(0, 200) })).filter(i => i.label) };
-    out.items.forEach(i => { if (i.kind === 'drugs' && i.template === '복용약: {목록}') i.template = '*복용약\n-{목록}'; });   // 예전 기본 형식 → *복용약 묶음 (사용자 요청)
+    if (!(d.schema >= 13)) out.items.forEach(i => { if (i.kind === 'drugs' && i.template === '복용약: {목록}') i.template = '*복용약\n-{목록}'; });   // 예전 기본 형식 → *복용약 묶음 (사용자 요청)
     if (!(d.schema >= 3) && !out.items.some(i => i.kind === 'drugs')) {   // 예전 틀에 '처방약' 검색 항목 추가 (손댄 내용은 그대로)
       const k = out.items.findIndex(i => i.label === '복약'); out.items.splice(k >= 0 ? k + 1 : out.items.length, 0, drugItem());
     }
@@ -3426,7 +3438,26 @@ window.VHM_SUPPS = [
       if (k >= 0) out.items.splice(k, 1, bodyItem());
       else { const g = out.items.map(i => i.group).lastIndexOf('측정'); out.items.splice(g >= 0 ? g + 1 : out.items.length, 0, bodyItem()); }
     }
+    if (!(d.schema >= 13)) out.items = regroup(out.items, !!d.defaultsPending);   // 사용자 요청(2026-11-10): 상담기록 순서대로 묶음 재배치
     return out;
+  }
+  // 예전 틀 → 새 묶음 순서. 같은 이름 항목은 사용자가 고친 보기 문장·정상 범위를 이어받고, 직접 추가한 항목은 알맞은 묶음 끝에 붙임
+  function regroup(old, untouched) {
+    const nb = defaults().items; if (untouched) return nb;
+    const RENAME = { '운동': '신체활동', '최근 낙상': '낙상' };
+    const GMAP = { '서두': '상담목적', '측정': 'Vital', '건강 상태': '건강상담', '생활 습관': '생활습관', '교육·안내': '건강상담', '마무리': '기타사항' };
+    const KNOWN = ['서두', 'Vital', '당화혈색소', '악력', '체중', '신체계측', '만성질환', '급성질환', '전반적 컨디션', '통증', '수면', '식사', '배변', '기분·정서', '최근 낙상', '복약', '투약 중단', '처방약', '영양제', '운동', '흡연', '음주', '교육 내용', '마무리'];
+    old.forEach(o => {
+      const lab = RENAME[o.label] || o.label, n = nb.find(i => i.label === lab && i.kind === o.kind && (o.kind !== 'drugs' || !!o.src === !!i.src));
+      if (n) {
+        if (o.label === lab && ['one', 'many', 'lead', 'acute'].includes(o.kind)) n.options = o.options.map(x => { const d = n.options.find(y => y.label === x.label); return { label: x.label, text: x.text || (d ? d.text : '') }; });
+        if (o.kind === 'num') o.fields.forEach(f => { const nf = n.fields.find(x => x.label === f.label); if (nf && f.range && !f.norm && !f.calc) { nf.range = f.range; if (f.rangeBy) { nf.rangeBy = f.rangeBy; nf.ranges = f.ranges; } } });
+      } else if (!KNOWN.includes(o.label)) {
+        const g = GMAP[o.group] || (nb.some(i => i.group === o.group) ? o.group : '기타사항'); const at = nb.map(i => i.group).lastIndexOf(g);
+        nb.splice(at >= 0 ? at + 1 : nb.length, 0, Object.assign({}, o, { group: g, template: o.template.replace(/^\*[^\n{]*\n/, '') }));
+      }
+    });
+    return nb;
   }
 
   const N = { tpl: null, view: 'write', pick: {}, lead: {}, extra: '', edited: false, synced: false, editing: null };
@@ -3460,6 +3491,7 @@ window.VHM_SUPPS = [
     const p = N.pick[it.id];
     if (it.kind === 'drugs') { const a = (p || []).filter(x => x.name.trim()); if (!a.length) return ''; const list = a.map(x => x.name.trim() + (x.note.trim() ? '(' + x.note.trim() + ')' : '')).join(', '); return (it.template || '{목록}').includes('{목록}') ? it.template.replace('{목록}', list) : list; }
     if (it.kind === 'lead') { const t = String(N.lead[it.id] || '').trim(), o = p != null ? it.options[p] : null; const body = [t, o ? o.text.trim() : ''].filter(Boolean).join(' '); return body ? (it.template || '') + body : ''; }
+    if (it.kind === 'text') { const t = String(N.lead[it.id] || '').trim(); if (!t) return ''; return (it.template || '{입력}').includes('{입력}') ? it.template.replace('{입력}', t) : it.template + ' ' + t; }
     if (it.kind === 'one') { if (p == null) return ''; const o = it.options[p]; return o ? o.text.trim() : ''; }
     if (it.kind === 'acute') { if (acuteHost()) return ''; const a = acuteList(it); return a.length ? (it.template.includes('{선택}') ? it.template.replace('{선택}', a.join(', ')) : a.join(', ')) : ''; }
     if (it.kind === 'many') {
@@ -3545,15 +3577,26 @@ window.VHM_SUPPS = [
     return any ? out.map(o => o.text).join('\n').trim() : '';
   }
   // 급성질환은 '*주질환'(만성질환) 줄에 붙음
-  function acuteHost() { return N.tpl.items.find(i => i.kind === 'many' && /주질환/.test(i.template) && i.template.includes('{선택}')) || null; }
+  function acuteHost() { return N.tpl.items.find(i => i.kind === 'many' && (i.label === '만성질환' || /주질환/.test(i.template)) && i.template.includes('{선택}')) || null; }
   function acuteList(it) { const st = N.pick[it.id] || {}; return it.options.map((o, k) => st[k] ? `${o.label}(${st[k]})` : '').filter(Boolean); }
+  // 묶음마다 '*묶음이름' 머리줄 + 그 아래 '-문장' 줄. 묶음 사이는 빈 줄. 상담목적은 머리줄 없이(서두가 *로 시작)
   function compose() {
-    // 하나·여러 개 고르기 문장 앞에 '-' (설정에서 끌 수 있음). '*'·'-'로 시작하거나 여러 줄이면 그대로
-    const parts = N.tpl.items.map(it => { const t = sentenceOf(it); if (!t) return ''; return N.tpl.dash && (it.kind === 'one' || it.kind === 'many' || it.kind === 'num') && !/^[-*•·]/.test(t) && !t.includes('\n') ? '-' + t : t; }).filter(Boolean);
-    if (N.extra.trim()) parts.push(N.extra.trim());
-    // 여러 줄짜리(예: *Vital 묶음)는 앞뒤를 줄바꿈으로 구분
-    const block = p => p.includes('\n') || /^[-*•·]/.test(p);   // 여러 줄이거나 '-'·'*'로 시작하면 따로 한 줄
-    return parts.reduce((acc, p, k) => acc + (k ? (block(p) || block(parts[k - 1]) ? '\n' : N.tpl.joiner) : '') + p, '');
+    const gs = groups(), extraG = gs.includes('기타사항') ? '기타사항' : gs[gs.length - 1];
+    const blocks = gs.map(g => {
+      const lines = [];
+      N.tpl.items.filter(i => i.group === g).forEach(it => {
+        const t = sentenceOf(it); if (!t) return;
+        const ls = t.split('\n').map(x => x.trim()).filter(Boolean);
+        const loose = (it.kind === 'one' || it.kind === 'many') && ls.length === 1 && !/^[-*•·]/.test(ls[0]);
+        if (!N.tpl.dash && loose && lines.length && lines[lines.length - 1].loose && N.tpl.joiner === ' ') { lines[lines.length - 1].t += ' ' + ls[0]; return; }   // '-' 없이 이어 쓰기
+        ls.forEach(l => lines.push({ t: N.tpl.dash && !/^[-*•·]/.test(l) && !(it.kind === 'lead') ? '-' + l : l, loose }));
+      });
+      if (g === extraG && N.extra.trim()) N.extra.trim().split('\n').map(x => x.trim()).filter(Boolean).forEach(l => lines.push({ t: N.tpl.dash && !/^[-*•·]/.test(l) ? '-' + l : l }));
+      if (!lines.length) return '';
+      const head = NO_HEAD.includes(g) || lines[0].t.startsWith('*') ? '' : '*' + g;
+      return (head ? head + '\n' : '') + lines.map(x => x.t).join('\n');
+    });
+    return blocks.filter(Boolean).join('\n\n');
   }
   function paintFlags() {
     $$('#tab-note [data-flag]').forEach(el => {
@@ -3573,8 +3616,26 @@ window.VHM_SUPPS = [
     });
   }
   // 직접 고친 메모 + 버튼으로 바뀐 부분 합치기: 예전 자동 문장(g0) → 새 자동 문장(g1)에서 바뀐 곳만 찾아, 사용자가 고친 글(u)에 같은 자리로 반영
+  // 새 줄(새 묶음 포함)만 생긴 경우: 사용자 글에서 바로 앞 줄(없으면 바로 뒤 줄)을 찾아 그 옆에 줄 단위로 넣음
+  function mergeLines(g0, u, g1) {
+    const a = g0.split('\n'), b = g1.split('\n'); let p = 0; while (p < a.length && p < b.length && a[p] === b[p]) p++;
+    let q = 0; while (q < a.length - p && q < b.length - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
+    const gone = a.slice(p, a.length - q), add = b.slice(p, b.length - q);
+    if (gone.some(x => x.trim()) || !add.some(x => x.trim())) return null;
+    const core = add.slice(add.findIndex(x => x.trim())); while (!core[core.length - 1].trim()) core.pop();
+    const prev = b.slice(0, p).filter(x => x.trim()).pop(), next = b.slice(b.length - q).find(x => x.trim());
+    const U = u.split('\n'), newSec = core[0].startsWith('*');
+    let i = prev != null ? U.lastIndexOf(prev) : -1, ins;
+    if (i >= 0) { let j = i + 1; if (newSec) while (j < U.length && U[j].trim() && !U[j].startsWith('*')) j++;   // 새 묶음이면 앞 묶음 끝까지 지나서
+      ins = j; }
+    else { const k = next != null ? U.indexOf(next) : -1; ins = k >= 0 ? k : U.length; }
+    const blk = (newSec && ins > 0 && U[ins - 1].trim() ? [''] : []).concat(core, newSec && ins < U.length && U[ins].trim() ? [''] : []);
+    U.splice(ins, 0, ...blk);
+    return U.join('\n').replace(/\n{3,}/g, '\n\n');
+  }
   function merge(g0, u, g1) {
     if (u === g0) return g1;
+    const ml = mergeLines(g0, u, g1); if (ml != null) return ml;
     let p = 0; const m = Math.min(g0.length, g1.length); while (p < m && g0[p] === g1[p]) p++;
     let q = 0; while (q < m - p && g0[g0.length - 1 - q] === g1[g1.length - 1 - q]) q++;
     const oldMid = g0.slice(p, g0.length - q), newMid = g1.slice(p, g1.length - q);
@@ -3602,11 +3663,37 @@ window.VHM_SUPPS = [
     }
     return { fail: true, add: newMid };   // 자리를 못 찾음
   }
+  // 줄 단위로 비교해 '새 줄만 생긴 경우'면 그 줄들을 돌려줌 (지워지거나 고쳐진 줄이 있으면 null)
+  function paintCaret() {
+    const el = $('#ntCaret'); if (!el) return;
+    if (N.caret) { const ta = $('#ntOut'), v = ta ? ta.value : '', pos = Math.min(N.caret.pos, v.length), ln = v.slice(0, pos).split('\n').length;
+      el.innerHTML = `<b>커서 자리에 넣는 중</b> (${ln}번째 줄) — 누르는 항목이 이 자리에 들어갑니다. <button type="button" class="link" id="ntCaretOff">원래 순서로</button>`; el.classList.add('on'); }
+    else { el.textContent = '메모 안을 눌러 커서를 두면, 그다음 누르는 항목은 그 자리에 들어갑니다.'; el.classList.remove('on'); }
+  }
+  function addedLines(g0, g1) {
+    const a = g0.split('\n'), b = g1.split('\n'); let p = 0; while (p < a.length && p < b.length && a[p] === b[p]) p++;
+    let q = 0; while (q < a.length - p && q < b.length - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
+    const gone = a.slice(p, a.length - q), add = b.slice(p, b.length - q);
+    if (gone.some(x => x.trim()) || !add.some(x => x.trim())) return null;
+    return add.filter(x => x.trim()).join('\n');
+  }
   function refreshOut() {
     paintFlags();
     const ta = $('#ntOut'); if (!ta) return;
-    const g1 = compose();
-    if (!N.edited || N.gen == null) ta.value = g1;
+    const g1 = compose(), before = ta.value;
+    if (N.caret && N.caret.val !== ta.value) N.caret = null;   // 커서를 둔 뒤 메모가 다른 식으로 바뀌었으면 자리 기억을 버림
+    const c = N.caret;
+    // 메모 안에 커서를 둔 뒤 항목을 누르면, 새로 생긴 줄은 그 커서 자리에 넣음 (사용자 요청 2026-11-10)
+    const ins = c && c.val === ta.value && N.gen != null && g1 !== N.gen ? addedLines(N.gen, g1) : null;
+    if (ins) {
+      let at = Math.min(c.pos, ta.value.length);
+      if (at > 0 && ta.value[at - 1] !== '\n') { const e = ta.value.indexOf('\n', at); at = e < 0 ? ta.value.length : e; }   // 줄 중간이면 그 줄 끝으로
+      const b = ta.value.slice(0, at), a = ta.value.slice(at); let t = ins, tail = 0;
+      if (b && !b.endsWith('\n')) t = '\n' + t;
+      if (a && !a.startsWith('\n')) { t += '\n'; tail = 1; }
+      ta.value = b + t + a; c.pos = at + t.length - tail; c.moved = true;
+      N.edited = ta.value !== g1;
+    } else if (!N.edited || N.gen == null) ta.value = g1;
     else if (g1 !== N.gen) {
       const m = merge(N.gen, ta.value, g1);
       if (m && m.fail) {
@@ -3615,6 +3702,9 @@ window.VHM_SUPPS = [
       } else ta.value = m;
       if (ta.value === g1) N.edited = false;
     }
+    if (c && !ins) { let i = 0; while (i < before.length && before[i] === ta.value[i]) i++; if (i < c.pos) c.pos = Math.max(i, c.pos + ta.value.length - before.length); c.pos = Math.min(c.pos, ta.value.length); }
+    if (c) c.val = ta.value;
+    paintCaret();
     N.gen = g1; N.out = ta.value;
     $('#ntCount').textContent = ta.value.length + '자';
   }
@@ -3686,6 +3776,8 @@ window.VHM_SUPPS = [
           : f.calc ? `<label class="nt-num">${esc(f.label)}<input data-calc="${it.id}" data-k="${k}" value="${esc(calcOf(it, k, v) || '')}" readonly tabindex="-1" class="nt-calc" placeholder="자동" title="${esc(BMI_TITLE)}"><span>${esc(f.unit)}</span><span class="nt-flag" data-flag="${it.id}:${k}"></span></label>`
           : `<label class="nt-num">${esc(f.label)}<input inputmode="decimal" data-num="${it.id}" data-k="${k}" value="${esc(v[k] || '')}" autocomplete="off" title="${esc(rangeText(rangeOf(it, k, v)))}"><span>${esc(f.unit)}</span><span class="nt-flag" data-flag="${it.id}:${k}"></span></label>`).join('')
           + (it.fields.some(f => f.norm) ? `<span class="nt-flag" data-gsum="${it.id}"></span>` : ''); }
+      else if (it.kind === 'text') ctl = `<input class="nt-lead nt-text" data-lead="${it.id}" value="${esc(N.lead[it.id] || '')}" placeholder="${esc(it.ph || '직접 적기')}" maxlength="200" autocomplete="off">`
+        + it.options.map(o => { const on = String(N.lead[it.id] || '').split(/,\s*/).includes(o.label); return `<button type="button" class="nt-chip sm${on ? ' on' : ''}" data-tadd="${it.id}" data-v="${esc(o.label)}" aria-pressed="${on}" title="눌러서 넣기·빼기">${esc(o.label)}</button>`; }).join('');
       else if (it.kind === 'lead') ctl = `<input class="nt-lead" data-lead="${it.id}" value="${esc(N.lead[it.id] || '')}" placeholder="예: 신규등록을 위해" maxlength="100" autocomplete="off">`
         + it.options.map((o, k) => `<button type="button" class="nt-chip${N.pick[it.id] === k ? ' on' : ''}" data-it="${it.id}" data-k="${k}" aria-pressed="${N.pick[it.id] === k}">${esc(o.label)}</button>`).join('');
       else if (it.kind === 'drugs') { const a = N.pick[it.id] || [];
@@ -3702,11 +3794,12 @@ window.VHM_SUPPS = [
         ${N.tpl.items.some(i => i.kind === 'num' && i.fields.some(f => f.range && (f.range.min !== '' || f.range.max !== ''))) ? '<p class="hint" style="margin:4px 0 0">수치 옆 정상·주의·높음·낮음은 참고용입니다. 기본 기준: 대한고혈압학회 2022 진료지침(정상 120/80 미만, 140/90 이상 고혈압), 대한당뇨병학회 진단기준(공복 100~125·식후 2시간 140~199 주의, 70 미만 저혈당, 당화혈색소 5.7~6.4% 주의·6.5% 이상 높음 — 이미 당뇨병 진단을 받은 분의 조절 목표는 개인마다 다름), 성인 맥박 60~100회/분. 기준은 ‘항목 편집’에서 바꿀 수 있습니다.</p>' : ''}
         ${N.tpl.items.some(i => i.fields.some(f => f.calc === 'bmi')) ? '<p class="hint" style="margin:4px 0 0">신체계측: 키(cm)·몸무게(kg)를 넣으면 BMI(몸무게 ÷ 키m²)를 소수 첫째 자리까지 자동 계산합니다. 판정은 대한비만학회 2022 진료지침(18.5 미만 저체중, 18.5~22.9 정상, 23~24.9 비만 전단계, 25 이상 비만 1~3단계)이며 참고용입니다.</p>' : ''}
         ${N.tpl.items.some(i => i.fields.some(f => f.norm)) ? '<p class="hint" style="margin:4px 0 0">악력: 각 손의 최댓값(kg)을 적고 성별·나이를 넣으세요. 또래 기준은 한국인 국민건강영양조사 2014–2015 악력 참고치(60세 이상, 5세 간격, 하위 20% 미만이면 ‘또래 하위 20%’), 근력 저하는 AWGS 2019 아시아 근감소증 기준(양손 중 큰 값이 남 28kg·여 18kg 미만). 성별·나이는 판정에만 쓰고 메모에는 넣지 않습니다.</p>' : ''}
-        <label class="f" style="margin-top:8px">추가로 적을 내용<textarea id="ntExtra" rows="2" maxlength="300" placeholder="체크 항목에 없는 내용을 직접 적으세요">${esc(N.extra)}</textarea></label>
+        <label class="f" style="margin-top:8px">기타사항 (직접 적기) <span class="hint">— 메모의 *기타사항 아래에 한 줄씩 들어갑니다</span><textarea id="ntExtra" rows="2" maxlength="300" placeholder="체크 항목에 없는 기타 메모사항을 직접 적으세요">${esc(N.extra)}</textarea></label>
       </div></div>
       <div class="card nt-outcard"><div class="card-body">
         <div class="row" style="justify-content:space-between;margin-bottom:6px"><b>만들어진 메모</b><span class="hint" id="ntCount"></span></div>
-        <textarea id="ntOut" rows="7" aria-label="만들어진 메모 (직접 고칠 수 있음)">${esc(N.out || '')}</textarea>
+        <textarea id="ntOut" rows="12" aria-label="만들어진 메모 (직접 고칠 수 있음)">${esc(N.out || '')}</textarea>
+        <div class="hint nt-caret" id="ntCaret">메모 안을 눌러 커서를 두면, 그다음 누르는 항목은 그 자리에 들어갑니다.</div>
         <div class="row" style="margin-top:8px;gap:8px">
           <button class="primary" id="ntCopy" style="flex:1">복사하기</button>
           <button id="ntClear">다음 대상자 (모두 지우기)</button>
@@ -3749,13 +3842,15 @@ window.VHM_SUPPS = [
       ${f.type === 'pick' ? '' : f.calc ? '<div class="nt-rrow hint">자동 계산: 몸무게(kg) ÷ 키(m)² — 같은 항목의 ‘키’·‘몸무게’ 칸을 씁니다. 판정은 대한비만학회 2022 기준(직접 입력 안 함).</div>' : f.norm ? '<div class="nt-rrow hint">기준: 한국인 악력 참고치(성별·나이) + AWGS 2019 근력 저하 기준 — 같은 항목의 ‘성별’(고르기: 남,여)·‘나이’ 칸을 씁니다.</div>' : `${rRow(k, f.range)}${picks.length ? `<label class="hint nt-rrow"><input type="checkbox" data-rby="${k}"${f.rangeBy ? ' checked' : ''}> 고르기 칸 {${(f.rangeBy || picks[0] + 1)}}에 따라 기준 다르게</label>` : ''}${f.rangeBy && e.fields[f.rangeBy - 1] && e.fields[f.rangeBy - 1].type === 'pick' ? String(e.fields[f.rangeBy - 1].options || '').split(',').map(x => x.trim()).filter(Boolean).map(o => rRow(k, (f.ranges || {})[o], o)).join('') : ''}`}</div>`).join('');
     $('#ntDlgBody').innerHTML = `<div class="grid2">
         <label class="f">항목 이름<input id="neLabel" value="${esc(e.label)}" maxlength="40"></label>
-        <label class="f">묶음<input id="neGroup" value="${esc(e.group)}" maxlength="30" list="ntGroups"><datalist id="ntGroups">${groups().map(g => `<option value="${esc(g)}">`).join('')}</datalist></label>
+        <label class="f">묶음 <span class="hint">(메모의 *머리줄)</span><input id="neGroup" value="${esc(e.group)}" maxlength="30" list="ntGroups"><datalist id="ntGroups">${groups().map(g => `<option value="${esc(g)}">`).join('')}</datalist></label>
         <label class="f">고르는 방식<select id="neKind">${Object.keys(KINDS).map(k => `<option value="${k}"${e.kind === k ? ' selected' : ''}>${KINDS[k]}</option>`).join('')}</select></label>
       </div>
       ${e.kind === 'lead' ? `<label class="f" style="margin-top:10px">앞에 붙일 표시 <span class="hint">(예: * → *신규등록을 위해 방문함.)</span><input id="neTpl" value="${esc(e.template)}" maxlength="10"></label>` : ''}
-      ${e.kind === 'drugs' ? `<label class="f" style="margin-top:10px">문장 틀 <span class="hint">({목록} 자리에 ‘약 이름(메모), …’가 들어감)</span><textarea id="neTpl" rows="2" placeholder="예: *복용약&#10;-{목록}">${esc(e.template)}</textarea></label>
+      ${e.kind === 'text' ? `<label class="f" style="margin-top:10px">문장 틀 <span class="hint">({입력} 자리에 적은 내용이 들어감)</span><input id="neTpl" value="${esc(e.template)}" maxlength="100" placeholder="예: 물품: {입력}"></label>
+        <h4 style="margin:14px 0 6px">빠른 입력 보기 <span class="hint">(누르면 칸에 쉼표로 이어 넣음, 비워도 됨)</span></h4>${e.options.map((o, k) => `<div class="nt-orow"><input data-o="${k}" data-f="label" value="${esc(o.label)}" placeholder="예: 혈압계"><button type="button" class="small" data-odel="${k}" title="빼기">✕</button></div>`).join('')}<button type="button" class="small" id="neOAdd">+ 보기 추가</button>` : ''}
+      ${e.kind === 'text' ? '' : e.kind === 'drugs' ? `<label class="f" style="margin-top:10px">문장 틀 <span class="hint">({목록} 자리에 ‘약 이름(메모), …’가 들어감)</span><textarea id="neTpl" rows="2" placeholder="예: 복용약: {목록}">${esc(e.template)}</textarea></label>
         <p class="hint">${isSupp(e) ? `검색 목록은 자주 드시는 영양제 ${(window.VHM_SUPPS || []).length}종(괄호는 식약처 건강기능식품 기능성을 줄인 참고용) + ‘내 영양제 목록’입니다.` : `검색 목록은 의약품안전나라에서 확인한 자주 쓰는 처방약 ${(window.VHM_DRUGS || []).length}개 + 성분명 + ‘내 약 목록’입니다.`}</p>` : e.kind === 'num' ? `<h4 style="margin:14px 0 6px">입력 칸</h4>${fld}<button type="button" class="small" id="neFAdd">+ 칸 추가</button>
-        <label class="f" style="margin-top:10px">문장 틀 <span class="hint">({1}, {2}… 자리에 입력한 값이 들어감. 줄을 바꾸면 메모도 줄이 바뀜. ‘, ’로 나눈 조각은 숫자를 안 적으면 빠짐. 고르기 칸을 안 고르면 ‘({5})’ 부분만 빠짐)</span><textarea id="neTpl" rows="3" placeholder="예: *Vital&#10;-BP: {1}/{2}mmHg, PR: {3}회/분">${esc(e.template)}</textarea></label>
+        <label class="f" style="margin-top:10px">문장 틀 <span class="hint">({1}, {2}… 자리에 입력한 값이 들어감. 줄을 바꾸면 메모도 줄이 바뀜. ‘, ’로 나눈 조각은 숫자를 안 적으면 빠짐. 고르기 칸을 안 고르면 ‘({5})’ 부분만 빠짐)</span><textarea id="neTpl" rows="3" placeholder="예: -BP: {1}/{2}mmHg, PR: {3}회/분">${esc(e.template)}</textarea></label>
         <p class="hint" style="margin:6px 0 0">정상 범위: 최소보다 낮으면 ‘낮음’, 최대보다 높으면 ‘주의’(주의 상한까지) 또는 ‘높음’. 비워 두면 판정하지 않습니다.</p>`
       : `<h4 style="margin:14px 0 6px">보기와 문장</h4><p class="hint" style="margin-top:0">문장을 비우면 그 보기를 골라도 메모에 아무것도 안 들어갑니다(예: 흡연 ‘안 함’).</p>${opt}<button type="button" class="small" id="neOAdd">+ 보기 추가</button>
         ${e.kind === 'many' ? `<label class="f" style="margin-top:10px">문장 틀 (선택) <span class="hint">({선택} 자리에 고른 보기 이름이 쉼표로 이어져 들어감. 줄을 바꾸면 메모도 줄이 바뀜)</span><textarea id="neTpl" rows="2" placeholder="예: {선택} 교육함.">${esc(e.template)}</textarea></label>` : ''}`}`;
@@ -3794,6 +3889,12 @@ window.VHM_SUPPS = [
       if (t.dataset.draw) { const q = $(`[data-dq="${t.dataset.draw}"]`).value.trim(); if (q) addDrug(t.dataset.draw, { name: q, note: '' }); return; }
       if (t.dataset.ddel) { const a = (N.pick[t.dataset.ddel] || []).slice(); a.splice(+t.dataset.k, 1); N.pick[t.dataset.ddel] = a; render(); return; }
       if (t.dataset.mydel != null) { const key = t.dataset.mylist === 'supps' ? 'supps' : 'drugs'; N.tpl[key].splice(+t.dataset.mydel, 1); await saveTpl('목록에서 뺐습니다.'); render(); return; }
+      if (t.dataset.tadd) {   // 직접 적기 칸의 빠른 입력: 누르면 쉼표로 이어 넣고, 다시 누르면 뺌
+        const id = t.dataset.tadd, cur = String(N.lead[id] || '').split(/,\s*/).map(x => x.trim()).filter(Boolean), v = t.dataset.v, k = cur.indexOf(v);
+        if (k >= 0) cur.splice(k, 1); else cur.push(v);
+        N.lead[id] = cur.join(', '); const inp = $(`[data-lead="${id}"]`); if (inp) inp.value = N.lead[id];
+        t.classList.toggle('on', k < 0); t.setAttribute('aria-pressed', k < 0); refreshOut(); return;
+      }
       if (t.dataset.pickf) {   // 숫자 항목 안의 고르기 칸 (예: 혈당 공복/식후)
         const id = t.dataset.pickf, k = +t.dataset.k, a = (N.pick[id] || []).slice(); a[k] = a[k] === t.dataset.v ? '' : t.dataset.v; N.pick[id] = a;
         $$(`[data-pickf="${id}"][data-k="${k}"]`).forEach(x => { const on = a[k] === x.dataset.v; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); });
@@ -3804,7 +3905,8 @@ window.VHM_SUPPS = [
         try { await navigator.clipboard.writeText(txt); } catch (e) { const ta = $('#ntOut'); ta.focus(); ta.select(); document.execCommand('copy'); }
         toast('복사했습니다. 전용앱 메모란에 붙여 넣으세요.'); return;
       }
-      if (t.id === 'ntClear') { N.pick = {}; N.lead = {}; N.extra = ''; N.edited = false; N.gen = null; N.out = ''; render(); toast('모두 지웠습니다.'); return; }
+      if (t.id === 'ntCaretOff') { N.caret = null; paintCaret(); return; }
+      if (t.id === 'ntClear') { N.pick = {}; N.lead = {}; N.extra = ''; N.edited = false; N.gen = null; N.out = ''; N.caret = null; render(); toast('모두 지웠습니다.'); return; }
       if (t.id === 'ntAdd') { openEdit(null); return; }
       if (t.id === 'ntConfirm') { N.tpl.defaultsPending = false; await saveTpl('확인 완료로 표시했습니다.'); render(); return; }
       if (t.id === 'ntReset') { if (!confirm('지금 항목을 모두 지우고 기본 틀로 되돌릴까요?')) return; N.tpl = defaults(); N.pick = {}; await saveTpl('기본 틀로 되돌렸습니다.'); render(); return; }
@@ -3820,6 +3922,9 @@ window.VHM_SUPPS = [
       else if (t.id === 'ntExtra') { N.extra = t.value; refreshOut(); }
       else if (t.id === 'ntOut') { N.out = t.value; N.edited = t.value !== N.gen; $('#ntCount').textContent = t.value.length + '자'; }
     });
+    // 메모 칸의 커서 위치 기억 (누르기·방향키·글 고르기)
+    const rememberCaret = ev => { const t = ev.target; if (t.id !== 'ntOut') return; N.caret = { pos: t.selectionEnd, val: t.value }; paintCaret(); };
+    ['click', 'keyup', 'select', 'input'].forEach(k => b.addEventListener(k, rememberCaret));
     b.addEventListener('keydown', ev => {
       const t = ev.target; if (!t.dataset || !t.dataset.dq) return;
       if (ev.key === 'Enter') { ev.preventDefault(); if (ev.isComposing) return; const q = t.value.trim(); if (!q) return; addDrug(t.dataset.dq, dRes[0] && norm(t.value) ? dRes[0] : { name: q, note: '' }); }
@@ -3847,8 +3952,9 @@ window.VHM_SUPPS = [
       if (ev.target.dataset.f === 'type' || ev.target.dataset.rby != null || (ev.target.dataset.f === 'options')) { readEdit(); paintEdit(); return; }
       if (ev.target.id !== 'neKind') return; readEdit(); const e = N.editing;
       if (e.kind === 'num' && !e.fields.length) { e.fields = [{ label: e.label || '값', unit: '' }]; if (!e.template) e.template = (e.label || '값') + ' {1} 측정함.'; }
-      if (e.kind === 'drugs' && !e.template.includes('{목록}')) e.template = '*복용약\n-{목록}';
-      if (e.kind !== 'num' && e.kind !== 'drugs' && !e.options.length) e.options = [{ label: '', text: '' }];
+      if (e.kind === 'drugs' && !e.template.includes('{목록}')) e.template = '복용약: {목록}';
+      if (e.kind === 'text' && !e.template.includes('{입력}')) e.template = (e.label ? e.label + ': ' : '') + '{입력}';
+      if (e.kind !== 'num' && e.kind !== 'drugs' && e.kind !== 'text' && !e.options.length) e.options = [{ label: '', text: '' }];
       paintEdit();
     });
     $('#ntSave').onclick = async () => {
@@ -3856,9 +3962,10 @@ window.VHM_SUPPS = [
       e.options = e.options.filter(o => o.label.trim()); e.fields = e.fields.filter(f => f.label.trim());
       if (!e.label) return alert('항목 이름을 적어 주세요.');
       if (e.kind === 'num' && (!e.fields.length || !e.template)) return alert('입력 칸과 문장 틀을 적어 주세요.');
+      if (e.kind === 'text' && !e.template) e.template = '{입력}';
       if (e.kind === 'one' || e.kind === 'many' || e.kind === 'lead' || e.kind === 'acute') { if (!e.options.length) return alert('보기를 하나 이상 적어 주세요.'); }
       if (e.kind === 'drugs' && !e.template.includes('{목록}')) return alert('문장 틀에 {목록}을 넣어 주세요.');
-      const isNew = e.isNew; delete e.isNew; const it = clean({ schema: 12, items: [e] }).items[0]; it.id = e.id;
+      const isNew = e.isNew; delete e.isNew; const it = clean({ schema: SCHEMA, items: [e] }).items[0]; it.id = e.id;
       const k = N.tpl.items.findIndex(i => i.id === it.id);
       if (k >= 0) N.tpl.items[k] = it; else N.tpl.items.push(it);
       delete N.pick[it.id];
