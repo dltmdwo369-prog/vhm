@@ -240,6 +240,8 @@ table.files select{padding:3px 6px;font-size:12px}
 .bd-item{display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px dashed var(--line);font-size:14px;cursor:pointer}
 .bd-item:last-child{border-bottom:0}.bd-item input{width:18px;height:18px;flex:none}
 .bd-time{color:var(--sub);font-variant-numeric:tabular-nums;min-width:82px}
+.done-head{padding:6px 2px 10px}.done-move{margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.done-head .hint{margin-top:2px}
+.item.in-done{background:#f7f9f7}
 .undo-bar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:#1c2230;color:#fff;padding:8px 10px 8px 16px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.25);font-size:14px;z-index:101;max-width:calc(100vw - 32px)}
 .undo-bar{width:max-content;box-sizing:border-box}.undo-bar span{min-width:0}
 .undo-bar .undo-btn{white-space:nowrap;flex:none;background:#fff;color:#1c2230;border:0;font-weight:700;padding:6px 12px;border-radius:8px}
@@ -1103,7 +1105,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     <div class="row">
       <button id="btnNew" class="primary">+ 새 일정</button>
       <button id="btnLock" title="잠긴 메모 열기·잠그기">🔒 메모 잠김</button>
-      <div class="seg" id="viewSeg" role="group" aria-label="보기 방식"><button data-v="month">월간</button><button data-v="list">목록</button></div>
+      <div class="seg" id="viewSeg" role="group" aria-label="보기 방식"><button data-v="month">월간</button><button data-v="list">목록</button><button data-v="done" title="완료한 일정·메모 보관">완료함</button></div>
       <div class="seg" id="showSeg" role="group" aria-label="표시할 일정"><button data-s="work">업무</button><button data-s="personal">개인</button><button data-s="all">함께</button></div>
     </div>
   </section>
@@ -1133,7 +1135,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
             <span id="customRange" class="row" hidden><input type="date" id="statFrom" aria-label="시작일"> ~ <input type="date" id="statTo" aria-label="종료일"></span>
           </div>
           <div id="statsTable"><div class="empty">집계 중…</div></div>
-          <p class="note">‘방문건강관리(업무)’ 캘린더에서 상태가 ‘완료’인 일정만 셉니다. 개인 캘린더 일정은 항상 빠집니다. 필터와 관계없이 전체 업무 일정 기준입니다.</p>
+          <p class="note">업무 일정 중 상태가 ‘완료’인 것만 셉니다(완료함으로 옮긴 일정 포함). 개인 일정·메모는 항상 빠집니다. 필터와 관계없이 전체 업무 일정 기준입니다.</p>
         </div>
       </section>
     </aside>
@@ -1229,6 +1231,8 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
         <div class="full warnbox work-only">이름은 두 번째 글자가 자동으로 O로 바뀌어 저장됩니다(김민수 → 김O수). 원래 이름은 저장·전송되지 않습니다. 생년월일·주소·연락처·건강정보는 넣지 마세요.</div>
         <label class="f personal-only">종류<select name="ptype"><option value="일정">개인 일정</option><option value="메모">메모</option></select></label>
         <label class="f personal-only">제목<input name="title" maxlength="80" autocomplete="off"></label>
+        <label class="f personal-only row" style="gap:8px;align-items:center;flex-direction:row"><input type="checkbox" name="done" style="width:auto"> 완료 <span class="hint">(완료함으로 옮김)</span></label>
+        <div class="full hint" id="doneHint" hidden></div>
         <label class="f">휴대폰 알림<select name="reminder">
           <option value="-2">캘린더 기본 알림</option><option value="-1">알림 없음</option><option value="0">정각</option><option value="10">10분 전</option><option value="30">30분 전</option>
           <option value="60">1시간 전</option><option value="1440">하루 전</option></select></label>
@@ -1280,13 +1284,14 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
  * 구글 캘린더 직접 연결 (Code.gs 와 같은 함수 이름·같은 결과 형식)
  * - 로그인: Google Identity Services 토큰 방식 (클라이언트 ID만 사용, 비밀 키 없음)
  * - 일정 저장소: 기존과 같은 캘린더 '방문건강관리(업무)', '방문건강관리(개인)'
+ * - 완료한 일정·메모는 '방문건강관리(완료)' 캘린더로 옮김 (휴대폰 구글 캘린더에서 체크를 끄면 안 보임, 실적에는 포함)
  * - 숨은 정보: 이벤트 extendedProperties.private 의 vhm_* (Apps Script 의 setTag 와 같은 곳)
  * ===================================================================== */
 (function () {
   'use strict';
   const CFG = window.VHM_CONFIG || {};
   const TZ = 'Asia/Seoul', OFFSET = '+09:00';
-  const WORK = '방문건강관리(업무)', PERS = '방문건강관리(개인)';
+  const WORK = '방문건강관리(업무)', PERS = '방문건강관리(개인)', DONE = '방문건강관리(완료)';
   const CAL_SCOPE = 'https://www.googleapis.com/auth/calendar';
   const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';   // 이 앱이 만든 파일에만 접근
   // 로그인은 캘린더 권한만. 드라이브 권한은 '연계 안내'에서 따로 요청 (드라이브 승인이 막혀도 일정은 쓰도록)
@@ -1389,10 +1394,18 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     const primary = items.find(c => c.primary);
     const find = name => items.find(c => c.summary === name && (c.accessRole === 'owner' || c.accessRole === 'writer'));
     const make = async name => { const c = await api('POST', '/calendars', { body: { summary: name, timeZone: TZ } }); return c.id; };
-    const w = find(WORK), p = find(PERS);
-    CAL = { work: w ? w.id : await make(WORK), personal: p ? p.id : await make(PERS), email: primary ? primary.id : '' };
+    const w = find(WORK), p = find(PERS), d = find(DONE);
+    CAL = { work: w ? w.id : await make(WORK), personal: p ? p.id : await make(PERS), done: d ? d.id : '', email: primary ? primary.id : '' };
     return CAL;
   }
+  // 완료 캘린더는 처음 완료할 때 만듦
+  async function ensureDone() {
+    const c = await ensureCalendars();
+    if (!c.done) c.done = (await api('POST', '/calendars', { body: { summary: DONE, timeZone: TZ, description: '방문건강관리 일정표에서 완료 처리한 일정·메모가 모이는 곳입니다. 휴대폰 구글 캘린더에서 이 캘린더 체크를 끄면 보이지 않습니다. 실적 집계에는 포함됩니다.' } })).id;
+    return c.done;
+  }
+  const isDone = e => e.kind === 'work' ? e.status === '완료' : !!e.done;
+  const tagKind = ev => { const p = ev.extendedProperties && ev.extendedProperties.private; return p && p.vhm_kind === 'personal' ? 'personal' : 'work'; };
 
   /* ---------- 날짜 도우미 ---------- */
   const KFMT = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -1401,7 +1414,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
   function plus30(t) { const [h, m] = t.split(':').map(Number); const x = Math.min(h * 60 + m + 30, 23 * 60 + 59); return String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0'); }
 
   /* ---------- 일정 변환 (Code.gs toObj_ 와 같은 규칙) ---------- */
-  function toObj(ev, kind) {
+  function toObj(ev, kind, inDone) {
     const priv = (ev.extendedProperties && ev.extendedProperties.private) || {};
     const tag = k => priv['vhm_' + k] == null ? '' : String(priv['vhm_' + k]);
     const allDay = !ev.start.dateTime;
@@ -1416,7 +1429,8 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     let endDate = allDay ? (ev.end && ev.end.date ? addDays(ev.end.date, -1) : '') : e.date;
     if (!endDate || endDate <= s.date) endDate = '';
     const o = { id: ev.id, ical: ev.iCalUID || '', kind, uid: tag('uid') || ev.iCalUID || ev.id, date: s.date, start: s.time, end: e.time, endDate,
-      memo: tag('memo'), parentId: tag('parent'), reminder, updated: ev.etag, fromApp: tag('kind') !== '' };
+      memo: tag('memo'), parentId: tag('parent'), reminder, updated: ev.etag, fromApp: tag('kind') !== '', doneAt: tag('done_at') };
+    if (inDone) { o.inDone = true; if (tag('prevrem') !== '' && isFinite(+tag('prevrem'))) o.reminder = +tag('prevrem'); }   // 완료하면 알림을 끄고, 원래 알림은 기억
     const title = ev.summary || '';
     if (kind === 'work') {
       o.type = tag('type'); o.status = tag('status') || '예정'; o.group = tag('group') || '미지정'; o.target = tag('target'); o.birth = tag('birth'); o.sex = tag('sex'); o.prio = ['high', 'low'].includes(tag('prio')) ? tag('prio') : 'normal';
@@ -1429,6 +1443,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       o.rawTitle = title;
     } else {
       o.ptype = tag('ptype') || (allDay ? '메모' : '일정'); if (!o.fromApp) o.ptype = '일정';
+      o.done = tag('done') === '1' || (!!inDone && tag('done') === '');
       o.title = title;
     }
     return o;
@@ -1444,10 +1459,23 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     } while (pageToken);
     return out;
   }
-  async function listEvents(from, to) {
+  // 세 캘린더를 모두 읽어 '진행 중'과 '완료'로 나눔. 휴대폰에서 [전화] 완료로 바꾼 일정(업무 캘린더에 있음)도 완료로,
+  // 완료 캘린더에 있지만 휴대폰에서 '부재' 등으로 바꾼 일정은 진행 중으로 봄
+  async function listAll(from, to) {
     const c = await ensureCalendars();
-    const [w, p] = await Promise.all([listCal(c.work, from, to), listCal(c.personal, from, to)]);
-    return w.map(e => toObj(e, 'work')).concat(p.map(e => toObj(e, 'personal'))).filter(o => o.date >= from && o.date <= to);
+    const [w, p, d] = await Promise.all([listCal(c.work, from, to), listCal(c.personal, from, to), c.done ? listCal(c.done, from, to) : []]);
+    const all = w.map(e => toObj(e, 'work')).concat(p.map(e => toObj(e, 'personal')), d.map(e => toObj(e, tagKind(e), true))).filter(o => o.date >= from && o.date <= to);
+    const active = [], done = [];
+    all.forEach(o => { o.doneCal = !!o.inDone; if (isDone(o)) { o.inDone = true; done.push(o); } else { delete o.inDone; active.push(o); } });
+    return { active, done };
+  }
+  async function listEvents(from, to) { return (await listAll(from, to)).active; }
+  async function listDone(from, to) { return (await listAll(from, to)).done; }
+  // 휴대폰에서 완료로 바꿔 업무 캘린더에 남아 있는 일정을 완료 캘린더로 옮김
+  async function moveDone(list) {
+    let moved = 0, failed = 0;
+    for (const x of list || []) { try { const r = await setDone(x.id, true, x.updated); r.ok ? moved++ : failed++; } catch (err) { if (err.authNeeded) throw err; failed++; } }
+    return { moved, failed };
   }
 
   /* ---------- 저장·삭제 ---------- */
@@ -1468,7 +1496,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       const by = String(e.birth || '').trim(); e.birth = /^\d{4}$/.test(by) && +by >= 1900 && +by <= new Date().getFullYear() ? by : '';
       e.sex = e.sex === '남' || e.sex === '여' ? e.sex : '';
     } else {
-      e.kind = 'personal'; e.ptype = e.ptype === '메모' ? '메모' : '일정'; e.title = String(e.title || '').slice(0, 80);
+      e.kind = 'personal'; e.done = !!e.done; e.ptype = e.ptype === '메모' ? '메모' : '일정'; e.title = String(e.title || '').slice(0, 80);
       if (!e.title && !e.memo && !e.memoCipher) throw new Error('제목이나 메모를 입력하세요.');
     }
     e.memo = String(e.memo || ''); if (!e.memo.startsWith(LOCK_PREFIX)) e.memo = e.memo.slice(0, 500);
@@ -1482,11 +1510,15 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       : (e.title || (e.ptype === '메모' ? '메모' : '개인 일정'));
     const priv = { vhm_kind: e.kind, vhm_memo: e.memo, vhm_parent: e.parentId || '', vhm_uid: e.uid || newUid() };
     if (e.kind === 'work') Object.assign(priv, { vhm_type: e.type, vhm_status: e.status, vhm_group: e.group, vhm_target: e.target, vhm_birth: e.birth || '', vhm_sex: e.sex || '', vhm_prio: e.prio || 'normal' });
-    else priv.vhm_ptype = e.ptype;
+    else { priv.vhm_ptype = e.ptype; priv.vhm_done = e.done ? '1' : ''; }
+    const fin = isDone(e);
+    priv.vhm_done_at = fin ? (e.doneAt || String(Date.now())) : '';
+    priv.vhm_prevrem = fin ? String(e.reminder) : '';
     const start = e.start ? { dateTime: e.date + 'T' + e.start + ':00' + OFFSET, timeZone: TZ } : { date: e.date };
     const last = e.endDate && e.endDate > e.date ? e.endDate : e.date;   // 기간 일정이면 끝나는 날까지
     const end = e.start ? { dateTime: last + 'T' + (e.end || plus30(e.start)) + ':00' + OFFSET, timeZone: TZ } : { date: addDays(last, 1) };
-    const reminders = e.reminder === -2 ? { useDefault: true } : { useDefault: false, overrides: e.reminder >= 0 ? [{ method: 'popup', minutes: e.reminder }] : [] };
+    const reminders = fin ? { useDefault: false, overrides: [] }   // 완료한 일은 알림 끔
+      : e.reminder === -2 ? { useDefault: true } : { useDefault: false, overrides: e.reminder >= 0 ? [{ method: 'popup', minutes: e.reminder }] : [] };
     return { summary, start, end, reminders, extendedProperties: { private: priv } };
   }
   /* ---------- 메모 잠금 (AES-GCM, 암호 → PBKDF2) ----------
@@ -1567,7 +1599,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
   async function lockAll(from, to) {   // 예전 일반 메모를 모두 잠금
     if (!Lock.key) throw new LockNeeded();
     const c = await ensureCalendars(); let done = 0, long = 0;
-    for (const calId of [c.work, c.personal]) {
+    for (const calId of [c.work, c.personal, c.done].filter(Boolean)) {
       for (const ev of await listCal(calId, from, to)) {
         const p = ev.extendedProperties && ev.extendedProperties.private; const m = p && p.vhm_memo;
         if (!m || m.startsWith(LOCK_PREFIX)) continue;
@@ -1626,53 +1658,77 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
 
   async function findEvent(id) {
     const c = await ensureCalendars();
-    for (const [kind, calId] of [['work', c.work], ['personal', c.personal]]) {
-      try { const ev = await api('GET', '/calendars/' + encodeURIComponent(calId) + '/events/' + encodeURIComponent(id)); if (ev && ev.status !== 'cancelled') return { ev, kind, calId }; }
+    for (const [kind, calId] of [['work', c.work], ['personal', c.personal], ['done', c.done]]) {
+      if (!calId) continue;
+      try { const ev = await api('GET', '/calendars/' + encodeURIComponent(calId) + '/events/' + encodeURIComponent(id)); if (ev && ev.status !== 'cancelled') return kind === 'done' ? { ev, kind: tagKind(ev), calId, done: true } : { ev, kind, calId }; }
       catch (err) { if (err.status !== 404 && err.status !== 410) throw err; }
     }
     return null;
   }
+  // 다른 캘린더로 옮기기 (같은 일정 그대로). 반복 일정의 한 회차처럼 옮길 수 없으면 복사 후 원본 삭제
+  async function moveEv(fromCal, ev, toCal) {
+    try { return await api('POST', '/calendars/' + encodeURIComponent(fromCal) + '/events/' + encodeURIComponent(ev.id) + '/move', { query: { destination: toCal } }); }
+    catch (err) {
+      if (err.authNeeded) throw err;
+      const copy = {}; ['summary', 'start', 'end', 'reminders', 'extendedProperties', 'description', 'location', 'colorId', 'transparency'].forEach(k => { if (ev[k] != null) copy[k] = ev[k]; });
+      const created = await api('POST', '/calendars/' + encodeURIComponent(toCal) + '/events', { body: copy });
+      await api('DELETE', '/calendars/' + encodeURIComponent(fromCal) + '/events/' + encodeURIComponent(ev.id));
+      return created;
+    }
+  }
   async function saveEvent(e, force, opt) {
     e = validate(Object.assign({}, e));
     const settings = getSettings(), c = await ensureCalendars();
-    const calId = e.kind === 'work' ? c.work : c.personal;
+    const fin = isDone(e);
+    const calId = fin ? await ensureDone() : (e.kind === 'work' ? c.work : c.personal);
     if (e.id) {
       const f = await findEvent(e.id);
       if (!f) return { ok: false, gone: true, message: '이 일정은 다른 기기에서 삭제되었습니다.' };
-      if (!force && e.updated && f.ev.etag !== e.updated) return { ok: false, conflict: true, current: toObj(f.ev, f.kind) };
-      const old = toObj(f.ev, f.kind);
+      if (!force && e.updated && f.ev.etag !== e.updated) return { ok: false, conflict: true, current: toObj(f.ev, f.kind, f.done) };
+      const old = toObj(f.ev, f.kind, f.done);
+      if (fin && !e.doneAt) e.doneAt = old.doneAt || '';
       await sealMemo(e, old.memo, opt && opt.allowPlain);
       e.uid = e.uid || old.uid;
       const sameKind = f.kind === e.kind, sameShape = !!old.start === !!e.start;
       if (sameKind && sameShape) {
         try {
-          const ev = await api('PATCH', '/calendars/' + encodeURIComponent(calId) + '/events/' + encodeURIComponent(e.id), { body: bodyOf(e, settings), ifMatch: force ? undefined : f.ev.etag });
-          return { ok: true, event: toObj(ev, e.kind) };
+          let ev = await api('PATCH', '/calendars/' + encodeURIComponent(f.calId) + '/events/' + encodeURIComponent(e.id), { body: bodyOf(e, settings), ifMatch: force ? undefined : f.ev.etag });
+          if (f.calId !== calId) ev = await moveEv(f.calId, ev, calId);   // 완료하면 완료 캘린더로, 되돌리면 원래 캘린더로
+          return { ok: true, event: toObj(ev, e.kind, fin), moved: f.calId !== calId };
         } catch (err) {
-          if (err.status === 412) { const g = await findEvent(e.id); return g ? { ok: false, conflict: true, current: toObj(g.ev, g.kind) } : { ok: false, gone: true, message: '이 일정은 다른 기기에서 삭제되었습니다.' }; }
+          if (err.status === 412) { const g = await findEvent(e.id); return g ? { ok: false, conflict: true, current: toObj(g.ev, g.kind, g.done) } : { ok: false, gone: true, message: '이 일정은 다른 기기에서 삭제되었습니다.' }; }
           throw err;
         }
       }
       // 업무↔개인 또는 종일↔시간 전환: 새로 만들고 원본 삭제 (같은 uid 유지)
       const created = await api('POST', '/calendars/' + encodeURIComponent(calId) + '/events', { body: bodyOf(e, settings) });
       await api('DELETE', '/calendars/' + encodeURIComponent(f.calId) + '/events/' + encodeURIComponent(e.id));
-      return { ok: true, event: toObj(created, e.kind) };
+      return { ok: true, event: toObj(created, e.kind, fin), moved: f.calId !== calId };
     }
     await sealMemo(e, null, opt && opt.allowPlain);
     const ev = await api('POST', '/calendars/' + encodeURIComponent(calId) + '/events', { body: bodyOf(e, settings) });
-    return { ok: true, event: toObj(ev, e.kind) };
+    return { ok: true, event: toObj(ev, e.kind, fin), moved: fin };
   }
   async function setStatus(id, status, updated) {
     const f = await findEvent(id);
     if (!f) return { ok: false, gone: true, message: '이 일정은 다른 기기에서 삭제되었습니다.' };
-    if (updated && f.ev.etag !== updated) return { ok: false, conflict: true, current: toObj(f.ev, f.kind) };
-    const o = toObj(f.ev, f.kind); o.status = status; o.updated = f.ev.etag;
+    if (updated && f.ev.etag !== updated) return { ok: false, conflict: true, current: toObj(f.ev, f.kind, f.done) };
+    const o = toObj(f.ev, f.kind, f.done); o.status = status; o.updated = f.ev.etag;
     return saveEvent(o, false);
+  }
+  // 개인 일정·메모 완료 / 완료 취소
+  async function setDone(id, done, updated) {
+    const f = await findEvent(id);
+    if (!f) return { ok: false, gone: true, message: '이 일정은 다른 기기에서 삭제되었습니다.' };
+    if (updated && f.ev.etag !== updated) return { ok: false, conflict: true, current: toObj(f.ev, f.kind, f.done) };
+    const o = toObj(f.ev, f.kind, f.done); o.updated = f.ev.etag;
+    if (o.kind === 'work') o.status = done ? '완료' : '예정'; else o.done = !!done;
+    return saveEvent(o, false, { allowPlain: true });
   }
   async function deleteEvent(id, updated) {
     const f = await findEvent(id);
     if (!f) return { ok: true, already: true };
-    if (updated && f.ev.etag !== updated) return { ok: false, conflict: true, current: toObj(f.ev, f.kind) };
+    if (updated && f.ev.etag !== updated) return { ok: false, conflict: true, current: toObj(f.ev, f.kind, f.done) };
     await api('DELETE', '/calendars/' + encodeURIComponent(f.calId) + '/events/' + encodeURIComponent(id));
     return { ok: true };
   }
@@ -1681,7 +1737,8 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
   async function getStats(from, to) {
     const c = await ensureCalendars(); const res = {}; let unclassified = 0;
     TYPES.forEach(t => { res[t] = { '완료': 0, '부재': 0, '예정': 0, '취소': 0 }; });
-    (await listCal(c.work, from, to)).map(e => toObj(e, 'work')).forEach(o => {
+    const doneWork = c.done ? (await listCal(c.done, from, to)).filter(e => tagKind(e) === 'work').map(e => toObj(e, 'work', true)) : [];
+    (await listCal(c.work, from, to)).map(e => toObj(e, 'work')).concat(doneWork).forEach(o => {
       if (o.date < from || o.date > to) return;
       if (!o.type) { unclassified++; return; }
       res[o.type][o.status]++;
@@ -1691,7 +1748,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
 
   /* ---------- 백업 (파일로 내려받기) ---------- */
   async function exportBackup(from, to) {
-    const events = await listEvents(from, to);
+    const la = await listAll(from, to), events = la.active.concat(la.done);
     const payload = { app: 'vhm-calendar-web', schema: 1, exportedAt: new Date().toISOString(), from, to, events };
     const json = JSON.stringify(payload, null, 1);
     const now = kst(new Date().toISOString());
@@ -1706,7 +1763,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     if (!data || !Array.isArray(data.events)) throw new Error('이 일정표의 백업 파일이 아닙니다.');
     const evs = data.events.filter(e => e && e.date); if (!evs.length) return { added: 0, skipped: 0, failed: 0 };
     const dates = evs.map(e => e.date).sort(); const have = {};
-    (await listEvents(dates[0], dates[dates.length - 1])).forEach(o => { have[o.uid] = true; if (o.ical) have[o.ical] = true; });
+    (await listAll(dates[0], dates[dates.length - 1])).active.concat((await listAll(dates[0], dates[dates.length - 1])).done).forEach(o => { have[o.uid] = true; if (o.ical) have[o.ical] = true; });
     let added = 0, skipped = 0, failed = 0;
     for (const e of evs) {
       if (e.uid && have[e.uid]) { skipped++; continue; }
@@ -1830,7 +1887,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     async getBootstrap() {
       const c = await ensureCalendars();
       try { if (c.email) localStorage.setItem('vhm-email', c.email); } catch (e) {}
-      return { settings: getSettings(), email: c.email, today: kst(new Date().toISOString()).date, calendars: { work: WORK, personal: PERS } };
+      return { settings: getSettings(), email: c.email, today: kst(new Date().toISOString()).date, calendars: { work: WORK, personal: PERS, done: DONE } };
     },
     async saveSettings(patch) {
       const s = getSettings();
@@ -1843,6 +1900,10 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     async listEvents(f, t) { return Promise.all((await listEvents(f, t)).map(decObj)); },
     async saveEvent(e, force) { const r = await saveEvent(e, force); if (r.event) await decObj(r.event); if (r.current) await decObj(r.current); return r; },
     async setStatus(id, st, up) { const r = await setStatus(id, st, up); if (r.event) await decObj(r.event); if (r.current) await decObj(r.current); return r; },
+    async setDone(id, d, up) { const r = await setDone(id, d, up); if (r.event) await decObj(r.event); if (r.current) await decObj(r.current); return r; },
+    async listDone(f, t) { return Promise.all((await listDone(f, t)).map(decObj)); },
+    async listAll(f, t) { const r = await listAll(f, t); return { active: await Promise.all(r.active.map(decObj)), done: await Promise.all(r.done.map(decObj)) }; },
+    moveDone,
     async deleteEvent(id, up) { const r = await deleteEvent(id, up); if (r.current) await decObj(r.current); return r; },
     getStats, exportBackup, restoreBackup, restoreEvents,
     lockState, lockSetup, lockUnlock, lockNow, lockAll, lockStash, lockResume, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
@@ -2128,7 +2189,7 @@ function choose(title, html, buttons) {
 function fillSelect(sel, items, first) { sel.innerHTML = (first ? `<option value="">${first}</option>` : '') + items.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join(''); }
 
 /* ---------- 상태 ---------- */
-const S = { settings:null, events:[], range:null, cursor:null, selected:todayStr(), filters:{ group:'', type:'', status:'', q:'' }, editing:null, loadedAt:0 };
+const S = { settings:null, events:[], doneEvents:[], range:null, cursor:null, selected:todayStr(), filters:{ group:'', type:'', status:'', q:'' }, editing:null, loadedAt:0 };
 
 function gridRange() {
   const y = S.cursor.getFullYear(), m = S.cursor.getMonth(); const first = new Date(y, m, 1);
@@ -2139,7 +2200,8 @@ function gridRange() {
 async function loadEvents() {
   const [from, to] = gridRange();
   let f = from, t = to; if (S.selected < f) f = S.selected; if (S.selected > t) t = S.selected;
-  const evs = await run('불러오는 중…', () => call('listEvents', f, t));
+  const all = await run('불러오는 중…', () => call('listAll', f, t));
+  const evs = all.active; S.doneEvents = all.done;
   S.events = evs; S.range = [f, t]; S.loadedAt = Date.now();
   render(); loadStats();
 }
@@ -2178,9 +2240,9 @@ function render() {
   $('#monthLabel').textContent = `${S.cursor.getFullYear()}년 ${S.cursor.getMonth()+1}월`;
   $$('#viewSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === s.view)));
   $$('#showSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.s === s.show)));
-  $('#monthView').hidden = s.view !== 'month'; $('#listView').hidden = s.view !== 'list';
+  $('#monthView').hidden = s.view !== 'month'; $('#listView').hidden = s.view === 'month';
   $('#filterHint').textContent = workFilterOn() || S.filters.q ? '필터 적용 중' : '';
-  if (s.view === 'month') renderMonth(); else renderList();
+  if (s.view === 'month') renderMonth(); else if (s.view === 'done') renderDone(); else renderList();
   renderDay();
 }
 function renderMonth() {
@@ -2238,12 +2300,45 @@ function itemHtml(e) {
   if (e.kind === 'work') {
     if (!e.type) b.push('<span class="badge warn">미분류 — 눌러서 유형 지정</span>');
     else { if (e.prio === 'high') b.push('<span class="badge prio-high">★ 중요</span>'); else if (e.prio === 'low') b.push('<span class="badge prio-low">낮음</span>'); b.push(`<span class="badge s-${e.status}">${e.status}</span>`); if (e.group && e.group !== '미지정') b.push(`<span class="badge">${esc(e.group)}</span>`); }
-  } else b.push(`<span class="badge">${e.ptype === '메모' ? '메모' : '개인'}</span>`);
+  } else { b.push(`<span class="badge">${e.ptype === '메모' ? '메모' : '개인'}</span>`); if (e.done) b.push('<span class="badge s-완료">완료</span>'); }
   if (e.parentId) b.push('<span class="badge">후속</span>');
   if (!e.fromApp) b.push('<span class="badge" title="휴대폰·구글 캘린더에서 직접 만든 일정">휴대폰 등록</span>');
-  const quick = (e.kind === 'work' && e.type && e.status === '예정') ? `<div class="quick"><button class="small" data-quick="완료" data-id="${esc(e.id)}">완료</button><button class="small" data-quick="부재" data-id="${esc(e.id)}">부재</button></div>` : '';
-  return `<div class="item ${e.kind==='personal'?'personal':''} ${e.kind==='work'?statusCls[e.status]:''}" style="--c:${colorOf(e)}" data-id="${esc(e.id)}" role="button" tabindex="0">
-    <div class="time">${esc(timeOf(e))}</div><div class="main"><div class="title">${titleLine(e)}${b.join('')}${quick}</div>${e.memo ? `<div class="memo">${esc(e.memo)}</div>` : ''}${e.memoLock === 'locked' || e.memoLock === 'bad' ? '<div class="memo">🔒 잠긴 메모</div>' : ''}</div></div>`;
+  const quick = e.inDone ? `<div class="quick"><button class="small" data-undone="1" data-id="${esc(e.id)}" title="완료를 취소하고 원래 캘린더로 되돌립니다">되돌리기</button></div>`
+    : (e.kind === 'work' && e.type && e.status === '예정') ? `<div class="quick"><button class="small" data-quick="완료" data-id="${esc(e.id)}">완료</button><button class="small" data-quick="부재" data-id="${esc(e.id)}">부재</button></div>`
+    : (e.kind === 'personal' && !e.done) ? `<div class="quick"><button class="small" data-quick="완료" data-id="${esc(e.id)}" title="완료하면 완료함으로 옮겨집니다">완료</button></div>` : '';
+  const doneAt = e.inDone && /^\d{10,}$/.test(e.doneAt || '') ? (d => `<div class="memo">완료 ${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}</div>`)(new Date(+e.doneAt)) : '';
+  return `<div class="item ${e.kind==='personal'?'personal':''} ${e.kind==='work'?statusCls[e.status]:''}${e.inDone?' in-done':''}" style="--c:${colorOf(e)}" data-id="${esc(e.id)}" role="button" tabindex="0">
+    <div class="time">${esc(timeOf(e))}</div><div class="main"><div class="title">${titleLine(e)}${b.join('')}${quick}</div>${e.memo ? `<div class="memo">${esc(e.memo)}</div>` : ''}${e.memoLock === 'locked' || e.memoLock === 'bad' ? '<div class="memo">🔒 잠긴 메모</div>' : ''}${doneAt}</div></div>`;
+}
+// 완료함: 완료한 업무 일정·개인 일정·메모 (이 달). 구글에서는 '방문건강관리(완료)' 캘린더에 있음
+function renderDone() {
+  const y = S.cursor.getFullYear(), m = S.cursor.getMonth(); const from = ymd(new Date(y, m, 1)), to = ymd(new Date(y, m + 1, 0));
+  const evs = S.doneEvents.filter(matches).filter(e => e.date <= to && (isSpan(e) ? e.endDate : e.date) >= from).sort(sortEv);
+  const head = `<div class="done-head"><b>완료함</b> · ${y}년 ${m + 1}월 ${evs.length}건<div class="hint">완료한 일정·메모는 일정표와 휴대폰 캘린더에서 빠지고 여기 모입니다(구글 캘린더의 ‘방문건강관리(완료)’ 캘린더). 업무 실적에는 그대로 들어갑니다. ‘되돌리기’를 누르면 원래 자리로 돌아갑니다.</div></div>`;
+  if (!evs.length) { $('#listView').innerHTML = head + '<div class="empty">이 달에 완료한 일정이 없습니다.</div>'; return; }
+  const stay = evs.filter(e => !e.doneCal);
+  const moveBox = stay.length ? `<div class="infobox done-move">휴대폰이나 예전에 ‘완료’로 바꾼 일정 ${stay.length}건은 아직 휴대폰 캘린더의 원래 자리에 보입니다. <button type="button" class="small primary" id="btnMoveDone">휴대폰 캘린더에서도 빼기</button></div>` : '';
+  let html = head + moveBox, cur = ''; evs.forEach(e => { if (e.date !== cur) { cur = e.date; html += `<div class="list-date">${fmtDateK(cur)}</div>`; } html += itemHtml(e); });
+  $('#listView').innerHTML = html; fitLines($('#listView'));
+  const mb = $('#btnMoveDone'); if (mb) mb.onclick = async () => { mb.disabled = true;
+    try { const r = await run(`${stay.length}건 옮기는 중…`, () => call('moveDone', stay.map(e => ({ id: e.id, updated: e.updated }))));
+      toast(r.failed ? `${r.moved}건을 옮겼고 ${r.failed}건은 다른 기기에서 바뀌어 건너뛰었습니다.` : `${r.moved}건을 완료 캘린더로 옮겼습니다.`, 4000); await loadEvents(); } catch (e) { mb.disabled = false; } };
+}
+// 완료 직후: 아래에 '되돌리기' (30초)
+function showDoneUndo(ev) {
+  $$('.undo-bar').forEach(x => x.remove());
+  const bar = document.createElement('div'); bar.className = 'undo-bar'; bar.setAttribute('role', 'status');
+  bar.innerHTML = `<span>완료함으로 옮겼습니다. 실적에는 그대로 들어갑니다.</span><button type="button" class="undo-btn">되돌리기</button><button type="button" class="undo-x" aria-label="닫기">✕</button>`;
+  document.body.appendChild(bar);
+  const timer = setTimeout(() => bar.remove(), 30000);
+  bar.querySelector('.undo-x').onclick = () => { clearTimeout(timer); bar.remove(); };
+  bar.querySelector('.undo-btn').onclick = async () => { clearTimeout(timer); bar.remove(); await undoDone(ev); };
+}
+async function undoDone(ev) {
+  try { const r = await run('되돌리는 중…', () => call('setDone', ev.id, false, ev.updated));
+    if (r.conflict) toast('다른 기기에서 먼저 바뀌었습니다. 최신 내용을 불러옵니다.', 3500); else if (r.gone) toast(r.message, 3500);
+    else toast(ev.kind === 'work' ? '‘예정’으로 되돌려 일정표에 다시 넣었습니다.' : '완료를 취소해 일정표에 다시 넣었습니다.');
+    await loadEvents(); } catch (e) {}
 }
 function renderList() {
   const y = S.cursor.getFullYear(), m = S.cursor.getMonth(); const from = ymd(new Date(y, m, 1)), to = ymd(new Date(y, m + 1, 0));
@@ -2377,7 +2472,7 @@ function openEvent(ev, defaults = {}) {
   const d = ev ? Object.assign({}, ev) : Object.assign({ kind:'work', date:S.selected, start:'', end:'', type:'방문', status:'예정', group:'미지정', prio:'normal', target:'', birth:'', sex:'', ptype:'일정', title:'', memo:'', reminder:S.settings.defaultReminder, parentId:'' }, defaults);
   f.kind.value = d.kind; f.date.value = d.date; f.endDate.value = d.endDate || d.date; f.endDate.min = d.date; f.start.value = d.start || ''; f.end.value = d.end || ''; $$('#eventForm .tin').forEach(x => x.classList.remove('bad'));
   f.type.value = d.type || ''; f.status.value = d.status || '예정'; f.group.value = d.group || '미지정'; f.prio.value = d.prio || 'normal'; f.target.value = d.target || ''; f.birth.value = d.birth || ''; f.sex.value = d.sex || '';
-  f.ptype.value = d.ptype || '일정'; f.title.value = d.title || ''; f.memo.value = d.memo || ''; f.reminder.value = String(d.reminder ?? 30);
+  f.ptype.value = d.ptype || '일정'; f.done.checked = !!d.done; f.title.value = d.title || ''; f.memo.value = d.memo || ''; f.reminder.value = String(d.reminder ?? 30);
   if (!f.reminder.value) f.reminder.value = '30';
   f.dataset.parentId = d.parentId || '';
   const p = d.parentId && S.events.find(x => x.id === d.parentId || x.ical === d.parentId);
@@ -2388,7 +2483,12 @@ function openEvent(ev, defaults = {}) {
     ? `휴대폰·구글 캘린더에서 만든 일정입니다 (제목: ${ev.rawTitle || '없음'}). 유형을 고르고 저장하면 실적에 들어갑니다.`
     : '휴대폰·구글 캘린더에서 만든 일정입니다. 저장하면 일정표 형식으로 정리됩니다.';
   $('#eventDlgTitle').textContent = ev ? '일정 수정' : (d.parentId ? '후속 일정 등록' : '새 일정');
-  $('#btnDelete').hidden = !ev; syncKindUI(); syncPersonHint(); if (window.MEMOLOCK) MEMOLOCK.syncMemo(ev ? d : null); $('#eventDlg').showModal();
+  $('#btnDelete').hidden = !ev; syncKindUI(); syncDoneHint(); syncPersonHint(); if (window.MEMOLOCK) MEMOLOCK.syncMemo(ev ? d : null); $('#eventDlg').showModal();
+}
+function syncDoneHint() {
+  const f = $('#eventForm'), work = f.kind.value === 'work', fin = work ? f.status.value === '완료' : f.done.checked, was = !!(S.editing && S.editing.inDone);
+  const h = $('#doneHint'); h.hidden = fin === was;
+  h.textContent = fin ? '완료로 저장하면 일정표·휴대폰 캘린더에서 빠지고 ‘완료함’으로 옮겨집니다(알림도 꺼짐). 실적에는 그대로 들어갑니다.' : '저장하면 완료함에서 빠져 일정표로 돌아갑니다.';
 }
 function syncKindUI() {
   const work = $('#eventForm').kind.value === 'work';
@@ -2413,7 +2513,7 @@ function readForm() {
     f.target.value = maskName(f.target.value);
     if (f.birth.value.trim() && !cleanBirth(f.birth.value)) { alert('출생연도는 1948처럼 네 자리로 적으세요.'); return null; }
     Object.assign(e, { type:f.type.value, status:f.status.value, group:f.group.value, prio:f.prio.value || 'normal', target:f.target.value, birth:cleanBirth(f.birth.value), sex:['남','여'].includes(f.sex.value) ? f.sex.value : '' });
-  } else { Object.assign(e, { ptype:f.ptype.value, title:f.title.value.trim() }); if (!e.title && !e.memo && !e.memoCipher) { alert('제목이나 메모를 입력하세요.'); return null; } }
+  } else { Object.assign(e, { ptype:f.ptype.value, title:f.title.value.trim(), done:f.done.checked }); if (!e.title && !e.memo && !e.memoCipher) { alert('제목이나 메모를 입력하세요.'); return null; } }
   return e;
 }
 function describe(e) {
@@ -2443,7 +2543,7 @@ async function submitForm(thenFollow) {
   try {
     const saved = await persist(e); if (!saved) { $('#eventDlg').close(); return; }
     $('#eventDlg').close(); S.selected = saved.date; const d = parseYmd(saved.date); S.cursor = new Date(d.getFullYear(), d.getMonth(), 1);
-    toast('구글 캘린더에 저장했습니다.');
+    if (saved.inDone && !(S.editing && S.editing.inDone)) showDoneUndo(saved); else toast(saved.inDone ? '완료함에 저장했습니다.' : '구글 캘린더에 저장했습니다.');
     await loadEvents();
     if (thenFollow) openEvent(null, { kind:'work', date:addDays(saved.date, 7), start:saved.start, type:saved.type === '신규' ? '방문' : saved.type, status:'예정', group:saved.group, target:saved.target, birth:saved.birth, sex:saved.sex, parentId:saved.id });
   } catch (err) { /* run() 에서 안내함 */ }
@@ -2575,14 +2675,18 @@ function bind() {
   $('#monthView').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('day')) e.target.click(); });
   const itemClick = async e => {
     const q = e.target.closest('[data-quick]');
+    const u = e.target.closest('[data-undone]');
+    if (u) { e.stopPropagation(); const ev = S.doneEvents.find(x => x.id === u.dataset.id); if (!ev) return; u.disabled = true; await undoDone(ev); return; }
     if (q) { e.stopPropagation(); const ev = S.events.find(x => x.id === q.dataset.id); if (!ev) return;
       q.disabled = true;
-      try { const r = await run('저장 중…', () => call('setStatus', ev.id, q.dataset.quick, ev.updated));
+      try { const r = await run('저장 중…', () => ev.kind === 'personal' ? call('setDone', ev.id, true, ev.updated) : call('setStatus', ev.id, q.dataset.quick, ev.updated));
         if (r.conflict) { toast('다른 기기에서 먼저 바뀌었습니다. 최신 내용을 불러옵니다.', 3500); }
-        else if (r.gone) toast(r.message, 3500); else toast(`${ev.type} 일정을 ‘${q.dataset.quick}’로 바꿨습니다.`);
+        else if (r.gone) toast(r.message, 3500);
+        else if (r.event && r.event.inDone) showDoneUndo(r.event);
+        else toast(`${ev.type} 일정을 ‘${q.dataset.quick}’로 바꿨습니다.`);
         await loadEvents(); } catch (err) { q.disabled = false; }
       return; }
-    const it = e.target.closest('.item'); if (it) { const ev = S.events.find(x => x.id === it.dataset.id); if (ev) openEvent(ev); }
+    const it = e.target.closest('.item'); if (it) { const ev = S.events.concat(S.doneEvents).find(x => x.id === it.dataset.id); if (ev) openEvent(ev); }
   };
   $('#dayList').addEventListener('click', itemClick); $('#listView').addEventListener('click', itemClick);
   ['#dayList','#listView'].forEach(s => $(s).addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('item')) e.target.click(); }));
@@ -2593,7 +2697,8 @@ function bind() {
   $('#btnBulkDel').onclick = () => bulkDelete();
   $('#eventForm').date.addEventListener('change', () => { const f = $('#eventForm'); f.endDate.min = f.date.value; if (!f.endDate.value || f.endDate.value < f.date.value) f.endDate.value = f.date.value; });
   let fitT; window.addEventListener('resize', () => { clearTimeout(fitT); fitT = setTimeout(() => fitLines(), 150); });
-  $$('#eventForm input[name=kind]').forEach(r => r.onchange = syncKindUI);
+  $$('#eventForm input[name=kind]').forEach(r => r.onchange = () => { syncKindUI(); syncDoneHint(); });
+  $('#eventForm').status.addEventListener('change', syncDoneHint); $('#eventForm').done.addEventListener('change', syncDoneHint);
   $$('#eventForm .tin').forEach(inp => inp.addEventListener('input', () => {   // 숫자 4개를 치면 바로 12:34 로
     if (/^\d{4}$/.test(inp.value)) { const v = parseTime(inp.value); if (v) { inp.value = v; inp.classList.remove('bad'); inp.dispatchEvent(new Event('change', { bubbles: true })); } }
   }));
