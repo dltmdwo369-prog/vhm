@@ -3617,11 +3617,23 @@ window.VHM_SUPPS = [
   }
   // 직접 고친 메모 + 버튼으로 바뀐 부분 합치기: 예전 자동 문장(g0) → 새 자동 문장(g1)에서 바뀐 곳만 찾아, 사용자가 고친 글(u)에 같은 자리로 반영
   // 새 줄(새 묶음 포함)만 생긴 경우: 사용자 글에서 바로 앞 줄(없으면 바로 뒤 줄)을 찾아 그 옆에 줄 단위로 넣음
+  // 내용 줄이 하나도 남지 않은 묶음 머리줄(*서비스제공 등)은 지움
+  function dropEmptyHeads(U) {
+    const heads = new Set(groups().map(g => '*' + g));
+    return U.filter((x, k) => !heads.has(x.trim()) || (k + 1 < U.length && U[k + 1].trim() !== '' && !U[k + 1].trim().startsWith('*')));
+  }
   function mergeLines(g0, u, g1) {
     const a = g0.split('\n'), b = g1.split('\n'); let p = 0; while (p < a.length && p < b.length && a[p] === b[p]) p++;
     let q = 0; while (q < a.length - p && q < b.length - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
     const gone = a.slice(p, a.length - q), add = b.slice(p, b.length - q);
-    if (gone.some(x => x.trim()) || !add.some(x => x.trim())) return null;
+    const G = gone.filter(x => x.trim()), A = add.filter(x => x.trim());
+    if (G.length) {   // 줄이 바뀌거나 빠진 경우: 사용자 글에서 같은 줄을 찾아 줄째로 바꾸거나 지움 (한글 입력 중 글자 깨짐 방지)
+      const U = u.split('\n'), at = G.map(x => U.indexOf(x)); if (at.some(k => k < 0)) return null;
+      if (A.length === G.length) { at.forEach((k, n) => { U[k] = A[n]; }); return U.join('\n'); }
+      if (!A.length) { at.sort((x, y) => y - x).forEach(k => U.splice(k, 1)); return dropEmptyHeads(U).join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+|\n+$/g, ''); }
+      return null;
+    }
+    if (!A.length) return null;
     const core = add.slice(add.findIndex(x => x.trim())); while (!core[core.length - 1].trim()) core.pop();
     const prev = b.slice(0, p).filter(x => x.trim()).pop(), next = b.slice(b.length - q).find(x => x.trim());
     const U = u.split('\n'), newSec = core[0].startsWith('*');
@@ -3670,6 +3682,22 @@ window.VHM_SUPPS = [
       el.innerHTML = `<b>커서 자리에 넣는 중</b> (${ln}번째 줄) — 누르는 항목이 이 자리에 들어갑니다. <button type="button" class="link" id="ntCaretOff">원래 순서로</button>`; el.classList.add('on'); }
     else { el.textContent = '메모 안을 눌러 커서를 두면, 그다음 누르는 항목은 그 자리에 들어갑니다.'; el.classList.remove('on'); }
   }
+  // 같은 묶음 머리줄(*서비스제공 등)이 두 번 생기면 하나로 합침: 뒤쪽 묶음의 줄들을 앞쪽 묶음 끝으로 옮김 (사용자 요청 2026-11-10)
+  function dedupeHeads(t) {
+    const heads = new Set(groups().filter(g => !NO_HEAD.includes(g)).map(g => '*' + g));
+    const L = t.split('\n'); let again = true;
+    const end = k => { let j = k + 1; while (j < L.length && L[j].trim() && !L[j].trim().startsWith('*')) j++; return j; };
+    while (again) {
+      again = false; const seen = {};
+      for (let i = 0; i < L.length; i++) {
+        const h = L[i].trim(); if (!heads.has(h)) continue;
+        if (seen[h] == null) { seen[h] = i; continue; }
+        const j = end(i), body = L.slice(i + 1, j); L.splice(i, j - i);
+        L.splice(end(seen[h]), 0, ...body); again = true; break;
+      }
+    }
+    return L.join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '');
+  }
   function addedLines(g0, g1) {
     const a = g0.split('\n'), b = g1.split('\n'); let p = 0; while (p < a.length && p < b.length && a[p] === b[p]) p++;
     let q = 0; while (q < a.length - p && q < b.length - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
@@ -3688,6 +3716,8 @@ window.VHM_SUPPS = [
     if (ins) {
       let at = Math.min(c.pos, ta.value.length);
       if (at > 0 && ta.value[at - 1] !== '\n') { const e = ta.value.indexOf('\n', at); at = e < 0 ? ta.value.length : e; }   // 줄 중간이면 그 줄 끝으로
+      { const ls = ta.value.slice(0, at).split('\n'), cur = (ls[ls.length - 1] || '') + (ta.value.slice(at).split('\n')[0] || '');
+        if (cur.trim().startsWith('*') && !ins.trim().startsWith('*')) { let e = ta.value.indexOf('\n', at); while (e >= 0) { const nx = ta.value.indexOf('\n', e + 1), line = ta.value.slice(e + 1, nx < 0 ? undefined : nx); if (!line.trim() || line.trim().startsWith('*')) break; e = nx; } at = e < 0 ? ta.value.length : e; } }   // 머리줄 위면 그 묶음 끝으로
       const b = ta.value.slice(0, at), a = ta.value.slice(at); let t = ins, tail = 0;
       if (b && !b.endsWith('\n')) t = '\n' + t;
       if (a && !a.startsWith('\n')) { t += '\n'; tail = 1; }
@@ -3702,7 +3732,8 @@ window.VHM_SUPPS = [
       } else ta.value = m;
       if (ta.value === g1) N.edited = false;
     }
-    if (c && !ins) { let i = 0; while (i < before.length && before[i] === ta.value[i]) i++; if (i < c.pos) c.pos = Math.max(i, c.pos + ta.value.length - before.length); c.pos = Math.min(c.pos, ta.value.length); }
+    const dd = dedupeHeads(ta.value), merged = dd !== ta.value; if (merged) { ta.value = dd; if (ta.value === g1) N.edited = false; }
+    if (c && (!ins || merged)) { let i = 0; while (i < before.length && before[i] === ta.value[i]) i++; if (i < c.pos) c.pos = Math.max(i, c.pos + ta.value.length - before.length); c.pos = Math.min(c.pos, ta.value.length); }
     if (c) c.val = ta.value;
     paintCaret();
     N.gen = g1; N.out = ta.value;
@@ -3915,13 +3946,14 @@ window.VHM_SUPPS = [
     });
     b.addEventListener('input', ev => {
       const t = ev.target;
-      if (t.dataset.lead) { N.lead[t.dataset.lead] = t.value; refreshOut(); return; }
+      if (t.dataset.lead) { N.lead[t.dataset.lead] = t.value; if (!ev.isComposing) refreshOut(); return; }   // 한글 조합 중에는 메모를 건드리지 않음
       if (t.dataset.dq) { showDrugList(t.dataset.dq, t.value); return; }
-      if (t.dataset.dname || t.dataset.dnote) { const id = t.dataset.dname || t.dataset.dnote, a = N.pick[id] || []; const x = a[+t.dataset.k]; if (x) { x[t.dataset.dname ? 'name' : 'note'] = t.value; refreshOut(); } return; }
+      if (t.dataset.dname || t.dataset.dnote) { const id = t.dataset.dname || t.dataset.dnote, a = N.pick[id] || []; const x = a[+t.dataset.k]; if (x) { x[t.dataset.dname ? 'name' : 'note'] = t.value; if (!ev.isComposing) refreshOut(); } return; }
       if (t.dataset.num) { const a = (N.pick[t.dataset.num] || []).slice(); a[+t.dataset.k] = t.value.replace(/[^\d.]/g, ''); if (a[+t.dataset.k] !== t.value) t.value = a[+t.dataset.k]; N.pick[t.dataset.num] = a; refreshOut(); }
-      else if (t.id === 'ntExtra') { N.extra = t.value; refreshOut(); }
+      else if (t.id === 'ntExtra') { N.extra = t.value; if (!ev.isComposing) refreshOut(); }
       else if (t.id === 'ntOut') { N.out = t.value; N.edited = t.value !== N.gen; $('#ntCount').textContent = t.value.length + '자'; }
     });
+    b.addEventListener('compositionend', ev => { const t = ev.target; if (t.dataset.lead) { N.lead[t.dataset.lead] = t.value; refreshOut(); } else if (t.id === 'ntExtra') { N.extra = t.value; refreshOut(); } else if (t.dataset.dname || t.dataset.dnote) refreshOut(); });
     // 메모 칸의 커서 위치 기억 (누르기·방향키·글 고르기)
     const rememberCaret = ev => { const t = ev.target; if (t.id !== 'ntOut') return; N.caret = { pos: t.selectionEnd, val: t.value }; paintCaret(); };
     ['click', 'keyup', 'select', 'input'].forEach(k => b.addEventListener(k, rememberCaret));
