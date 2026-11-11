@@ -3867,7 +3867,7 @@ window.VHM_SUPPS = [
     if (!N.tpl) return;
     let h = '<div class="lk-bar row"><div class="seg" role="tablist">'
       + [['write', '메모 쓰기'], ['edit', '항목 편집']].map(t => `<button data-ntview="${t[0]}" aria-pressed="${N.view === t[0]}">${t[1]}</button>`).join('') + '</div>'
-      + `<span class="nt-forms"><a class="nt-form" href="forms/simple-survey-duplex.pdf" download="방문건강관리_간이상담설문지_양면.pdf" title="방문 때 쓰는 빈 설문지 — A4 양면(앞뒤 2쪽), 메모 칸 넉넉">📄 간이 설문지(양면) 내려받기</a><a class="nt-form sub" href="forms/simple-survey-a4.pdf" download="방문건강관리_간이상담설문지_A4.pdf" title="A4 한 장(단면) 요약본">한 장짜리</a></span>`
+      + `<span class="nt-forms"><a class="nt-form" href="forms/simple-survey-p12.pdf" download="방문건강관리_간이설문지_1-2쪽.pdf" title="방문 상담용 빈 설문지 — A4 양면 1장(1·2쪽): 기본정보·Vital·주질환·복약·신체계측/신체사정·건강상담·생활습관·서비스제공·PHQ-9">📄 간이 설문지 내려받기 (1·2쪽)</a><a class="nt-form" href="forms/base-survey-p34.pdf" download="방문건강관리_기초조사표_3-4쪽.pdf" title="기초조사표 — A4 양면 1장(3·4쪽): 허약노인 기초측정표, 재가암·재가장애인(간이) 기초조사표, 변형 바델 지수">📄 기초조사표 내려받기 (3·4쪽)</a></span>`
       + `<span class="hint">${N.synced ? '질문 틀: 구글 드라이브와 이 기기에 저장' : '질문 틀: 이 기기에 저장 (연계 안내 탭에서 드라이브를 연결하면 다른 기기와 같이 씀)'}</span></div>`;
     if (N.tpl.defaultsPending) h += '<div class="warnbox" style="margin-bottom:10px">질문 항목과 문장은 아직 <b>임시 기본값</b>입니다. ‘항목 편집’에서 평소 쓰시는 말투로 고친 뒤 ‘확인 완료’를 눌러 주세요.</div>';
     h += N.view === 'write' ? writeHtml() : editHtml();
