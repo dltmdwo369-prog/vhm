@@ -145,7 +145,7 @@ dialog{border:0;border-radius:14px;padding:0;box-shadow:0 20px 60px rgba(10,20,4
 .nt-dopt.first{background:#f3f7ff}.nt-dopt:hover{background:#eaf2ff}
 .nt-dlink{color:var(--accent);text-decoration:none;font-size:13px}
 .nt-lead{flex:1 1 220px;min-width:0;padding:8px 10px;font-size:14px}
-.nt-form{display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--text,#111);text-decoration:none;font-size:13px;font-weight:600;white-space:nowrap}.nt-form:hover{border-color:var(--accent)}
+.nt-form{display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--text,#111);text-decoration:none;font-size:13px;font-weight:600;white-space:nowrap}.nt-form:hover{border-color:var(--accent)}.nt-forms{display:inline-flex;gap:6px;flex-wrap:wrap}.nt-form.sub{font-weight:400;color:var(--sub,#555)}
 .nt-caret{margin-top:4px}.nt-caret.on{color:#1e4fa8;background:#eef4ff;border-radius:6px;padding:4px 8px}.nt-caret .link{font-size:12px}
 .nt-group{margin-bottom:12px}
 .nt-row{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)}
@@ -3867,7 +3867,7 @@ window.VHM_SUPPS = [
     if (!N.tpl) return;
     let h = '<div class="lk-bar row"><div class="seg" role="tablist">'
       + [['write', '메모 쓰기'], ['edit', '항목 편집']].map(t => `<button data-ntview="${t[0]}" aria-pressed="${N.view === t[0]}">${t[1]}</button>`).join('') + '</div>'
-      + `<a class="nt-form" href="forms/simple-survey-a4.pdf" download="방문건강관리_간이상담설문지_A4.pdf" title="방문 때 쓰는 빈 설문지 (A4 한 장, 인쇄용 PDF)">📄 간이 설문지(A4) 내려받기</a>`
+      + `<span class="nt-forms"><a class="nt-form" href="forms/simple-survey-duplex.pdf" download="방문건강관리_간이상담설문지_양면.pdf" title="방문 때 쓰는 빈 설문지 — A4 양면(앞뒤 2쪽), 메모 칸 넉넉">📄 간이 설문지(양면) 내려받기</a><a class="nt-form sub" href="forms/simple-survey-a4.pdf" download="방문건강관리_간이상담설문지_A4.pdf" title="A4 한 장(단면) 요약본">한 장짜리</a></span>`
       + `<span class="hint">${N.synced ? '질문 틀: 구글 드라이브와 이 기기에 저장' : '질문 틀: 이 기기에 저장 (연계 안내 탭에서 드라이브를 연결하면 다른 기기와 같이 씀)'}</span></div>`;
     if (N.tpl.defaultsPending) h += '<div class="warnbox" style="margin-bottom:10px">질문 항목과 문장은 아직 <b>임시 기본값</b>입니다. ‘항목 편집’에서 평소 쓰시는 말투로 고친 뒤 ‘확인 완료’를 눌러 주세요.</div>';
     h += N.view === 'write' ? writeHtml() : editHtml();
