@@ -3397,7 +3397,7 @@ window.VHM_SUPPS = [
   const LS = 'vhm-notes-tpl';
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3);
   const KINDS = { one: '하나 고르기', many: '여러 개 고르기', num: '숫자 입력', drugs: '약 검색', lead: '입력칸 + 하나 고르기', acute: '여러 개 + 치료중·완치', text: '직접 적기 (+ 빠른 입력)' };
-  const SCHEMA = 14;
+  const SCHEMA = 15;
   const NOTE_ITEMS = ['만성질환', '급성질환', '눈·귀·구강', '관절'];   // 고른 보기마다 메모 칸 (사용자 요청 2026-11-12)
   const NO_HEAD = ['상담목적'];   // 이 묶음은 '*묶음이름' 머리줄 없이 (서두 줄이 이미 *로 시작)
   const ACUTE_ST = ['치료중', '완치'];   // 누를 때마다: 치료중 → 완치 → 해제
@@ -3409,6 +3409,11 @@ window.VHM_SUPPS = [
     남: { R: [[60, 39.3, 33.8], [65, 36.8, 32.1], [70, 33.9, 28.9], [75, 31.4, 26.1], [80, 27.4, 22.1]], L: [[60, 37.7, 32.6], [65, 35.1, 29.7], [70, 32.5, 27.7], [75, 30.7, 25.8], [80, 26.3, 21.9]], cut: 28 },
     여: { R: [[60, 24.6, 21.2], [65, 23.2, 19.4], [70, 21.6, 18.2], [75, 19.8, 15.5], [80, 16.9, 13.0]], L: [[60, 23.1, 20.0], [65, 21.6, 18.1], [70, 20.1, 16.5], [75, 18.7, 15.1], [80, 15.8, 12.4]], cut: 18 }
   };
+  // 평형성(초, 측정불가) · Mini-Cog(3단어 회상 0~3 + 시계그리기 0/2 = 총점 0~5, 0~2점이면 인지저하 의심: Borson 등 2000) — 사용자 요청 2026-11-12
+  const balanceItem = () => ({ id: uid(), group: '신체계측 및 신체사정', label: '평형성', kind: 'num', options: [], template: '-평형성: {2}, {1}초', fields: [
+    { label: '유지 시간', unit: '초' }, { label: '측정', type: 'pick', options: '측정불가' }] });
+  const minicogItem = () => ({ id: uid(), group: '신체계측 및 신체사정', label: 'Mini-Cog', kind: 'num', options: [], template: '-mini-cog: 3단어({1}/3), 시계그리기({2}/2)', fields: [
+    { label: '3단어 회상', unit: '/3' }, { label: '시계그리기', unit: '/2' }, { label: '총점', unit: '/5', calc: 'minicog' }] });
   const gripItem = () => ({ id: uid(), group: '신체계측 및 신체사정', label: '악력', kind: 'num', options: [], template: '-악력 Rt: {1}kg, Lt: {2}kg', fields: [
     { label: '오른손', unit: 'kg', norm: 'gripR' }, { label: '왼손', unit: 'kg', norm: 'gripL' },
     { label: '성별', type: 'pick', options: '남,여' }, { label: '나이', unit: '세' }] });
@@ -3458,6 +3463,8 @@ window.VHM_SUPPS = [
       num('신체계측 및 신체사정', '눈·귀·구강', [pk('눈', '양호,시력저하,백내장,녹내장'), pk('귀', '양호,청력저하,보청기 사용'), pk('구강건강', '양호,불량,틀니 사용,저작 불편')], '-눈: {1}, 귀: {2}, 구강건강: {3}'),
       num('신체계측 및 신체사정', '관절', [pk('관절', '양호,통증,부종,강직,운동 제한')], '-관절: {1}'),
       gripItem(),
+      balanceItem(),
+      minicogItem(),
       one('건강상담', '전반적 컨디션', [['양호', '전반적인 컨디션 양호하다고 함.'], ['보통', '컨디션 보통이라고 함.'], ['저하', '최근 컨디션 저하 호소함.']]),
       one('건강상담', '통증', [['없음', '특별한 통증 호소 없음.'], ['있음', '통증 호소하여 부위·정도 확인함.']]),
       one('건강상담', '수면', [['양호', '수면 양호하다고 함.'], ['불량', '잠들기 어렵거나 자주 깬다고 함.']]),
@@ -3490,7 +3497,7 @@ window.VHM_SUPPS = [
           const o = { label: String(f.label || '').slice(0, 20), unit: String(f.unit || '').slice(0, 10) };
           if (f.type === 'pick') { o.type = 'pick'; o.options = String(f.options || '').slice(0, 80); return o; }
           if (f.norm === 'gripR' || f.norm === 'gripL') { o.norm = f.norm; return o; }
-          if (f.calc === 'bmi') { o.calc = 'bmi'; return o; }
+          if (f.calc === 'bmi' || f.calc === 'minicog') { o.calc = f.calc; return o; }
           o.range = rg(f.range); if (+f.rangeBy > 0) { o.rangeBy = +f.rangeBy; o.ranges = {}; Object.keys(f.ranges || {}).forEach(k => { o.ranges[String(k).slice(0, 20)] = rg(f.ranges[k]); }); }
           return o; }).filter(f => f.label),
         template: String(i.template || '').slice(0, 200) })).filter(i => i.label) };
@@ -3524,6 +3531,8 @@ window.VHM_SUPPS = [
       else { const g = out.items.map(i => i.group).lastIndexOf('측정'); out.items.splice(g >= 0 ? g + 1 : out.items.length, 0, bodyItem()); }
     }
     if (!(d.schema >= 13)) out.items = regroup(out.items, !!d.defaultsPending);
+    if (!(d.schema >= 15)) [minicogItem, balanceItem].forEach(mk => { const it = mk(); if (out.items.some(i => i.label === it.label)) return;   // 악력 다음(없으면 신체사정 묶음 끝)에
+      const g = out.items.findIndex(i => i.label === '악력'); const at = g >= 0 ? g + 1 : out.items.map(i => i.group).lastIndexOf('신체계측 및 신체사정') + 1 || out.items.length; out.items.splice(at, 0, it); });
     if (!(d.schema >= 14)) out.items.forEach(i => { if (NOTE_ITEMS.includes(i.label) && ['many', 'acute', 'num'].includes(i.kind)) i.notes = true; });   // 사용자 요청(2026-11-10): 상담기록 순서대로 묶음 재배치
     return out;
   }
@@ -3591,7 +3600,14 @@ window.VHM_SUPPS = [
   }
   // 자동 계산 칸 (BMI = 몸무게kg ÷ 키m²). 같은 항목의 '키'·'몸무게' 칸을 씀
   function calcOf(it, k, v) {
-    const f = it.fields[k]; if (!f || f.calc !== 'bmi') return null;
+    const f = it.fields[k]; if (!f || !f.calc) return null;
+    if (f.calc === 'minicog') {
+      const wi = it.fields.findIndex(x => !x.calc && /단어|회상/.test(x.label)), ci = it.fields.findIndex(x => !x.calc && /시계/.test(x.label));
+      const ws = String(v[wi] || '').trim(), cs = String(v[ci] || '').trim(), w = +ws, c = +cs;
+      if (ws === '' || cs === '' || !(w >= 0 && w <= 3 && Number.isInteger(w)) || !(c === 0 || c === 2)) return '';
+      return String(w + c);
+    }
+    if (f.calc !== 'bmi') return null;
     const hi = it.fields.findIndex(x => !x.calc && x.type !== 'pick' && /키|신장/.test(x.label)), wi = it.fields.findIndex(x => !x.calc && x.type !== 'pick' && /몸무게|체중/.test(x.label));
     const h = +String(v[hi] || '').trim(), w = +String(v[wi] || '').trim();
     if (!(h >= 80 && h <= 230 && w >= 15 && w <= 250)) return '';
@@ -3604,6 +3620,8 @@ window.VHM_SUPPS = [
     if (x < 25) return { cls: 'warn', text: '비만 전단계', arrow: '↑' };
     return { cls: 'high', text: x < 30 ? '1단계 비만' : x < 35 ? '2단계 비만' : '3단계 비만', arrow: '↑' };
   }
+  const MINICOG_TITLE = 'Mini-Cog 총점 = 3단어 회상(0~3) + 시계그리기(정상 2, 비정상 0). 0~2점이면 인지저하 의심(선별용, 진단 아님) → 치매안심센터 연계 검토';
+  const calcTitle = f => f.calc === 'minicog' ? MINICOG_TITLE : BMI_TITLE;
   const BMI_TITLE = 'BMI = 몸무게(kg) ÷ 키(m)². 대한비만학회 2022: 18.5 미만 저체중, 18.5~22.9 정상, 23~24.9 비만 전단계, 25 이상 비만';
   // 정상 범위 판정: 최소 미만 → 낮음, 최대 초과 → (주의 상한 이하면) 주의 / 높음
   function rangeOf(it, k, v) {
@@ -3638,6 +3656,7 @@ window.VHM_SUPPS = [
   function flagOf(it, k, v) {
     if (it.fields[k] && it.fields[k].norm) return gripFlag(it, k, v);
     if (it.fields[k] && it.fields[k].calc === 'bmi') { const c = calcOf(it, k, v); return c ? bmiFlag(+c) : null; }
+    if (it.fields[k] && it.fields[k].calc === 'minicog') { const c = calcOf(it, k, v); return c === '' || c == null ? null : (+c <= 2 ? { cls: 'high', text: '인지저하 의심', arrow: '' } : { cls: 'ok', text: '음성', arrow: '' }); }
     const raw = String(v[k] || '').trim(); if (raw === '') return null; const x = +raw; const r = rangeOf(it, k, v); if (!r || isNaN(x)) return null;
     if (r.min !== '' && x < +r.min) return { cls: 'low', text: '낮음', arrow: '↓' };
     if (r.max !== '' && x > +r.max) return r.warn !== '' && x <= +r.warn ? { cls: 'warn', text: '주의', arrow: '↑' } : { cls: 'high', text: '높음', arrow: '↑' };
@@ -3658,6 +3677,8 @@ window.VHM_SUPPS = [
       const tok = body.split(/(, | \/ )/), keep = (seg => { const need = [...seg.matchAll(/\{(\d)\}/g)].map(m => +m[1] - 1).filter(k => !isPick(k)); return need.length ? need.every(k => val(k)) : [...seg.matchAll(/\{(\d)\}/g)].some(m => val(+m[1] - 1)); });
       let txt = '', n = 0;
       for (let i = 0; i < tok.length; i += 2) { if (!keep(tok[i])) continue; txt += (n ? (tok[i - 1] || ', ') : '') + fill(tok[i]); n++; }
+      // 첫 조각만 빠졌는데 뒤 조각들에 이름이 없으면 첫 조각의 이름은 남김 (예: '평형성: {2}, {1}초' → '평형성: 12초')
+      if (n && !keep(tok[0])) { const pm = /^([^{]*?:\s*)\{/.exec(tok[0]); if (pm && tok.filter((x, i) => i % 2 === 0 && i > 0).every(x => !/:/.test(x))) txt = pm[1] + txt; }
       if (!n) return null; any = true; return { text: mark + txt };
     }).filter(Boolean);
     return any ? out.map(o => o.text).join('\n').trim() : '';
@@ -3690,7 +3711,7 @@ window.VHM_SUPPS = [
     $$('#tab-note [data-flag]').forEach(el => {
       const [id, k] = el.dataset.flag.split(':'); const it = N.tpl.items.find(i => i.id === id); if (!it) return;
       const v = N.pick[id] || [], f = flagOf(it, +k, v), r = rangeOf(it, +k, v);
-      const ttl = it.fields[+k].norm ? gripTitle(it, +k, v) : it.fields[+k].calc === 'bmi' ? BMI_TITLE : rangeText(r);
+      const ttl = it.fields[+k].norm ? gripTitle(it, +k, v) : it.fields[+k].calc ? calcTitle(it.fields[+k]) : rangeText(r);
       if (it.fields[+k].calc) { const out = el.parentElement.querySelector('[data-calc]'); if (out) out.value = calcOf(it, +k, v) || ''; }
       el.className = 'nt-flag' + (f ? ' ' + f.cls : ''); el.textContent = f ? f.text : ''; el.title = ttl;
       const inp = el.parentElement.querySelector('input'); if (inp) inp.title = ttl;
@@ -3903,7 +3924,7 @@ window.VHM_SUPPS = [
       if (it.kind === 'num') { const v = N.pick[it.id] || [];
         ctl = it.fields.map((f, k) => f.type === 'pick'
           ? `<span class="nt-num">${esc(f.label)} ${String(f.options || '').split(',').map(x => x.trim()).filter(Boolean).map(o => `<button type="button" class="nt-chip sm${v[k] === o ? ' on' : ''}" data-pickf="${it.id}" data-k="${k}" data-v="${esc(o)}" aria-pressed="${v[k] === o}">${esc(o)}</button>`).join('')}</span>`
-          : f.calc ? `<label class="nt-num">${esc(f.label)}<input data-calc="${it.id}" data-k="${k}" value="${esc(calcOf(it, k, v) || '')}" readonly tabindex="-1" class="nt-calc" placeholder="자동" title="${esc(BMI_TITLE)}"><span>${esc(f.unit)}</span><span class="nt-flag" data-flag="${it.id}:${k}"></span></label>`
+          : f.calc ? `<label class="nt-num">${esc(f.label)}<input data-calc="${it.id}" data-k="${k}" value="${esc(calcOf(it, k, v) || '')}" readonly tabindex="-1" class="nt-calc" placeholder="자동" title="${esc(calcTitle(f))}"><span>${esc(f.unit)}</span><span class="nt-flag" data-flag="${it.id}:${k}"></span></label>`
           : `<label class="nt-num">${esc(f.label)}<input inputmode="decimal" data-num="${it.id}" data-k="${k}" value="${esc(v[k] || '')}" autocomplete="off" title="${esc(rangeText(rangeOf(it, k, v)))}"><span>${esc(f.unit)}</span><span class="nt-flag" data-flag="${it.id}:${k}"></span></label>`).join('')
           + (it.fields.some(f => f.norm) ? `<span class="nt-flag" data-gsum="${it.id}"></span>` : ''); }
       else if (it.kind === 'text') ctl = `<input class="nt-lead nt-text" data-lead="${it.id}" value="${esc(N.lead[it.id] || '')}" placeholder="${esc(it.ph || '직접 적기')}" maxlength="200" autocomplete="off">`
@@ -3927,6 +3948,7 @@ window.VHM_SUPPS = [
       <div class="nt-layout"><div class="card"><div class="card-body">
         ${groups().map(g => `<div class="nt-group"><div class="lk-cat-h">${esc(g)}</div>${items(g)}</div>`).join('')}
         ${N.tpl.items.some(i => i.kind === 'num' && i.fields.some(f => f.range && (f.range.min !== '' || f.range.max !== ''))) ? '<p class="hint" style="margin:4px 0 0">수치 옆 정상·주의·높음·낮음은 참고용입니다. 기본 기준: 대한고혈압학회 2022 진료지침(정상 120/80 미만, 140/90 이상 고혈압), 대한당뇨병학회 진단기준(공복 100~125·식후 2시간 140~199 주의, 70 미만 저혈당, 당화혈색소 5.7~6.4% 주의·6.5% 이상 높음 — 이미 당뇨병 진단을 받은 분의 조절 목표는 개인마다 다름), 성인 맥박 60~100회/분. 기준은 ‘항목 편집’에서 바꿀 수 있습니다.</p>' : ''}
+        ${N.tpl.items.some(i => i.fields.some(f => f.calc === 'minicog')) ? '<p class="hint" style="margin:4px 0 0">Mini-Cog: 3단어 회상(0~3점)과 시계그리기(정상 2점·비정상 0점)를 넣으면 총점(5점)이 자동으로 나오고, 0~2점이면 ‘인지저하 의심’으로 표시합니다(선별용·참고, Borson 등 2000). 총점과 판정은 메모에 넣지 않습니다.</p>' : ''}
         ${N.tpl.items.some(i => i.fields.some(f => f.calc === 'bmi')) ? '<p class="hint" style="margin:4px 0 0">신체계측: 키(cm)·몸무게(kg)를 넣으면 BMI(몸무게 ÷ 키m²)를 소수 첫째 자리까지 자동 계산합니다. 판정은 대한비만학회 2022 진료지침(18.5 미만 저체중, 18.5~22.9 정상, 23~24.9 비만 전단계, 25 이상 비만 1~3단계)이며 참고용입니다.</p>' : ''}
         ${N.tpl.items.some(i => i.fields.some(f => f.norm)) ? '<p class="hint" style="margin:4px 0 0">악력: 각 손의 최댓값(kg)을 적고 성별·나이를 넣으세요. 또래 기준은 한국인 국민건강영양조사 2014–2015 악력 참고치(60세 이상, 5세 간격, 하위 20% 미만이면 ‘또래 하위 20%’), 근력 저하는 AWGS 2019 아시아 근감소증 기준(양손 중 큰 값이 남 28kg·여 18kg 미만). 성별·나이는 판정에만 쓰고 메모에는 넣지 않습니다.</p>' : ''}
         <label class="f" style="margin-top:8px">기타사항 (직접 적기) <span class="hint">— 메모의 *기타사항 아래에 한 줄씩 들어갑니다</span><textarea id="ntExtra" rows="2" maxlength="300" placeholder="체크 항목에 없는 기타 메모사항을 직접 적으세요">${esc(N.extra)}</textarea></label>
@@ -3974,7 +3996,7 @@ window.VHM_SUPPS = [
     const rIn = (k, key, r, opt) => `<input class="nt-r" data-rk="${k}" data-rf="${key}"${opt != null ? ` data-ro="${esc(opt)}"` : ''} value="${esc(r ? r[key] : '')}" inputmode="decimal" placeholder="${key === 'min' ? '최소' : key === 'max' ? '최대' : '주의 상한'}">`;
     const rRow = (k, r, opt) => `<div class="nt-rrow">${opt != null ? `<b>${esc(opt)}</b>` : '정상 범위'} ${rIn(k, 'min', r, opt)} ~ ${rIn(k, 'max', r, opt)} <span class="hint">주의</span> ~ ${rIn(k, 'warn', r, opt)}</div>`;
     const fld = e.fields.map((f, k) => `<div class="nt-fbox"><div class="nt-orow"><span class="hint">{${k + 1}}</span><input data-fl="${k}" data-f="label" value="${esc(f.label)}" placeholder="칸 이름 (예: 수축기)"><select data-fl="${k}" data-f="type"><option value="num"${f.type !== 'pick' ? ' selected' : ''}>숫자</option><option value="pick"${f.type === 'pick' ? ' selected' : ''}>고르기</option></select>${f.type === 'pick' ? `<input data-fl="${k}" data-f="options" value="${esc(f.options || '')}" placeholder="보기 (쉼표로: 공복,식후)">` : `<input data-fl="${k}" data-f="unit" value="${esc(f.unit)}" placeholder="단위 (예: mmHg)">`}<button type="button" class="small" data-fdel="${k}" title="빼기">✕</button></div>
-      ${f.type === 'pick' ? '' : f.calc ? '<div class="nt-rrow hint">자동 계산: 몸무게(kg) ÷ 키(m)² — 같은 항목의 ‘키’·‘몸무게’ 칸을 씁니다. 판정은 대한비만학회 2022 기준(직접 입력 안 함).</div>' : f.norm ? '<div class="nt-rrow hint">기준: 한국인 악력 참고치(성별·나이) + AWGS 2019 근력 저하 기준 — 같은 항목의 ‘성별’(고르기: 남,여)·‘나이’ 칸을 씁니다.</div>' : `${rRow(k, f.range)}${picks.length ? `<label class="hint nt-rrow"><input type="checkbox" data-rby="${k}"${f.rangeBy ? ' checked' : ''}> 고르기 칸 {${(f.rangeBy || picks[0] + 1)}}에 따라 기준 다르게</label>` : ''}${f.rangeBy && e.fields[f.rangeBy - 1] && e.fields[f.rangeBy - 1].type === 'pick' ? String(e.fields[f.rangeBy - 1].options || '').split(',').map(x => x.trim()).filter(Boolean).map(o => rRow(k, (f.ranges || {})[o], o)).join('') : ''}`}</div>`).join('');
+      ${f.type === 'pick' ? '' : f.calc === 'minicog' ? '<div class="nt-rrow hint">자동 계산: 3단어 회상 + 시계그리기 (총 5점, 0~2점 인지저하 의심). 메모에는 들어가지 않습니다.</div>' : f.calc ? '<div class="nt-rrow hint">자동 계산: 몸무게(kg) ÷ 키(m)² — 같은 항목의 ‘키’·‘몸무게’ 칸을 씁니다. 판정은 대한비만학회 2022 기준(직접 입력 안 함).</div>' : f.norm ? '<div class="nt-rrow hint">기준: 한국인 악력 참고치(성별·나이) + AWGS 2019 근력 저하 기준 — 같은 항목의 ‘성별’(고르기: 남,여)·‘나이’ 칸을 씁니다.</div>' : `${rRow(k, f.range)}${picks.length ? `<label class="hint nt-rrow"><input type="checkbox" data-rby="${k}"${f.rangeBy ? ' checked' : ''}> 고르기 칸 {${(f.rangeBy || picks[0] + 1)}}에 따라 기준 다르게</label>` : ''}${f.rangeBy && e.fields[f.rangeBy - 1] && e.fields[f.rangeBy - 1].type === 'pick' ? String(e.fields[f.rangeBy - 1].options || '').split(',').map(x => x.trim()).filter(Boolean).map(o => rRow(k, (f.ranges || {})[o], o)).join('') : ''}`}</div>`).join('');
     $('#ntDlgBody').innerHTML = `<div class="grid2">
         <label class="f">항목 이름<input id="neLabel" value="${esc(e.label)}" maxlength="40"></label>
         <label class="f">묶음 <span class="hint">(메모의 *머리줄)</span><input id="neGroup" value="${esc(e.group)}" maxlength="30" list="ntGroups"><datalist id="ntGroups">${groups().map(g => `<option value="${esc(g)}">`).join('')}</datalist></label>
