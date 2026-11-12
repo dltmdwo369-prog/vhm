@@ -258,6 +258,10 @@ table.files select{padding:3px 6px;font-size:12px}
 .badge.moved{background:#f1ecff;color:#5b3fa8;border-color:#d9ccfa}
 .move-list{display:flex;flex-direction:column;gap:6px;max-height:40vh;overflow:auto}.move-row{display:flex;gap:8px;align-items:center;font-size:14px}.move-row input{width:auto}
 .move-pick{gap:8px;margin-top:10px;flex-wrap:wrap}.move-pick input{flex:1 1 150px;width:auto}
+.stats td.adj{white-space:nowrap;text-align:center}
+.adj-b{width:24px;height:24px;padding:0;border-radius:6px;font-size:15px;line-height:1;vertical-align:middle}
+.adj-n{display:inline-block;min-width:26px;text-align:center;color:var(--sub);font-variant-numeric:tabular-nums}.adj-n.on{color:var(--accent);font-weight:700}
+.adj-bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;font-size:12.5px}.adj-bar.dirty{background:#fff7e6;border:1px solid #f3d19c;border-radius:8px;padding:6px 8px}
 .done-head{padding:6px 2px 10px}.done-move{margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.done-head .hint{margin-top:2px}
 .item.in-done{background:#f7f9f7}
 .undo-bar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:#1c2230;color:#fff;padding:8px 10px 8px 16px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.25);font-size:14px;z-index:101;max-width:calc(100vw - 32px)}
@@ -1495,7 +1499,13 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     return o;
   }
 
-  async function listCal(calId, from, to) {
+  const isAdj = e => !!(e.extendedProperties && e.extendedProperties.private && e.extendedProperties.private.vhm_kind === 'adj');
+  // 실적 수기 조정 일정('방문건강관리(완료)'의 종일 일정)은 일정 목록·실적 자동 집계에서 빼고, adj 옵션일 때만 그것만
+  async function listCal(calId, from, to, opt) {
+    const all = await listCalRaw(calId, from, to);
+    return opt && opt.adj ? all.filter(isAdj) : all.filter(e => !isAdj(e));
+  }
+  async function listCalRaw(calId, from, to) {
     const out = []; let pageToken;
     do {
       const r = await api('GET', '/calendars/' + encodeURIComponent(calId) + '/events', { query: Object.assign({
@@ -1859,7 +1869,36 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
       if (!o.type) { unclassified++; return; }
       res[o.type][o.status]++;
     });
-    return { from, to, counts: res, unclassified };
+    // 수기 조정 (완료 건수에 더함, 날짜마다 한 일정)
+    const manual = {}; TYPES.forEach(t => { manual[t] = 0; res[t].auto = res[t]['완료']; });
+    let day = null;
+    if (c.done) (await listCal(c.done, from, to, { adj: true })).forEach(ev => {
+      const d = ev.start.date || (ev.start.dateTime || '').slice(0, 10); if (d < from || d > to) return;
+      let m = {}; try { m = JSON.parse(ev.extendedProperties.private.vhm_adj || '{}'); } catch (e) {}
+      TYPES.forEach(t => { const n = Math.trunc(+m[t] || 0); manual[t] += n; res[t]['완료'] += n; });
+      if (from === to) day = { id: ev.id, etag: ev.etag, counts: m };
+    });
+    TYPES.forEach(t => { if (res[t]['완료'] < 0) res[t]['완료'] = 0; });
+    return { from, to, counts: res, unclassified, manual, adjDay: from === to ? (day || { id: '', etag: '', counts: {} }) : null };
+  }
+  // 실적 수기 조정 저장: 그날의 유형별 ±건수. 대상자 정보 없음. 모두 0이면 지움
+  async function saveAdj(date, counts, etag) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) throw new Error('날짜가 올바르지 않습니다.');
+    const clean = {}; TYPES.forEach(t => { const n = Math.trunc(+((counts || {})[t]) || 0); if (n) clean[t] = Math.max(-999, Math.min(999, n)); });
+    const cal = await ensureDone();
+    const cur = (await listCal(cal, date, date, { adj: true })).find(ev => (ev.start.date || '') === date);
+    if (cur && etag !== undefined && etag !== null && cur.etag !== etag) return { ok: false, conflict: true };
+    if (!cur && etag) return { ok: false, conflict: true };
+    if (!Object.keys(clean).length) { if (cur) await api('DELETE', '/calendars/' + encodeURIComponent(cal) + '/events/' + encodeURIComponent(cur.id)); return { ok: true, removed: !!cur }; }
+    const label = TYPES.filter(t => clean[t]).map(t => t + ' ' + (clean[t] > 0 ? '+' : '') + clean[t]).join(', ');
+    const body = { summary: '[실적 수기] ' + label, start: { date }, end: { date: addDays(date, 1) }, transparency: 'transparent',
+      description: '방문건강관리 일정표의 실적 수기 조정입니다(완료 건수에 더해짐). 대상자 정보는 없습니다.', reminders: { useDefault: false, overrides: [] },
+      extendedProperties: { private: { vhm_kind: 'adj', vhm_adj: JSON.stringify(clean) } } };
+    try {
+      const ev = cur ? await api('PATCH', '/calendars/' + encodeURIComponent(cal) + '/events/' + encodeURIComponent(cur.id), { body, ifMatch: cur.etag })
+                     : await api('POST', '/calendars/' + encodeURIComponent(cal) + '/events', { body });
+      return { ok: true, id: ev.id, etag: ev.etag };
+    } catch (err) { if (err.status === 412) return { ok: false, conflict: true }; throw err; }
   }
 
   /* ---------- 백업 (파일로 내려받기) ---------- */
@@ -2020,7 +2059,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     async listDone(f, t) { return Promise.all((await listDone(f, t)).map(decObj)); },
     async listAll(f, t) { const r = await listAll(f, t); return { active: await Promise.all(r.active.map(decObj)), done: await Promise.all(r.done.map(decObj)) }; },
     async getEvent(id) { const f = await findEvent(id); if (!f) return null; const o = toObj(f.ev, f.kind, f.done); if (f.done) o.inDone = true; return decObj(o); },
-    postpone, moveDone, listDue, delDue: id => delDue(id).then(() => ({ ok: true })),
+    saveAdj, postpone, moveDone, listDue, delDue: id => delDue(id).then(() => ({ ok: true })),
     async deleteEvent(id, up) { const r = await deleteEvent(id, up); if (r.current) await decObj(r.current); return r; },
     getStats, exportBackup, restoreBackup, restoreEvents,
     lockState, lockSetup, lockUnlock, lockNow, lockAll, lockStash, lockResume, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
@@ -2177,6 +2216,7 @@ HANDOUTS.forEach(h => { if (EVIDENCE[h.id]) { h.extraSources = EVIDENCE[h.id].ex
     if (N && (N.edited || (N.extra || '').trim() || Object.values(N.pick || {}).some(v => Array.isArray(v) ? v.some(has) : has(v)) || Object.values(N.lead || {}).some(v => String(v || '').trim()))) return '상담 메모';
     const L = window.LINKS && LINKS._state; if (L && L.checks && L.checks.size) return '연계 안내 체크';
     if (window.ARCHIVE && ARCHIVE.busy()) return '보관함 파일 올리기·내려받기';
+    try { if (typeof ADJ !== 'undefined' && ADJ.dirty()) return '저장 안 한 수기 실적'; } catch (e) {}
     const a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.value) return '입력 중';
     return '';
   }
@@ -2605,18 +2645,46 @@ function statPeriod() {
   const f = $('#statFrom').value || t, to = $('#statTo').value || f; return f <= to ? [f, to] : [to, f];
 }
 let lastStats = null, statSeq = 0;
+// 실적 수기 조정: 하루를 보고 있을 때 유형별로 +/− 후 '저장'. 구글 '방문건강관리(완료)'에 그날 종일 일정 하나로 저장(대상자 정보 없음)
+const ADJ = { date: '', base: {}, cur: {}, etag: '', dirty() { return TYPES.some(t => (this.cur[t] || 0) !== (this.base[t] || 0)); } };
 async function loadStats() {
   $('#customRange').hidden = $('#statRange').value !== 'custom';
   const [from, to] = statPeriod(); const seq = ++statSeq;
+  if (ADJ.dirty() && !(from === to && from === ADJ.date) && !confirm('수기로 바꾼 실적을 아직 저장하지 않았습니다. 저장하지 않고 넘어갈까요?')) return;
   const st = await run('실적 집계 중…', () => call('getStats', from, to));
   if (seq !== statSeq) return; lastStats = st;
-  const tot = { '완료':0, '부재':0, '예정':0 };
-  const rows = TYPES.map(t => { const c = st.counts[t]; tot['완료'] += c['완료']; tot['부재'] += c['부재']; tot['예정'] += c['예정'];
-    return `<tr><td><span class="dot" style="--c:${TYPE_COLOR[t]}"></span>${t}</td><td class="done">${c['완료']}</td><td>${c['부재']}</td><td>${c['예정']}</td></tr>`; }).join('');
+  if (st.adjDay) { const keep = ADJ.date === from && ADJ.dirty(); ADJ.date = from; ADJ.base = Object.assign({}, st.adjDay.counts); ADJ.etag = st.adjDay.etag; if (!keep) ADJ.cur = Object.assign({}, st.adjDay.counts); }
+  else { ADJ.date = ''; ADJ.base = {}; ADJ.cur = {}; ADJ.etag = ''; }
+  paintStats();
+}
+function paintStats() {
+  const st = lastStats; if (!st) return; const { from, to } = st, day = !!st.adjDay;
+  const man = t => day ? (ADJ.cur[t] || 0) : (st.manual ? st.manual[t] || 0 : 0);
+  const auto = t => st.counts[t].auto != null ? st.counts[t].auto : st.counts[t]['완료'];
+  const done = t => Math.max(0, auto(t) + man(t));
+  const anyMan = day || TYPES.some(t => man(t));
+  const tot = { '완료':0, '부재':0, '예정':0, m:0 };
+  const sg = n => n > 0 ? '+' + n : String(n);
+  const rows = TYPES.map(t => { const c = st.counts[t]; tot['완료'] += done(t); tot['부재'] += c['부재']; tot['예정'] += c['예정']; tot.m += man(t);
+    const adj = day ? `<td class="adj"><button type="button" class="adj-b" data-adj="${t}" data-d="-1" aria-label="${t} 수기 1 빼기"${auto(t) + man(t) <= 0 ? ' disabled' : ''}>−</button><span class="adj-n${man(t) ? ' on' : ''}">${sg(man(t))}</span><button type="button" class="adj-b" data-adj="${t}" data-d="1" aria-label="${t} 수기 1 더하기">+</button></td>`
+      : anyMan ? `<td class="adj"><span class="adj-n${man(t) ? ' on' : ''}">${sg(man(t))}</span></td>` : '';
+    return `<tr><td><span class="dot" style="--c:${TYPE_COLOR[t]}"></span>${t}</td><td class="done">${done(t)}</td><td>${c['부재']}</td><td>${c['예정']}</td>${adj}</tr>`; }).join('');
+  const dirty = day && ADJ.dirty();
   $('#statsTable').innerHTML = `<div class="hint" style="margin-bottom:4px">${from === to ? fmtDateK(from) : fmtDateK(from) + ' ~ ' + fmtDateK(to)}</div>
-    <table class="stats"><thead><tr><th>유형</th><th>완료</th><th>부재</th><th>예정</th></tr></thead><tbody>${rows}</tbody>
-    <tfoot><tr><td>합계</td><td>${tot['완료']}</td><td>${tot['부재']}</td><td>${tot['예정']}</td></tr></tfoot></table>
+    <table class="stats"><thead><tr><th>유형</th><th>완료</th><th>부재</th><th>예정</th>${anyMan ? '<th title="일정 없이 손으로 올리고 내린 완료 건수">수기</th>' : ''}</tr></thead><tbody>${rows}</tbody>
+    <tfoot><tr><td>합계</td><td>${tot['완료']}</td><td>${tot['부재']}</td><td>${tot['예정']}</td>${anyMan ? `<td class="adj">${sg(tot.m)}</td>` : ''}</tr></tfoot></table>
+    ${day ? `<div class="adj-bar${dirty ? ' dirty' : ''}">${dirty ? '<span>수기 조정이 아직 저장되지 않았습니다.</span><button type="button" class="small primary" id="adjSave">저장</button><button type="button" class="small" id="adjUndo">취소</button>'
+      : '<span class="hint">일정을 등록하지 않은 상담은 ‘수기’ 칸의 +/−로 완료 건수를 올리고 내린 뒤 저장하세요.</span>'}</div>`
+      : (anyMan ? '<p class="note">‘수기’는 날짜별로 손으로 더하거나 뺀 완료 건수의 합입니다. 고치려면 ‘오늘’이나 ‘선택한 날짜’로 보세요.</p>' : '<p class="note">수기로 건수를 올리고 내리려면 기간을 ‘오늘’이나 ‘선택한 날짜’로 고르세요.</p>')}
     ${st.unclassified ? `<p class="note" style="color:var(--warn)">유형이 없는 업무 일정 ${st.unclassified}건은 세지 않았습니다. 일정을 눌러 유형을 지정하세요.</p>` : ''}`;
+}
+async function saveAdj() {
+  const date = ADJ.date; if (!date) return;
+  try {
+    const r = await run('수기 실적 저장 중…', () => call('saveAdj', date, ADJ.cur, ADJ.etag || ''));
+    if (r.conflict) { toast('다른 기기에서 그날 수기 실적이 먼저 바뀌었습니다. 최신 값을 불러옵니다. 다시 조정해 주세요.', 5000); ADJ.cur = Object.assign({}, ADJ.base); ADJ.base = {}; ADJ.cur = {}; await loadStats(); return; }
+    ADJ.base = Object.assign({}, ADJ.cur); toast(`${fmtDateK(date)} 수기 실적을 저장했습니다.`); await loadStats();
+  } catch (e) {}
 }
 
 /* ---------- 일정 등록·수정 ---------- */
@@ -2951,7 +3019,14 @@ function bind() {
 
   $('#statRange').onchange = () => loadStats().catch(() => {});
   $('#statFrom').onchange = () => loadStats().catch(() => {}); $('#statTo').onchange = () => loadStats().catch(() => {});
+  $('#statsTable').addEventListener('click', e => {
+    const b = e.target.closest('[data-adj]'); if (b) { const t = b.dataset.adj, a = lastStats.counts[t].auto != null ? lastStats.counts[t].auto : lastStats.counts[t]['완료'];
+      const n = (ADJ.cur[t] || 0) + (+b.dataset.d); if (a + n < 0) return; ADJ.cur[t] = n; if (!n) delete ADJ.cur[t]; paintStats(); return; }
+    if (e.target.id === 'adjSave') saveAdj();
+    if (e.target.id === 'adjUndo') { ADJ.cur = Object.assign({}, ADJ.base); paintStats(); }
+  });
   $('#btnCopyStats').onclick = async () => { if (!lastStats) return;
+    if (ADJ.dirty()) toast('수기 조정이 아직 저장되지 않아 저장 전 값으로 복사합니다.', 3500);
     const text = TYPES.join('\t') + '\n' + TYPES.map(t => lastStats.counts[t]['완료']).join('\t');
     toast(await copyText(text) ? '완료 건수를 복사했습니다. 엑셀에 붙여넣으세요 (신규·방문·전화·내소·연계 순).' : '복사하지 못했습니다.', 3500); };
 
