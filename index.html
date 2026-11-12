@@ -3397,7 +3397,7 @@ window.VHM_SUPPS = [
   const LS = 'vhm-notes-tpl';
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3);
   const KINDS = { one: '하나 고르기', many: '여러 개 고르기', num: '숫자 입력', drugs: '약 검색', lead: '입력칸 + 하나 고르기', acute: '여러 개 + 치료중·완치', text: '직접 적기 (+ 빠른 입력)' };
-  const SCHEMA = 15;
+  const SCHEMA = 16;
   const NOTE_ITEMS = ['만성질환', '급성질환', '눈·귀·구강', '관절'];   // 고른 보기마다 메모 칸 (사용자 요청 2026-11-12)
   const NO_HEAD = ['상담목적'];   // 이 묶음은 '*묶음이름' 머리줄 없이 (서두 줄이 이미 *로 시작)
   const ACUTE_ST = ['치료중', '완치'];   // 누를 때마다: 치료중 → 완치 → 해제
@@ -3414,6 +3414,9 @@ window.VHM_SUPPS = [
     { label: '유지 시간', unit: '초' }, { label: '측정', type: 'pick', options: '측정불가' }] });
   const minicogItem = () => ({ id: uid(), group: '신체계측 및 신체사정', label: 'Mini-Cog', kind: 'num', options: [], template: '-mini-cog: 3단어({1}/3), 시계그리기({2}/2)', fields: [
     { label: '3단어 회상', unit: '/3' }, { label: '시계그리기', unit: '/2' }, { label: '총점', unit: '/5', calc: 'minicog' }] });
+  // CIST(인지선별검사) 받은 여부·시기 — 사용자 요청 2026-11-12
+  const cistItem = () => ({ id: uid(), group: '건강상담', label: 'CIST 치매검사', kind: 'num', options: [], template: '-CIST 치매검사: {1}({2})', fields: [
+    { label: '검사', type: 'pick', options: '받음,안 받음,모름' }, { label: '받은 때', type: 'pick', options: '올해,작년,2년 이상 전' }] });
   const gripItem = () => ({ id: uid(), group: '신체계측 및 신체사정', label: '악력', kind: 'num', options: [], template: '-악력 Rt: {1}kg, Lt: {2}kg', fields: [
     { label: '오른손', unit: 'kg', norm: 'gripR' }, { label: '왼손', unit: 'kg', norm: 'gripL' },
     { label: '성별', type: 'pick', options: '남,여' }, { label: '나이', unit: '세' }] });
@@ -3473,6 +3476,7 @@ window.VHM_SUPPS = [
       one('건강상담', '기분·정서', [['안정', '정서 안정적임.'], ['우울감', '우울감 호소하여 경청 및 정서 지지함.'], ['불안', '불안감 호소하여 경청 및 정서 지지함.']]),
       one('건강상담', '낙상', [['없음', '최근 낙상 경험 없다고 함.'], ['있음', '최근 낙상 경험 있다고 하여 낙상 예방 교육함.']]),
       one('건강상담', '건강검진', [['받음', '올해 건강검진 받았다고 함.'], ['예정', '건강검진 받을 예정이라고 함.'], ['안 받음', '올해 건강검진 받지 않아 수검 권유함.']]),
+      cistItem(),
       many('건강상담', '교육 내용', [['고혈압 관리'], ['당뇨 관리'], ['저염식'], ['수분 섭취'], ['규칙적 운동'], ['복약'], ['낙상 예방'], ['치매 예방'], ['감염병 예방']], '{선택} 교육함.'),
       one('생활습관', '흡연', [['안 함', '비흡연.'], ['함', '흡연 중이라 하여 금연 권유함.'], ['금연', '금연 중이라고 함.']]),
       one('생활습관', '음주', [['안 함', '음주 안 함.'], ['가끔', '가끔 음주한다고 함.'], ['자주', '음주 잦다고 하여 절주 교육함.']]),
@@ -3531,6 +3535,8 @@ window.VHM_SUPPS = [
       else { const g = out.items.map(i => i.group).lastIndexOf('측정'); out.items.splice(g >= 0 ? g + 1 : out.items.length, 0, bodyItem()); }
     }
     if (!(d.schema >= 13)) out.items = regroup(out.items, !!d.defaultsPending);
+    if (!(d.schema >= 16) && !out.items.some(i => i.label === 'CIST 치매검사')) {   // 건강검진 다음(없으면 건강상담 묶음 끝)
+      const g = out.items.findIndex(i => i.label === '건강검진'); const at = g >= 0 ? g + 1 : (out.items.map(i => i.group).lastIndexOf('건강상담') + 1 || out.items.length); out.items.splice(at, 0, cistItem()); }
     if (!(d.schema >= 15)) [minicogItem, balanceItem].forEach(mk => { const it = mk(); if (out.items.some(i => i.label === it.label)) return;   // 악력 다음(없으면 신체사정 묶음 끝)에
       const g = out.items.findIndex(i => i.label === '악력'); const at = g >= 0 ? g + 1 : out.items.map(i => i.group).lastIndexOf('신체계측 및 신체사정') + 1 || out.items.length; out.items.splice(at, 0, it); });
     if (!(d.schema >= 14)) out.items.forEach(i => { if (NOTE_ITEMS.includes(i.label) && ['many', 'acute', 'num'].includes(i.kind)) i.notes = true; });   // 사용자 요청(2026-11-10): 상담기록 순서대로 묶음 재배치
