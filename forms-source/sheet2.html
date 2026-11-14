@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>방문건강관리 기초조사표</title>
+<style>
+:root{--ink:#111;--line:#555;--soft:#eef1f5;--bg:#e9ecf1;--paper:#fff;--accent:#1f4e8c}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#1b1e23}}
+:root[data-theme="dark"]{--bg:#1b1e23}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;color:var(--ink)}
+.wrap{overflow-x:auto;padding:16px}
+.page{width:210mm;height:297mm;margin:0 auto 16px;background:var(--paper);color:#111;padding:10mm 11mm 8mm;font-size:10pt;line-height:1.4;box-shadow:0 2px 12px rgba(0,0,0,.15);display:flex;flex-direction:column;overflow:hidden}
+h1{font-size:16pt;margin:0;letter-spacing:-.02em;text-align:center}
+.top{display:flex;justify-content:space-between;gap:8px;margin:6px 0 2px;font-size:9.5pt;border-bottom:1.5px solid #111;padding-bottom:5px}
+.pno{text-align:right;font-size:8.5pt;color:#555;margin-top:auto;padding-top:3px}
+h2{font-size:11pt;margin:7px 0 3px;padding-left:6px;border-left:3.5px solid var(--accent);line-height:1.2}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+th,td{border:.6pt solid var(--line);padding:4px 6px;vertical-align:middle;text-align:left;word-break:keep-all}
+th{background:var(--soft);font-weight:600;width:28mm;white-space:nowrap}
+th.mh{width:auto;text-align:center}
+td.f{height:8mm}
+td.m{color:#999;font-size:8pt;vertical-align:top}
+.v th{width:auto;text-align:center}.v td{text-align:right;height:9mm;padding-right:8px;vertical-align:bottom}
+.u{display:inline-block;min-width:10mm;border-bottom:.6pt solid #888;height:1em;vertical-align:-1px}
+.u.s{min-width:7mm}.u.l{min-width:18mm}.u.xl{min-width:32mm}
+.ln{display:block;margin-top:2px}
+.o{white-space:nowrap}
+/* 줄 쳐진 메모 칸 */
+.lines{border:.6pt solid var(--line);border-top:0;overflow:hidden;display:flex;flex-direction:column}
+.lines i{display:block;flex:0 0 8mm;border-bottom:.5pt dotted #999}
+.lines i:last-child{border-bottom:0}
+.memo-h{border:.6pt solid var(--line);background:var(--soft);padding:3px 6px;font-weight:600;font-size:9pt}
+.grow{flex:1;display:flex;flex-direction:column}
+.grow .lines{flex:1 1 0;min-height:0}
+@page{size:A4;margin:0}
+@media print{
+  body{background:#fff}.wrap{padding:0;overflow:visible}
+  .page{box-shadow:none;margin:0;break-after:page}
+  .page:last-child{break-after:auto}
+}
+</style>
+<style>
+.yn th,.yn td{padding:2.6px 5px;font-size:9.2pt}
+.yn .n{width:7mm;text-align:center;color:#333}
+.yn .g{width:27mm;background:var(--soft);font-weight:600;font-size:8.8pt;line-height:1.3}
+.yn .a{width:29mm;text-align:center;white-space:nowrap}
+.yn td.q{line-height:1.3}
+.yn small{color:#555;font-size:8pt}
+.phq th,.phq td{padding:3px 5px;font-size:9.3pt}
+.phq .s{width:15mm;text-align:center}
+.phq thead th{width:auto;text-align:center;font-size:8.6pt;line-height:1.2}
+.note{font-size:8.3pt;color:#333;margin:3px 0 0;line-height:1.4}
+.cq{margin:5px 0 0}.cq b{font-weight:600}
+.cq .opts{display:flex;flex-wrap:wrap;gap:3px 14px;margin:2px 0 0 12px}
+.scale{display:flex;align-items:center;gap:8px;margin:3px 0 0 12px}
+.scale span{white-space:nowrap}
+</style>
+<style>
+.phq.mini th,.phq.mini td{padding:1.6px 4px;font-size:8.3pt;line-height:1.22}
+.phq.mini thead th{font-size:7.8pt}
+.lines.tight i{flex-basis:7.5mm}
+.dis th,.dis td{padding:2px 4px;font-size:8.4pt;line-height:1.25}
+.dis th{width:22mm}
+.mbi th,.mbi td{padding:1.5px 3px;font-size:8.1pt;line-height:1.2;text-align:center}
+.mbi td:first-child,.mbi th:first-child{text-align:left}
+.mbi thead th{font-size:7.6pt;font-weight:600;width:auto}
+.cancer .cq{margin:2px 0 0;font-size:9pt}.cancer .opts{gap:1px 10px;margin-left:8px}
+.cancer .cq b{font-weight:600}
+.inline{display:inline-flex;gap:4px 10px;flex-wrap:wrap;margin-left:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="page">
+  <div class="top" style="margin-top:0"><span><b>방문건강관리 기초조사표 (3쪽)</b></span><span>이름: <span class="u xl"></span></span><span>검사일: 20<span class="u s"></span>. <span class="u s"></span>. <span class="u s"></span>.</span></div>
+  <h2>허약노인 기초측정표</h2>
+  <table class="yn"><tr><td class="n">1</td><td class="g" rowspan="5">사회적 환경 적응도<br><small>(수단적 일상생활 동작, IADL)</small></td><td class="q">버스나 지하철(전철) 등, 교통수단을 이용해서 혼자 외출할 수 있습니까?</td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">2</td><td class="q">슈퍼마켓이나 동네가게에서 잘못이나 실수 없이 제대로 생필품을 구입합니까? <small>(주문배달의 경우는 ‘아니오’)</small></td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">3</td><td class="q">은행이나 농협, 우체국 등에서 예·적금 등의 금전관리를 스스로 하고 있습니까? <small>(타인이 해주면 ‘아니오’)</small></td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">4</td><td class="q">이웃이나 친구의 집에 마실하러 다닙니까? <small>(가족이나 친척 집 제외)</small></td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">5</td><td class="q">가족이나 친구에게 생활상의 문제에 대해 상담이나 조언을 해줍니까? <small>(전화를 통한 상담·조언도 포함됨)</small></td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">6</td><td class="g" rowspan="3">일상생활 기본동작<br><small>(일상생활동작, ADL)</small></td><td class="q">계단 손잡이나 벽을 짚지 않고 계단을 올라갑니까? <small>(처음부터 습관적으로 잡는 경우는 ‘아니오’이고, 올라가는 중간에 잡는 경우는 ‘예’)</small></td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">7</td><td class="q">의자에 앉은 상태에서 부축이나 지팡이 없이 일어납니까?</td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">8</td><td class="q">15분 정도 쉬지 않고 걸어 다닙니까? <small>(실내·외 불문)</small></td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">9</td><td class="g" rowspan="2">낙상</td><td class="q">지난 1년간에 넘어진 적이 있습니까? <small>(미끄러지거나, 걸려서)</small></td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">10</td><td class="q">넘어지는 것에 대한 걱정이나 염려가 큽니까?</td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">11</td><td class="g" rowspan="5">영양상태</td><td class="q">지난 6개월간 몸무게가 2~3kg 이상 빠졌습니까? <small>(※고의적인 체중감량은 제외함)</small></td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">12</td><td class="q">신장(<span class="u"></span>cm), 체중(<span class="u"></span>kg) BMI(<span class="u"></span>)가 18.5 미만인가?</td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">13</td><td class="q">지난 6개월 전에 비해 딱딱한 음식을 먹기 어려워졌습니까?</td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">14</td><td class="q">음료수나 국물을 드실 때 목이 멘 적(삼키기 어려움)이 있습니까?</td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">15</td><td class="q">자주 입이 말라서 신경이 쓰입니까?</td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">16</td><td class="g" rowspan="2">사회적건강</td><td class="q">1주일에 한 번 이상 외출(나들이)합니까? <small>(1~2주에 한 번 정도도 ‘예’)</small></td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">17</td><td class="q">작년에 비해서 외출 횟수가 줄어들었습니까?</td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">18</td><td class="g" rowspan="3">인지기능</td><td class="q">주위사람이 ‘항상 똑같은 말을 되풀이 한다’는 등의 건망증이 있다는 말을 듣습니까? <small>(건망증이 있어도 그런 말을 듣지 않으면 ‘아니오’)</small></td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">19</td><td class="q">혼자서 전화를 걸 수 있습니까? <small>(누군가가 걸어주면 ‘아니오’)</small></td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">20</td><td class="q">오늘이 몇 월, 몇 일 인지를 모를 때가 있습니까?</td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">21</td><td class="g" rowspan="5">우울증상</td><td class="q">(최근 2주간) 매사에 의욕이 없다.</td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">22</td><td class="q">(최근 2주간) 지금까지 즐겨왔던 취미가 싫증났다. <small>(그래서 그만둔 경우도 ‘예’)</small></td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">23</td><td class="q">(최근 2주간) 예전에는 쉽게 했던 일들이 이제는 어려워서 겁이 난다.</td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">24</td><td class="q">(최근 2주간) 자신이 쓸모 있는 사람이라고 생각하지 않는다.</td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">25</td><td class="q">(최근 2주간) 아무 이유도 없이 피곤함을 느낀다.</td><td class="a">☐&nbsp;예 ☐&nbsp;아니오</td></tr><tr><td class="n">26</td><td class="g">만성질환</td><td class="q" colspan="2">현재 앓고 있는 질병에 모두 표시: ☐&nbsp;고혈압 ☐&nbsp;당뇨병 ☐&nbsp;뇌졸중 ☐&nbsp;관절염 ☐&nbsp;요실금 ☐&nbsp;암 ☐&nbsp;심장질환 ☐&nbsp;만성호흡기질환</td></tr><tr><td class="n" rowspan="2">27</td><td class="g" rowspan="2">감각기능</td><td class="q">낮은 시력으로 인해 일상생활에서 어려움을 경험하고 있습니까? (시력)</td><td class="a">☐&nbsp;그렇다 ☐&nbsp;아니오</td></tr><tr><td class="q">낮은 청력으로 인해 일상생활에서 어려움을 경험하고 있습니까? (청력)</td><td class="a">☐&nbsp;그렇다 ☐&nbsp;아니오</td></tr><tr><td class="n">28</td><td class="g">보행평가</td><td class="q" colspan="2">TUG(일어나 걸어 돌아오기 검사, Timed up-and-go test) — 의자에서 일어나 빠른 걸음으로 돌아오기: <span class="u"></span>분 <span class="u"></span>초 &nbsp;│&nbsp; 측정 못 함(사유: <span class="u xl"></span>)</td></tr></table>
+  <div class="grow"><div class="memo-h" style="margin-top:6px">메모</div><div class="lines"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+  <div class="pno">3쪽 (뒷면에 계속)</div>
+</div>
+<div class="page">
+  <div class="top" style="margin-top:0"><span><b>방문건강관리 기초조사표 (4쪽)</b></span><span>이름: <span class="u xl"></span></span></div>
+  <h2>재가암 대상자 기초조사표</h2>
+  <div class="cancer">
+  <p class="note" style="margin:0">※ 대상: 만 19세 이상, 의사에게 암 진단을 받은 대상자 (암 치료종료 후 5년 경과자는 제외) · 조사주기: 최초 1회 작성 후 필요 시</p>
+  <div class="cq"><b>1. 진단받은 암(원발암)의 종류</b><div class="opts"><span>☐&nbsp;위암</span><span>☐&nbsp;폐암</span><span>☐&nbsp;간암</span><span>☐&nbsp;유방암</span><span>☐&nbsp;대장암</span><span>☐&nbsp;췌장암</span><span>☐&nbsp;갑상선암</span><span>☐&nbsp;방광암</span><span>☐&nbsp;전립선암</span><span>☐&nbsp;자궁암</span><span>☐&nbsp;기타(<span class="u l"></span>)</span></div></div>
+  <div class="cq"><b>2. 처음 암을 진단받은 해</b> &nbsp; <span class="u"></span>년</div>
+  <div class="cq"><b>3. 진단 시 암의 진행 정도</b><div class="opts"><span>☐&nbsp;0기</span><span>☐&nbsp;1기</span><span>☐&nbsp;2기</span><span>☐&nbsp;3기</span><span>☐&nbsp;4기</span><span>☐&nbsp;5기</span><span>☐&nbsp;모름</span></div></div>
+  <div class="cq"><b>4. 지금까지 받은 암 치료 방법 (모두)</b><div class="opts"><span>☐&nbsp;수술</span><span>☐&nbsp;방사선치료</span><span>☐&nbsp;항암치료</span><span>☐&nbsp;표적치료</span><span>☐&nbsp;호르몬</span><span>☐&nbsp;기타</span><span>☐&nbsp;모름</span></div></div>
+  <div class="cq"><b>5. 현재 암 치료 상태</b><div class="opts"><span>☐&nbsp;치료중</span><span>☐&nbsp;완치</span><span>☐&nbsp;치료중단</span></div></div>
+  <div class="cq"><b>6. 지난 일주일 동안의 스트레스 정도</b><div class="scale"><span>전혀 괴롭지 않음</span><span>☐&nbsp;0</span><span>☐&nbsp;1</span><span>☐&nbsp;2</span><span>☐&nbsp;3</span><span>☐&nbsp;4</span><span>☐&nbsp;5</span><span>☐&nbsp;6</span><span>☐&nbsp;7</span><span>☐&nbsp;8</span><span>☐&nbsp;9</span><span>☐&nbsp;10</span><span>매우 괴로움</span></div></div>
+  </div>
+  <h2>재가장애인 기초조사표 (간이)</h2>
+  <p class="note" style="margin:0 0 2px">※ 대상: 만 7세 이상 장애인 등록 가구원 · 조사주기: 초기 1회 작성 후 필요 시</p>
+  <table class="dis">
+    <tr><th>장애등록</th><td colspan="3">☐&nbsp;유(☐&nbsp;심한 장애인 ☐&nbsp;심하지 않은 장애인) &nbsp; ☐&nbsp;무(☐&nbsp;예비 장애인*) <span class="note">*손상·질병 후 일정기간 내 장애인이 될 것으로 예상되는 자</span></td></tr>
+    <tr><th>장애분류</th><td colspan="3"><span class="inline" style="margin:0"><span>☐&nbsp;①지체</span><span>☐&nbsp;②뇌병변</span><span>☐&nbsp;③시각</span><span>☐&nbsp;④청각</span><span>☐&nbsp;⑤언어</span><span>☐&nbsp;⑥안면</span><span>☐&nbsp;⑦호흡기</span><span>☐&nbsp;⑧심장</span><span>☐&nbsp;⑨신장</span><span>☐&nbsp;⑩간</span><span>☐&nbsp;⑪장루·요루</span><span>☐&nbsp;⑫간질</span><span>☐&nbsp;⑬지적</span><span>☐&nbsp;⑭자폐성</span><span>☐&nbsp;⑮정신</span></span></td></tr>
+    <tr><th>영양상태</th><td>☐&nbsp;양호 ☐&nbsp;불량(식단부족·삼키기 기능저하·식욕부진 등)</td><th>연하문제</th><td>☐&nbsp;없음 ☐&nbsp;있음</td></tr>
+    <tr><th>호흡상태</th><td colspan="3">☐&nbsp;정상 ☐&nbsp;기침 ☐&nbsp;호흡곤란 ☐&nbsp;기관지삽관 ☐&nbsp;기타</td></tr>
+    <tr><th>배뇨</th><td colspan="3">상태: ☐&nbsp;정상 ☐&nbsp;배뇨곤란(찔끔·잦은배뇨·느낌없음) &nbsp;│ 방법: ☐&nbsp;정상 ☐&nbsp;기저귀·기스모 ☐&nbsp;도뇨관(☐&nbsp;간헐적 ☐&nbsp;지속적) ☐&nbsp;기타</td></tr>
+    <tr><th>배변</th><td colspan="3">상태: ☐&nbsp;정상 ☐&nbsp;변비(<span class="u s"></span>회/<span class="u s"></span>일) ☐&nbsp;실변(배변느낌 ☐&nbsp;유 ☐&nbsp;무) ☐&nbsp;기타 &nbsp;│ 방법: ☐&nbsp;정상 ☐&nbsp;항문자극 ☐&nbsp;관장 ☐&nbsp;기타</td></tr>
+    <tr><th>피부(위생)</th><td>☐&nbsp;양호 ☐&nbsp;불량 ☐&nbsp;욕창</td><th>낙상경험</th><td>☐&nbsp;없음 ☐&nbsp;있음</td></tr>
+    <tr><th>관절구축</th><td colspan="3">☐&nbsp;없음 ☐&nbsp;있음 → 상지(☐&nbsp;좌 ☐&nbsp;우: ☐&nbsp;어깨 ☐&nbsp;팔꿈치 ☐&nbsp;손) · 하지(☐&nbsp;좌 ☐&nbsp;우: ☐&nbsp;고관절 ☐&nbsp;무릎 ☐&nbsp;발목)</td></tr>
+    <tr><th>운동기능</th><td colspan="3">☐&nbsp;와상상태 ☐&nbsp;앉아있을 수 있음 ☐&nbsp;침대·휠체어 이동가능 ☐&nbsp;기립가능 ☐&nbsp;의존적 실내보행 ☐&nbsp;독립적 실내보행 ☐&nbsp;실외보행</td></tr>
+  </table>
+  <h2 style="margin-top:5px">변형 바델 지수 (MBI) <span class="note" style="font-weight:400">— 해당 수행정도에 체크, 칸의 숫자가 점수</span></h2>
+  <table class="mbi yn"><colgroup><col style="width:46mm"><col><col><col><col><col></colgroup>
+    <thead><tr><th>평가항목</th><th>(1) 전혀 할 수 없음</th><th>(2) 많은 도움 필요</th><th>(3) 중간정도 도움 필요</th><th>(4) 경미한 도움 필요</th><th>(5) 완전히 독립적</th></tr></thead>
+    <tr><td>개인위생 (personal hygiene)</td><td>☐&nbsp;0</td><td>☐&nbsp;1</td><td>☐&nbsp;3</td><td>☐&nbsp;4</td><td>☐&nbsp;5</td></tr><tr><td>목욕 (bathing self)</td><td>☐&nbsp;0</td><td>☐&nbsp;1</td><td>☐&nbsp;3</td><td>☐&nbsp;4</td><td>☐&nbsp;5</td></tr><tr><td>식사 (feeding)</td><td>☐&nbsp;0</td><td>☐&nbsp;2</td><td>☐&nbsp;5</td><td>☐&nbsp;8</td><td>☐&nbsp;10</td></tr><tr><td>용변 (toilet use)</td><td>☐&nbsp;0</td><td>☐&nbsp;2</td><td>☐&nbsp;5</td><td>☐&nbsp;8</td><td>☐&nbsp;10</td></tr><tr><td>계단 오르내리기 (stair climb)</td><td>☐&nbsp;0</td><td>☐&nbsp;2</td><td>☐&nbsp;5</td><td>☐&nbsp;8</td><td>☐&nbsp;10</td></tr><tr><td>착탈의 (dressing)</td><td>☐&nbsp;0</td><td>☐&nbsp;2</td><td>☐&nbsp;5</td><td>☐&nbsp;8</td><td>☐&nbsp;10</td></tr><tr><td>대변조절 (bowel control)</td><td>☐&nbsp;0</td><td>☐&nbsp;2</td><td>☐&nbsp;5</td><td>☐&nbsp;8</td><td>☐&nbsp;10</td></tr><tr><td>소변조절 (bladder control)</td><td>☐&nbsp;0</td><td>☐&nbsp;2</td><td>☐&nbsp;5</td><td>☐&nbsp;8</td><td>☐&nbsp;10</td></tr><tr><td>보행 (ambulation)</td><td>☐&nbsp;0</td><td>☐&nbsp;3</td><td>☐&nbsp;8</td><td>☐&nbsp;12</td><td>☐&nbsp;15</td></tr><tr><td>휠체어 이동 (wheelchair)*</td><td>☐&nbsp;0</td><td>☐&nbsp;1</td><td>☐&nbsp;3</td><td>☐&nbsp;4</td><td>☐&nbsp;5</td></tr><tr><td>이동 (chair/bed transfer)</td><td>☐&nbsp;0</td><td>☐&nbsp;3</td><td>☐&nbsp;8</td><td>☐&nbsp;12</td><td>☐&nbsp;15</td></tr>
+    <tr><td style="font-weight:700">합계</td><td colspan="5" style="text-align:left"><span class="u l"></span> 점 &nbsp;→ ☐&nbsp;0~24 완전 의존 ☐&nbsp;25~49 매우 의존 ☐&nbsp;50~74 중등도 의존 ☐&nbsp;75~90 약간 의존 ☐&nbsp;91~99 최소 도움 ☐&nbsp;100 독립</td></tr>
+  </table>
+  <p class="note">*휠체어 이동은 보행 평가가 불가능할 때만 작성(보행 평가가 가능하면 휠체어 이동은 평가하지 않음). 점수: Shah 등(1989) MBI 기준.</p>
+  <div class="grow"><div class="memo-h" style="margin-top:5px">메모</div><div class="lines tight"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+  <div class="pno">4쪽</div>
+</div>
+</div>
+</body>
+</html>

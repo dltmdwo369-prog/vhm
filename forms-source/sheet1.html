@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>방문건강관리 간이 상담 설문지</title>
+<style>
+:root{--ink:#111;--line:#555;--soft:#eef1f5;--bg:#e9ecf1;--paper:#fff;--accent:#1f4e8c}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#1b1e23}}
+:root[data-theme="dark"]{--bg:#1b1e23}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;color:var(--ink)}
+.wrap{overflow-x:auto;padding:16px}
+.page{width:210mm;height:297mm;margin:0 auto 16px;background:var(--paper);color:#111;padding:10mm 11mm 8mm;font-size:10pt;line-height:1.4;box-shadow:0 2px 12px rgba(0,0,0,.15);display:flex;flex-direction:column;overflow:hidden}
+h1{font-size:16pt;margin:0;letter-spacing:-.02em;text-align:center}
+.top{display:flex;justify-content:space-between;gap:8px;margin:6px 0 2px;font-size:9.5pt;border-bottom:1.5px solid #111;padding-bottom:5px}
+.pno{text-align:right;font-size:8.5pt;color:#555;margin-top:auto;padding-top:3px}
+h2{font-size:11pt;margin:7px 0 3px;padding-left:6px;border-left:3.5px solid var(--accent);line-height:1.2}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+th,td{border:.6pt solid var(--line);padding:4px 6px;vertical-align:middle;text-align:left;word-break:keep-all}
+th{background:var(--soft);font-weight:600;width:28mm;white-space:nowrap}
+th.mh{width:auto;text-align:center}
+td.f{height:8mm}
+td.m{color:#999;font-size:8pt;vertical-align:top}
+.v th{width:auto;text-align:center}.v td{text-align:right;height:9mm;padding-right:8px;vertical-align:bottom}
+.u{display:inline-block;min-width:10mm;border-bottom:.6pt solid #888;height:1em;vertical-align:-1px}
+.u.s{min-width:7mm}.u.l{min-width:18mm}.u.xl{min-width:32mm}
+.ln{display:block;margin-top:2px}
+.o{white-space:nowrap}
+/* 줄 쳐진 메모 칸 */
+.lines{border:.6pt solid var(--line);border-top:0;overflow:hidden;display:flex;flex-direction:column}
+.lines i{display:block;flex:0 0 8mm;border-bottom:.5pt dotted #999}
+.lines i:last-child{border-bottom:0}
+.memo-h{border:.6pt solid var(--line);background:var(--soft);padding:3px 6px;font-weight:600;font-size:9pt}
+.grow{flex:1;display:flex;flex-direction:column}
+.grow .lines{flex:1 1 0;min-height:0}
+@page{size:A4;margin:0}
+@media print{
+  body{background:#fff}.wrap{padding:0;overflow:visible}
+  .page{box-shadow:none;margin:0;break-after:page}
+  .page:last-child{break-after:auto}
+}
+</style>
+<style>
+.yn th,.yn td{padding:2.6px 5px;font-size:9.2pt}
+.yn .n{width:7mm;text-align:center;color:#333}
+.yn .g{width:27mm;background:var(--soft);font-weight:600;font-size:8.8pt;line-height:1.3}
+.yn .a{width:29mm;text-align:center;white-space:nowrap}
+.yn td.q{line-height:1.3}
+.yn small{color:#555;font-size:8pt}
+.phq th,.phq td{padding:3px 5px;font-size:9.3pt}
+.phq .s{width:15mm;text-align:center}
+.phq thead th{width:auto;text-align:center;font-size:8.6pt;line-height:1.2}
+.note{font-size:8.3pt;color:#333;margin:3px 0 0;line-height:1.4}
+.cq{margin:5px 0 0}.cq b{font-weight:600}
+.cq .opts{display:flex;flex-wrap:wrap;gap:3px 14px;margin:2px 0 0 12px}
+.scale{display:flex;align-items:center;gap:8px;margin:3px 0 0 12px}
+.scale span{white-space:nowrap}
+</style>
+<style>
+.phq.mini th,.phq.mini td{padding:1.6px 4px;font-size:8.3pt;line-height:1.22}
+.phq.mini thead th{font-size:7.8pt}
+.lines.tight i{flex-basis:7.5mm}
+.dis th,.dis td{padding:2px 4px;font-size:8.4pt;line-height:1.25}
+.dis th{width:22mm}
+.mbi th,.mbi td{padding:1.5px 3px;font-size:8.1pt;line-height:1.2;text-align:center}
+.mbi td:first-child,.mbi th:first-child{text-align:left}
+.mbi thead th{font-size:7.6pt;font-weight:600;width:auto}
+.cancer .cq{margin:2px 0 0;font-size:9pt}.cancer .opts{gap:1px 10px;margin-left:8px}
+.cancer .cq b{font-weight:600}
+.inline{display:inline-flex;gap:4px 10px;flex-wrap:wrap;margin-left:6px}
+.ck{font-size:9pt;line-height:1.35}.ck small{color:#555;font-size:7.6pt}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- 앞면 -->
+<div class="page">
+  <h1>방문건강관리 간이 상담 설문지</h1>
+  <div class="top"><span>상담일: 20<span class="u s"></span>. <span class="u s"></span>. <span class="u s"></span>.</span><span>상담자: <span class="u l"></span></span><span>구분: ☐&nbsp;방문 ☐&nbsp;내소 ☐&nbsp;전화</span></div>
+
+  <h2>기본정보</h2>
+  <table>
+    <tr><th>이름</th><td class="f"></td><th>전화번호</th><td></td></tr>
+    <tr><th>생년월일</th><td colspan="3"><span class="u"></span>년 <span class="u s"></span>월 <span class="u s"></span>일 (만 <span class="u s"></span>세) &nbsp;&nbsp; 성별: ☐&nbsp;남 ☐&nbsp;여</td></tr>
+    <tr><th>주소</th><td colspan="3" class="f"></td></tr>
+    <tr><th>건강보험 가입</th><td colspan="3">☐&nbsp;지역가입자 ☐&nbsp;직장가입자 ☐&nbsp;기초생활수급자 ☐&nbsp;차상위계층 ☐&nbsp;모름</td></tr>
+    <tr><th>장애</th><td colspan="3">☐&nbsp;없음 ☐&nbsp;있음 (유형: <span class="u xl"></span> 정도: ☐&nbsp;심한 ☐&nbsp;심하지 않은)</td></tr>
+    <tr><th>암</th><td colspan="3">☐&nbsp;없음 &nbsp;☐&nbsp;치료 중 (종류: <span class="u"></span> 진단: <span class="u s"></span>년, 병원: <span class="u"></span> / ☐&nbsp;수술 ☐&nbsp;항암치료 ☐&nbsp;약물)<span class="ln">☐&nbsp;치료 종료 &nbsp;&nbsp;│&nbsp; 의료비지원 신청 여부: ☐&nbsp;O ☐&nbsp;X → 02-2600-5884 사업담당자 연락처 안내</span></td></tr>
+  </table>
+
+  <h2>Vital</h2>
+  <table class="v">
+    <tr><th>혈압(BP)</th><th>맥박(PR)</th><th>혈당(BST)</th><th>당화혈색소(HbA1c)</th></tr>
+    <tr><td>/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; mmHg</td><td>회/분</td><td>mg/dL (☐&nbsp;공복 ☐&nbsp;식후)</td><td>% (검사일: <span class="u"></span>)</td></tr>
+  </table>
+
+  <h2>주질환</h2>
+  <table>
+    <tr><th>만성질환</th><td>☐&nbsp;고혈압 ☐&nbsp;당뇨병 ☐&nbsp;고지혈증 ☐&nbsp;관절염 ☐&nbsp;골다공증 ☐&nbsp;뇌혈관질환(<span class="u"></span>) ☐&nbsp;심장질환(<span class="u"></span>)<span class="ln">☐&nbsp;만성신장병(투석 여부: <span class="u"></span>) ☐&nbsp;호흡기질환(<span class="u"></span>) ☐&nbsp;치매(☐&nbsp;경증 ☐&nbsp;중증) ☐&nbsp;기타(<span class="u"></span>)</span></td></tr>
+    <tr><th>급성질환</th><td>질환명: <span class="u xl"></span> ☐&nbsp;치료중 ☐&nbsp;완치 &nbsp;/&nbsp; 질환명: <span class="u xl"></span> ☐&nbsp;치료중 ☐&nbsp;완치<span class="ln">질환명: <span class="u xl"></span> ☐&nbsp;치료중 ☐&nbsp;완치 &nbsp;/&nbsp; 질환명: <span class="u xl"></span> ☐&nbsp;치료중 ☐&nbsp;완치</span></td></tr>
+  </table>
+  <div class="memo-h">주질환 메모 (진단 시기·치료 병원·증상 등)</div>
+  <div class="lines"><i></i><i></i><i></i><i></i></div>
+
+  <h2>복약</h2>
+  <table>
+    <tr><th>복용약(무슨 약)</th><td class="f"></td></tr>
+    <tr><th>복약 상태</th><td>☐&nbsp;규칙적 ☐&nbsp;가끔 거름 ☐&nbsp;복용약 없음 ☐&nbsp;투약 중단(☐&nbsp;부작용 ☐&nbsp;증상 호전)</td></tr>
+    <tr><th>영양제</th><td class="f"></td></tr>
+  </table>
+
+  <h2>신체계측 및 신체사정</h2>
+  <table>
+    <colgroup><col style="width:28mm"><col><col style="width:20mm"><col style="width:72mm"></colgroup>
+    <tr><th>신체계측</th><td colspan="3">키 <span class="u"></span>cm / 몸무게 <span class="u"></span>kg / BMI <span class="u"></span> &nbsp;&nbsp;│&nbsp;&nbsp; <b>악력</b> Rt <span class="u"></span>kg / Lt <span class="u"></span>kg</td></tr>
+    <tr><th>눈</th><td colspan="3">☐&nbsp;양호 ☐&nbsp;시력저하 ☐&nbsp;백내장(☐&nbsp;의심 ☐&nbsp;확진: <span class="u"></span>년도) ☐&nbsp;녹내장(☐&nbsp;의심 ☐&nbsp;확진: <span class="u"></span>년도)</td></tr>
+    <tr><th>귀</th><td>☐&nbsp;양호 ☐&nbsp;청력저하 ☐&nbsp;보청기 사용</td><th>구강건강</th><td>☐&nbsp;양호 ☐&nbsp;불량 ☐&nbsp;틀니 사용 ☐&nbsp;저작 불편</td></tr>
+    <tr><th>관절</th><td colspan="3">☐&nbsp;양호 ☐&nbsp;통증 ☐&nbsp;부종 ☐&nbsp;강직 ☐&nbsp;운동 제한 (부위: <span class="u xl"></span>)</td></tr><tr><th>평형성</th><td><span class="u"></span>초 &nbsp;☐&nbsp;측정불가</td><th>Mini-Cog</th><td>3단어 <span class="u s"></span>/3 · 시계그리기 <span class="u s"></span>/2 <small style="color:#555">(총 <span class="u s"></span>/5)</small></td></tr>
+  </table>
+  <div class="grow"><div class="memo-h">신체사정 메모</div>
+  <div class="lines"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+  <div class="pno">1쪽 (뒷면에 계속)</div>
+</div>
+
+<!-- 뒷면 -->
+<div class="page">
+  <div class="top" style="margin-top:0"><span><b>방문건강관리 간이 상담 설문지 (2쪽)</b></span><span>이름: <span class="u xl"></span></span></div>
+
+
+  <h2>건강상담</h2>
+  <table>
+    <colgroup><col style="width:28mm"><col style="width:74mm"><col></colgroup>
+    <tr><th>항목</th><th class="mh">해당 항목</th><th class="mh">메모</th></tr>
+    <tr><th>전반적 컨디션</th><td>☐&nbsp;양호 ☐&nbsp;보통 ☐&nbsp;저하</td><td class="f"></td></tr>
+    <tr><th>통증</th><td>☐&nbsp;없음 ☐&nbsp;있음 (부위: <span class="u"></span> 정도: <span class="u s"></span>/10)</td><td></td></tr>
+    <tr><th>수면</th><td>☐&nbsp;양호 ☐&nbsp;불량</td><td class="f"></td></tr>
+    <tr><th>식사</th><td>☐&nbsp;규칙적 ☐&nbsp;불규칙 ☐&nbsp;식욕 저하</td><td class="f"></td></tr>
+    <tr><th>배변</th><td>☐&nbsp;양호 ☐&nbsp;변비 ☐&nbsp;설사</td><td class="f"></td></tr>
+    <tr><th>기분·정서</th><td>☐&nbsp;안정 ☐&nbsp;우울감 ☐&nbsp;불안</td><td class="f"></td></tr>
+    <tr><th>낙상(최근 1년)</th><td>☐&nbsp;없음 ☐&nbsp;있음 (<span class="u s"></span>회)</td><td class="f"></td></tr>
+    <tr><th rowspan="2">건강검진(올해)</th><td>☐&nbsp;받음(<span class="u"></span>년도) ☐&nbsp;예정 ☐&nbsp;안 받음</td><td class="f"></td></tr><tr><td class="ck" colspan="2"><b>암검진</b> &nbsp;<span class="o"><small>30세 이상</small> ☐&nbsp;자궁경부암</span> &nbsp;│&nbsp; <span class="o"><small>40세 이상</small> ☐&nbsp;위암 ☐&nbsp;간암 ☐&nbsp;유방암</span> &nbsp;│&nbsp; <span class="o"><small>50세 이상</small> ☐&nbsp;대장암</span></td></tr><tr><th>CIST 치매검사</th><td class="ck" colspan="2">☐&nbsp;받음 → 받은 때: <span class="o">☐&nbsp;올해</span> <span class="o">☐&nbsp;작년</span> <span class="o">☐&nbsp;2년 이상 전</span> (<span class="u"></span>년 <span class="u s"></span>월) &nbsp;│&nbsp; ☐&nbsp;안 받음 &nbsp;☐&nbsp;모름</td></tr>
+  </table>
+
+  <h2>생활습관</h2>
+  <table>
+    <colgroup><col style="width:28mm"><col style="width:74mm"><col></colgroup>
+    <tr><th>흡연</th><td>☐&nbsp;안 함 ☐&nbsp;함 (하루 <span class="u s"></span>개비) ☐&nbsp;금연 중</td><td class="f"></td></tr>
+    <tr><th>음주</th><td>☐&nbsp;안 함 ☐&nbsp;가끔 ☐&nbsp;자주 (주 <span class="u s"></span>회)</td><td class="f"></td></tr>
+    <tr><th>신체활동</th><td>☐&nbsp;하고 있음 (종류: <span class="u"></span> 주 <span class="u s"></span>회) ☐&nbsp;안 함</td><td class="f"></td></tr>
+  </table>
+
+  <h2>서비스제공</h2>
+  <table>
+    <tr><th>물품</th><td>☐&nbsp;삐콤 ☐&nbsp;누룽지 ☐&nbsp;핫팩 ☐&nbsp;기타(<span class="u xl"></span>)</td></tr>
+    <tr><th>보건복지<br>서비스 연계</th><td><span class="o">☐&nbsp;치매안심센터</span> <span class="o">☐&nbsp;노인맞춤돌봄서비스</span> <span class="o">☐&nbsp;정신건강복지센터</span> <span class="o">☐&nbsp;장기요양 등급신청</span> <span class="o">☐&nbsp;돌봄SOS</span> <span class="o">☐&nbsp;통합돌봄서비스</span><span class="ln">☐&nbsp;기타(<span class="u xl"></span>)</span></td></tr>
+    <tr><th>다음 방문</th><td><span class="u s"></span>월 <span class="u s"></span>일 <span class="u s"></span>시 예정</td></tr>
+  </table>
+
+  <div class="grow">
+    <h2>기타 메모</h2>
+    <div class="lines" style="border-top:.6pt solid var(--line)"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  </div>
+  <h2>우울 선별검사 (PHQ-9) <span class="note" style="font-weight:400">— 지난 <b>2주일 동안</b> 다음 문제로 얼마나 자주 방해를 받았는지 해당 번호에 ○</span></h2>
+  <table class="phq yn mini"><colgroup><col style="width:6mm"><col><col style="width:12mm"><col style="width:12mm"><col style="width:12mm"><col style="width:12mm"></colgroup>
+    <thead><tr><th class="n"></th><th>문항</th><th class="s">전혀<br>아니다</th><th class="s">여러날<br>동안</th><th class="s">일주일<br>이상</th><th class="s">거의<br>매일</th></tr></thead>
+    <tr><td class="n">1</td><td style="text-align:left">일 또는 여가 활동을 하는 데 흥미나 즐거움을 느끼지 못함</td><td class="s">0</td><td class="s">1</td><td class="s">2</td><td class="s">3</td></tr><tr><td class="n">2</td><td style="text-align:left">기분이 가라앉거나, 우울하거나, 희망이 없음</td><td class="s">0</td><td class="s">1</td><td class="s">2</td><td class="s">3</td></tr><tr><td class="n">3</td><td style="text-align:left">잠이 들거나 계속 잠을 자는 것이 어려움. 또는 잠을 너무 많이 잠</td><td class="s">0</td><td class="s">1</td><td class="s">2</td><td class="s">3</td></tr><tr><td class="n">4</td><td style="text-align:left">피곤하다고 느끼거나 기운이 거의 없음</td><td class="s">0</td><td class="s">1</td><td class="s">2</td><td class="s">3</td></tr><tr><td class="n">5</td><td style="text-align:left">입맛이 없거나 과식을 함</td><td class="s">0</td><td class="s">1</td><td class="s">2</td><td class="s">3</td></tr><tr><td class="n">6</td><td style="text-align:left">자신을 부정적으로 봄. 혹은 자신이 실패자라고 느끼거나 자신 또는 가족을 실망시킴</td><td class="s">0</td><td class="s">1</td><td class="s">2</td><td class="s">3</td></tr><tr><td class="n">7</td><td style="text-align:left">신문을 읽거나 텔레비전 보는 것과 같은 일에 집중하는 것이 어려움</td><td class="s">0</td><td class="s">1</td><td class="s">2</td><td class="s">3</td></tr><tr><td class="n">8</td><td style="text-align:left">다른 사람들이 주목할 정도로 너무 느리게 움직이거나 말을 함. 또는 반대로 평상시보다 많이 움직여서 너무 안절부절못하거나 들떠 있음</td><td class="s">0</td><td class="s">1</td><td class="s">2</td><td class="s">3</td></tr><tr><td class="n">9</td><td style="text-align:left">자신이 죽는 것이 더 낫다고 생각하거나 어떤 식으로든 자신을 해칠 것이라고 생각함</td><td class="s">0</td><td class="s">1</td><td class="s">2</td><td class="s">3</td></tr>
+    <tr><td colspan="2" style="text-align:right;font-weight:700">총점</td><td colspan="4" style="text-align:center"><span class="u l"></span> 점</td></tr>
+  </table>
+  <p class="note">참고: 총점 5·10·15·20점 이상 = 가벼운·중간·중간 이상 심한·심한 우울 증상(PHQ-9 일반 기준). <b>9번 1점 이상</b>이면 자살 위험 확인·정신건강복지센터 연계 검토(자살예방 상담전화 109).</p>
+  <div class="pno">2쪽</div>
+</div>
+
+</div>
+</body>
+</html>

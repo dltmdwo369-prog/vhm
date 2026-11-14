@@ -1,0 +1,8 @@
+node_modules/
+__pycache__/
+.venv/
+/*.png
+/tests/*.png
+/tests/referral-form.txt
+/tests/backup.json
+/tests/dl.txt

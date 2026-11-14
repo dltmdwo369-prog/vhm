@@ -1,0 +1,11 @@
+{
+  "name": "vhm",
+  "private": true,
+  "scripts": {
+    "build": "python3 build_site.py",
+    "test": "node tests/run-tests.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.65.1"
+  }
+}

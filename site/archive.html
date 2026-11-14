@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>임시 보관함</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--tx:#1f2933;--sub:#616e7c;--line:#d9dee4;--pri:#2563eb;--pri-d:#1d4ed8;--warn:#b45309;--warn-bg:#fef3c7;--bad:#b91c1c;--ok:#15803d}
+  @media (prefers-color-scheme:dark){:root{--bg:#14171a;--card:#1e2328;--tx:#e8eaed;--sub:#9aa5b1;--line:#343b43;--pri:#60a5fa;--pri-d:#93c5fd;--warn:#fbbf24;--warn-bg:#3a2e0a;--bad:#f87171;--ok:#4ade80}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 -apple-system,"Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+  main{max-width:760px;margin:0 auto;padding:16px}
+  h1{font-size:1.35rem;margin:8px 0 4px}
+  .sub{color:var(--sub);font-size:.92rem;margin:0 0 12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+  .warn{background:var(--warn-bg);color:var(--warn);border-color:var(--warn)}
+  .warn b{display:block;margin-bottom:4px}
+  .warn label{display:flex;gap:8px;align-items:flex-start;margin-top:8px;color:var(--tx);font-size:.95rem}
+  button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--tx);border-radius:8px;padding:10px 14px;cursor:pointer;min-height:44px}
+  button.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+  button.pri:hover{background:var(--pri-d)}
+  button.bad{color:var(--bad)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .grow{flex:1}
+  #drop{border:2px dashed var(--line);border-radius:12px;padding:26px 12px;text-align:center;color:var(--sub)}
+  #drop.over{border-color:var(--pri);background:rgba(37,99,235,.08)}
+  #drop.off{opacity:.5}
+  .item{border-top:1px solid var(--line);padding:10px 0}
+  .item:first-child{border-top:0}
+  .name{word-break:break-all;font-weight:600}
+  .meta{color:var(--sub);font-size:.88rem}
+  .left{color:var(--ok)} .left.soon{color:var(--warn)} .left.gone{color:var(--bad)}
+  progress{width:100%;height:10px}
+  .msg{margin:8px 0;font-size:.92rem}
+  .err{color:var(--bad)}
+  .quota{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin:6px 0}
+  .quota i{display:block;height:100%;background:var(--pri)}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <h1>임시 보관함</h1>
+  <p class="sub">집·사무실·휴대폰 어디서든 같은 구글 계정으로 올리고 내려받는 임시 보관함입니다. 올린 파일은 <b>업로드 후 7일이 지나면 자동 삭제</b>됩니다.</p>
+
+  <div class="card warn">
+    <b>올리기 전에 확인하세요</b>
+    대상자의 이름·주소·연락처·주민번호, 건강정보, 상담 내용이 들어 있는 파일은 올리지 마세요. 이 보관함은 본인의 개인 구글 드라이브(국외 서버)에 저장됩니다. 기관 업무자료를 개인 클라우드로 옮기는 것은 기관 정보보안 지침 위반이 될 수 있으니, 업무용은 분임정보보안담당관 확인 후 사용하세요.
+    <label><input type="checkbox" id="ack"> 위 내용을 확인했고, 개인정보·건강정보·업무상 비밀이 없는 파일만 올립니다.</label>
+  </div>
+
+  <div class="card" id="authCard">
+    <div class="row">
+      <button class="pri" id="btnLogin">구글 계정으로 연결</button>
+      <span class="meta grow" id="authMsg">연결하면 이 앱이 만든 파일만 접근합니다(드라이브 전체 열람 불가). 연결은 약 1시간 유지됩니다.</span>
+    </div>
+  </div>
+
+  <div id="app" hidden>
+    <div class="card">
+      <div id="drop" class="off">
+        <div>여기에 파일을 끌어 놓거나</div>
+        <div style="margin:8px 0"><button class="pri" id="btnPick" disabled>파일 선택</button></div>
+        <div class="meta">파일당 최대 <span id="maxTxt"></span> · 보관 기간 7일</div>
+      </div>
+      <input type="file" id="file" multiple hidden>
+      <div id="queue"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <b class="grow">보관 중인 파일 <span id="cnt" class="meta"></span></b>
+        <button id="btnRefresh">새로고침</button>
+      </div>
+      <div class="quota" id="quotaBar" hidden><i id="quotaFill"></i></div>
+      <div class="meta" id="quotaTxt"></div>
+      <div id="list"></div>
+      <div class="msg meta" id="cleanMsg"></div>
+    </div>
+  </div>
+  <p class="meta">만료 파일은 이 페이지가 열려 있을 때 1분마다, 그리고 열 때마다 영구 삭제합니다(휴지통 거치지 않음). 페이지를 오래 열지 않으면 삭제가 늦어질 수 있어도, 만료된 파일은 목록에서 숨기고 내려받기를 막습니다.</p>
+</main>
+
+<script src="config.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+(function(){
+  'use strict';
+  var CFG = window.VHM_CONFIG || {};
+  var SCOPE = 'https://www.googleapis.com/auth/drive.file';
+  var API = 'https://www.googleapis.com/drive/v3';
+  var UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
+  var FOLDER_NAME = '방문건강관리 임시보관함';
+  var DAY = 86400000, KEEP = 7 * DAY;
+  var MAX_FILE = 2 * 1024 * 1024 * 1024;   // 파일당 2GB (앱 설정값)
+  var CHUNK = 8 * 1024 * 1024;             // 256KB의 배수
+  var $ = function(id){ return document.getElementById(id); };
+
+  var token = null, tokenExp = 0, tokenClient = null, folderId = null, files = [], busy = 0;
+
+  $('maxTxt').textContent = fmtSize(MAX_FILE);
+
+  function fmtSize(n){
+    n = Number(n) || 0;
+    var u = ['B','KB','MB','GB','TB'], i = 0;
+    while (n >= 1024 && i < u.length - 1){ n /= 1024; i++; }
+    return (i ? n.toFixed(n >= 100 ? 0 : 1) : n) + ' ' + u[i];
+  }
+  function fmtDate(ms){
+    var d = new Date(ms), p = function(x){ return String(x).padStart(2,'0'); };
+    return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  function expOf(f){
+    var e = f.appProperties && Number(f.appProperties.vhm_exp);
+    if (e > 0) return e;
+    return new Date(f.createdTime).getTime() + KEEP;
+  }
+  function leftTxt(ms){
+    if (ms <= 0) return '만료됨';
+    var m = Math.floor(ms / 60000), d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60);
+    if (d >= 1) return d + '일 ' + h + '시간 남음';
+    if (h >= 1) return h + '시간 ' + (m % 60) + '분 남음';
+    return Math.max(m, 1) + '분 남음';
+  }
+  function setErr(el, t){ el.textContent = t || ''; el.className = 'msg' + (t ? ' err' : ' meta'); }
+
+  /* ---------- 로그인 ---------- */
+  function ensureClient(){
+    if (tokenClient) return true;
+    if (!CFG.clientId){ $('authMsg').textContent = 'config.js에 클라이언트 ID가 없습니다.'; return false; }
+    if (!window.google || !google.accounts || !google.accounts.oauth2){
+      $('authMsg').textContent = '구글 로그인 모듈을 아직 불러오지 못했습니다. 잠시 후 다시 눌러 주세요.'; return false;
+    }
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: CFG.clientId, scope: SCOPE,
+      callback: function(r){
+        if (r.error){ $('authMsg').textContent = '연결하지 못했습니다(' + r.error + '). 팝업 차단을 확인하세요.'; return; }
+        token = r.access_token; tokenExp = Date.now() + (Number(r.expires_in || 3600) - 120) * 1000;
+        $('authMsg').textContent = '연결됨 · 약 ' + Math.round((tokenExp - Date.now()) / 60000) + '분 동안 유효';
+        $('btnLogin').textContent = '다시 연결';
+        $('app').hidden = false;
+        init();
+      },
+      error_callback: function(e){ $('authMsg').textContent = '연결 창이 닫혔거나 차단되었습니다(' + (e && e.type || '') + ').'; }
+    });
+    return true;
+  }
+  $('btnLogin').onclick = function(){ if (ensureClient()) tokenClient.requestAccessToken({ prompt: token ? '' : 'select_account' }); };
+
+  function authed(){
+    if (!token || Date.now() > tokenExp){
+      $('authMsg').textContent = '연결 시간이 지났습니다. "다시 연결"을 눌러 주세요.';
+      throw new Error('token-expired');
+    }
+    return { Authorization: 'Bearer ' + token };
+  }
+  async function api(path, opt){
+    opt = opt || {};
+    opt.headers = Object.assign({}, authed(), opt.headers || {});
+    var r = await fetch(API + path, opt);
+    if (r.status === 401){ token = null; $('authMsg').textContent = '연결이 끊겼습니다. "다시 연결"을 눌러 주세요.'; throw new Error('401'); }
+    if (!r.ok){ var t = ''; try { t = (await r.json()).error.message; } catch(e){} throw new Error(t || ('HTTP ' + r.status)); }
+    return r.status === 204 ? null : r.json();
+  }
+
+  /* ---------- 폴더·목록·정리 ---------- */
+  async function findFolder(){
+    var q = "name='" + FOLDER_NAME + "' and mimeType='application/vnd.google-apps.folder' and trashed=false";
+    var r = await api('/files?q=' + encodeURIComponent(q) + '&fields=files(id)&pageSize=10');
+    if (r.files.length) return r.files[0].id;
+    var c = await api('/files?fields=id', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' }) });
+    return c.id;
+  }
+  async function loadList(){
+    var out = [], pt = '';
+    do {
+      var q = "'" + folderId + "' in parents and trashed=false";
+      var r = await api('/files?q=' + encodeURIComponent(q) + '&pageSize=1000&fields=nextPageToken,files(id,name,size,createdTime,appProperties)' + (pt ? '&pageToken=' + pt : ''));
+      out = out.concat(r.files); pt = r.nextPageToken;
+    } while (pt);
+    files = out;
+  }
+  async function cleanup(){
+    if (busy) return;                       // 업로드·다운로드 중에는 건드리지 않음
+    var now = Date.now(), gone = files.filter(function(f){ return expOf(f) <= now; }), n = 0;
+    for (var i = 0; i < gone.length; i++){
+      try { await api('/files/' + gone[i].id, { method: 'DELETE' }); n++; }
+      catch(e){ if (String(e.message) === 'token-expired' || e.message === '401') break; }
+    }
+    if (n){
+      files = files.filter(function(f){ return expOf(f) > now; });
+      $('cleanMsg').textContent = '만료된 파일 ' + n + '개를 삭제했습니다. (' + fmtDate(Date.now()) + ')';
+    }
+  }
+  async function loadQuota(){
+    try {
+      var a = await api('/about?fields=storageQuota');
+      var lim = Number(a.storageQuota.limit), use = Number(a.storageQuota.usage);
+      if (lim > 0){
+        $('quotaBar').hidden = false; $('quotaFill').style.width = Math.min(100, use / lim * 100) + '%';
+        $('quotaTxt').textContent = '내 구글 저장공간 ' + fmtSize(use) + ' 사용 / ' + fmtSize(lim) + ' (남은 용량 ' + fmtSize(lim - use) + ', 지메일·사진과 공유)';
+      } else $('quotaTxt').textContent = '내 구글 저장공간 ' + fmtSize(use) + ' 사용 (한도 없음)';
+    } catch(e){}
+  }
+
+  function render(){
+    var now = Date.now(), box = $('list');
+    var live = files.filter(function(f){ return expOf(f) > now; }).sort(function(a,b){ return new Date(b.createdTime) - new Date(a.createdTime); });
+    $('cnt').textContent = '(' + live.length + '개)';
+    box.textContent = '';
+    if (!live.length){ var e = document.createElement('div'); e.className = 'meta'; e.style.padding = '10px 0'; e.textContent = '보관 중인 파일이 없습니다.'; box.appendChild(e); return; }
+    live.forEach(function(f){
+      var ms = expOf(f) - now, div = document.createElement('div'); div.className = 'item';
+      var nm = document.createElement('div'); nm.className = 'name'; nm.textContent = f.name;
+      var mt = document.createElement('div'); mt.className = 'meta';
+      mt.appendChild(document.createTextNode(fmtSize(f.size) + ' · 올린 시각 ' + fmtDate(new Date(f.createdTime).getTime()) + ' · 삭제 예정 ' + fmtDate(expOf(f)) + ' · '));
+      var lf = document.createElement('span'); lf.className = 'left' + (ms < DAY ? ' soon' : ''); lf.textContent = leftTxt(ms); lf.setAttribute('data-exp', String(expOf(f)));
+      mt.appendChild(lf);
+      var rw = document.createElement('div'); rw.className = 'row'; rw.style.marginTop = '6px';
+      var bd = document.createElement('button'); bd.className = 'pri'; bd.textContent = '내려받기'; bd.onclick = function(){ download(f, bd); };
+      var bx = document.createElement('button'); bx.className = 'bad'; bx.textContent = '삭제'; bx.onclick = function(){ remove(f); };
+      rw.appendChild(bd); rw.appendChild(bx);
+      var pg = document.createElement('div'); pg.className = 'dlprog';
+      div.appendChild(nm); div.appendChild(mt); div.appendChild(rw); div.appendChild(pg);
+      box.appendChild(div);
+    });
+  }
+  function tick(){
+    var now = Date.now(), need = false;
+    document.querySelectorAll('[data-exp]').forEach(function(el){
+      var ms = Number(el.getAttribute('data-exp')) - now;
+      if (ms <= 0) need = true; else { el.textContent = leftTxt(ms); el.className = 'left' + (ms < DAY ? ' soon' : ''); }
+    });
+    if (need || (token && Date.now() <= tokenExp)){
+      cleanup().then(render).catch(function(){});
+    }
+  }
+
+  async function remove(f){
+    if (!confirm('"' + f.name + '" 파일을 지금 영구 삭제할까요? 되돌릴 수 없습니다.')) return;
+    try { await api('/files/' + f.id, { method: 'DELETE' }); files = files.filter(function(x){ return x.id !== f.id; }); render(); loadQuota(); }
+    catch(e){ alert('삭제하지 못했습니다: ' + e.message); }
+  }
+
+  /* ---------- 다운로드 ---------- */
+  async function download(f, btn){
+    if (expOf(f) <= Date.now()){ alert('보관 기간(7일)이 지나 내려받을 수 없습니다.'); await cleanup(); render(); return; }
+    var pg = btn.closest('.item').querySelector('.dlprog');
+    var size = Number(f.size) || 0, canStream = typeof window.showSaveFilePicker === 'function';
+    if (!canStream && size > 700 * 1024 * 1024 &&
+        !confirm('이 브라우저는 큰 파일을 내려받을 때 메모리를 많이 씁니다(' + fmtSize(size) + '). 실패할 수 있습니다. 컴퓨터의 Edge·Chrome에서 받는 것을 권장합니다. 계속할까요?')) return;
+    var handle = null, writable = null;
+    busy++; btn.disabled = true;
+    try {
+      if (canStream){ handle = await window.showSaveFilePicker({ suggestedName: f.name }); writable = await handle.createWritable(); }
+      var r = await fetch(API + '/files/' + f.id + '?alt=media', { headers: authed() });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var reader = r.body.getReader(), got = 0, parts = [];
+      var bar = document.createElement('progress'); bar.max = size || 1; bar.value = 0; pg.textContent = ''; pg.appendChild(bar);
+      for (;;){
+        var x = await reader.read(); if (x.done) break;
+        got += x.value.length; bar.value = got;
+        if (writable) await writable.write(x.value); else parts.push(x.value);
+      }
+      if (writable){ await writable.close(); writable = null; }
+      else {
+        var url = URL.createObjectURL(new Blob(parts)), a = document.createElement('a');
+        a.href = url; a.download = f.name; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+      }
+      pg.textContent = '내려받기 완료 (' + fmtSize(got) + ')';
+    } catch(e){
+      if (writable){ try { await writable.abort(); } catch(_){} }
+      pg.textContent = (e && e.name === 'AbortError') ? '' : '실패: ' + e.message;
+      if (pg.textContent) pg.className = 'dlprog msg err';
+    } finally { busy--; btn.disabled = false; }
+  }
+
+  /* ---------- 업로드 ---------- */
+  function ackOk(){ return $('ack').checked; }
+  function syncEnable(){
+    var on = ackOk() && !!token;
+    $('btnPick').disabled = !on; $('drop').classList.toggle('off', !on);
+  }
+  $('ack').onchange = syncEnable;
+  $('btnPick').onclick = function(){ $('file').click(); };
+  $('file').onchange = function(){ addFiles($('file').files); $('file').value = ''; };
+  var drop = $('drop');
+  ['dragenter','dragover'].forEach(function(t){ drop.addEventListener(t, function(e){ e.preventDefault(); if (ackOk()) drop.classList.add('over'); }); });
+  ['dragleave','drop'].forEach(function(t){ drop.addEventListener(t, function(e){ e.preventDefault(); drop.classList.remove('over'); }); });
+  drop.addEventListener('drop', function(e){ if (!ackOk()){ alert('먼저 위의 확인 칸을 체크하세요.'); return; } addFiles(e.dataTransfer.files); });
+
+  function addFiles(list){
+    if (!ackOk()){ alert('먼저 위의 확인 칸을 체크하세요.'); return; }
+    Array.prototype.forEach.call(list, function(file){ uploadOne(file); });
+  }
+
+  function putChunk(url, blob, start, total, type){
+    return new Promise(function(res, rej){
+      var x = new XMLHttpRequest();
+      x.open('PUT', url);
+      x.setRequestHeader('Content-Range', 'bytes ' + start + '-' + (start + blob.size - 1) + '/' + total);
+      x.upload.onprogress = function(e){ if (putChunk.cb) putChunk.cb(start + e.loaded); };
+      x.onload = function(){ res({ status: x.status, text: x.responseText }); };
+      x.onerror = function(){ rej(new Error('network')); };
+      x.ontimeout = function(){ rej(new Error('timeout')); };
+      x.send(blob);
+    });
+  }
+  async function askOffset(url, total){
+    var r = await new Promise(function(res, rej){
+      var x = new XMLHttpRequest(); x.open('PUT', url);
+      x.setRequestHeader('Content-Range', 'bytes */' + total);
+      x.onload = function(){ res({ status: x.status, range: x.getResponseHeader('Range'), text: x.responseText }); };
+      x.onerror = function(){ rej(new Error('network')); }; x.send();
+    });
+    if (r.status === 200 || r.status === 201) return { done: true, text: r.text };
+    var m = r.range && /bytes=0-(\d+)/.exec(r.range);
+    return { done: false, offset: m ? Number(m[1]) + 1 : 0 };
+  }
+
+  async function uploadOne(file){
+    var row = document.createElement('div'); row.className = 'item';
+    var nm = document.createElement('div'); nm.className = 'name'; nm.textContent = file.name;
+    var st = document.createElement('div'); st.className = 'meta';
+    var bar = document.createElement('progress'); bar.max = file.size || 1; bar.value = 0;
+    row.appendChild(nm); row.appendChild(bar); row.appendChild(st); $('queue').prepend(row);
+
+    if (!file.size){ st.textContent = '빈 파일은 올릴 수 없습니다.'; st.className = 'msg err'; bar.remove(); return; }
+    if (file.size > MAX_FILE){ st.textContent = '파일당 최대 ' + fmtSize(MAX_FILE) + '까지 올릴 수 있습니다. (이 파일 ' + fmtSize(file.size) + ')'; st.className = 'msg err'; bar.remove(); return; }
+
+    busy++;
+    try {
+      var now = Date.now();
+      var h = Object.assign({ 'Content-Type': 'application/json; charset=UTF-8',
+        'X-Upload-Content-Type': file.type || 'application/octet-stream', 'X-Upload-Content-Length': String(file.size) }, authed());
+      var r = await fetch(UPLOAD + '?uploadType=resumable&fields=id', { method: 'POST', headers: h,
+        body: JSON.stringify({ name: file.name, parents: [folderId], appProperties: { vhm_up: String(now), vhm_exp: String(now + KEEP) } }) });
+      if (!r.ok) throw new Error('업로드 시작 실패 (HTTP ' + r.status + ')');
+      var url = r.headers.get('Location');
+      if (!url) throw new Error('업로드 주소를 받지 못했습니다.');
+
+      var offset = 0, last = null, fails = 0;
+      putChunk.cb = function(p){ bar.value = p; st.textContent = fmtSize(p) + ' / ' + fmtSize(file.size) + ' (' + Math.floor(p / file.size * 100) + '%)'; };
+      while (offset < file.size){
+        var end = Math.min(offset + CHUNK, file.size);
+        try {
+          var res = await putChunk(url, file.slice(offset, end), offset, file.size);
+          if (res.status === 308){ offset = end; fails = 0; }
+          else if (res.status === 200 || res.status === 201){ last = res.text; offset = file.size; }
+          else throw new Error('HTTP ' + res.status);
+        } catch(e){
+          if (++fails > 5) throw e;
+          await new Promise(function(z){ setTimeout(z, 1500 * fails); });
+          var q = await askOffset(url, file.size);
+          if (q.done){ last = q.text; offset = file.size; } else offset = q.offset;
+        }
+      }
+      var id = JSON.parse(last).id;
+      bar.value = file.size; st.textContent = '업로드 완료 · 7일 후 삭제됩니다.'; st.className = 'msg ok';
+      try { // 완료 시각 기준으로 7일 다시 계산
+        await api('/files/' + id + '?fields=id', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ appProperties: { vhm_exp: String(Date.now() + KEEP) } }) });
+      } catch(e){}
+      await loadList(); render(); loadQuota();
+    } catch(e){
+      st.textContent = '실패: ' + e.message; st.className = 'msg err';
+    } finally { busy--; }
+  }
+
+  window.addEventListener('beforeunload', function(e){ if (busy){ e.preventDefault(); e.returnValue = ''; } });
+
+  /* ---------- 시작 ---------- */
+  var started = false;
+  async function init(){
+    syncEnable();
+    try {
+      if (!folderId) folderId = await findFolder();
+      await loadList(); await cleanup(); render(); loadQuota();
+    } catch(e){ $('cleanMsg').textContent = '목록을 불러오지 못했습니다: ' + e.message; $('cleanMsg').className = 'msg err'; }
+    if (!started){ started = true; setInterval(tick, 60000); }
+  }
+  $('btnRefresh').onclick = async function(){ try { await loadList(); await cleanup(); render(); loadQuota(); } catch(e){ $('cleanMsg').textContent = '실패: ' + e.message; } };
+  syncEnable();
+})();
+</script>
+</body>
+</html>
