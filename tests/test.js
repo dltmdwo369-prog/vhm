@@ -587,9 +587,9 @@ const server = http.createServer((req, res) => {
   await page.click('[data-tab="edu"]'); const cards = await page.$$eval('.edu-card', x => x.length);
   await page.click('[data-ho="dm"]'); await page.click('[data-view="why"]'); const ev = await page.$$eval('.ev-item', x => x.length);
   await page.click('[data-tab="edu"]'); await page.click('[data-ho="cad"]'); await page.click('[data-view="why"]'); const evCad = await page.$$eval('.ev-item', x => x.length);
-  await page.click('[data-tab="edu"]'); await page.click('[data-ho="rectocele"]'); await page.click('[data-view="why"]'); const evRec = await page.$$eval('.ev-item', x => x.length);
+  await page.click('[data-tab="edu"]'); await page.click('[data-ho="constipation"]'); await page.click('[data-view="why"]'); const evRec = await page.$$eval('.ev-item', x => x.length);
   const hoIds = await page.evaluate(() => HANDOUTS.map(h => h.id));
-  check('교육자료 카드 10개(전해질 불균형·투석 포함, 저나트륨혈증은 전해질 아래 하위) + 설명 근거', cards === 10 && ev >= 8 && evCad >= 3 && evRec >= 3 && hoIds.length >= 11, [cards, ev, evCad, evRec, hoIds.join(',')].join('/'));
+  check('첨부 PDF 기반 교육자료 10개 + 질환별 간호사 원문', cards === 10 && ev === 1 && evCad === 1 && evRec === 1 && hoIds.length === 10 && hoIds.includes('constipation'), [cards, ev, evCad, evRec, hoIds.join(',')].join('/'));
   check('자료 보관함 탭 없음 (이 버전 제외)', !(await page.$('[data-tab="arch"]')));
 
   // 13. 연결 해제

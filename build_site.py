@@ -17,7 +17,12 @@ def rep(a, b, count=1):
 
 rep('<base target="_top">\n', '')
 rep('<meta charset="utf-8">', '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>방문건강관리사업 · 업무 일정</title>\n<meta name="apple-mobile-web-app-capable" content="yes">\n<meta name="apple-mobile-web-app-title" content="방문건강관리">')
+education = json.load(open(H + 'data/education.json', encoding='utf-8'))
+assert len(education['items']) == 10
+education_js = json.dumps(education, ensure_ascii=False).replace('<', '\\u003c').replace('>', '\\u003e').replace('&', '\\u0026')
+handouts = handouts.replace('/* EDUCATION_DATA */', 'window.VHM_EDUCATION = ' + education_js + '; window.HANDOUTS = window.VHM_EDUCATION.items;')
 rep("<?!= include('Handouts'); ?>", handouts)
+rep('/* EDUCATION_MODULE */', open(H + 'src/education.js', encoding='utf-8').read())
 rep('.toast{', '.connect{margin:14px 20px 0;padding:14px 16px;background:#fff;border:1px solid #cfdcf3;border-left:4px solid var(--accent);border-radius:10px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}\n.connect p{margin:2px 0 0;color:var(--sub);font-size:13px}\n.toast{')
 
 # 연결 안내 상자
@@ -278,4 +283,7 @@ if not os.path.exists(cfg):
         "// 설치 안내에서 받은 '클라이언트 ID'를 아래 따옴표 안에 붙여넣으세요.\n"
         "// 비밀번호나 비밀 키가 아니며, 공개되어도 괜찮은 값입니다.\n"
         "window.VHM_CONFIG = { clientId: '' };\n")
+# Root and site/ are both supported static deployment locations.
+import shutil
+shutil.copytree(H + 'education', H + 'site/education', dirs_exist_ok=True)
 print('ok', len(s))

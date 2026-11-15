@@ -17,7 +17,7 @@
 | --- | --- |
 | `ui-source/Index.html` | 화면(HTML·CSS·주 스크립트) 원본. 상단 업무 개요와 메모리 내 집계 추가 |
 | `ui-source/theme-v2.css` | ChatGPT 디자인 개선판. 빌드 시 최종 스타일로 인라인 삽입, 외부 폰트·이미지·분석 도구 없음 |
-| `ui-source/Handouts.html` | 교육자료 카드(질환별 어르신용 안내문) |
+| `ui-source/Handouts.html`, `src/education.js`, `data/education.json` | 첨부 PDF 기반 10개 질환 교육자료(검색·대상 전환·큰 글씨·인쇄) |
 | `src/gcal-api.js` | 구글 연결 계층: 로그인(`VHM_AUTH`), 캘린더 읽기·쓰기, 메모 잠금 암호화, 완료·기한·미루기·실적 집계·수기 실적 (`window.SERVER`) |
 | `src/memolock.js` | 메모 잠금 화면(AES-GCM + PBKDF2, 기기별 생체인증 WebAuthn PRF) |
 | `src/keepalive.js` | 업무시간 연결 유지(만료 전 `prompt=none` 조용한 재로그인) |
@@ -73,3 +73,12 @@
 ## 강서구 연계 안내
 
 공개자료 69건(상담 및 연계 가능 48·담당기관 확인 필요 21)을 로그인 없이 검색합니다. 개인 Drive 목록은 별도로 보존하며, 명시적 선택·백업·확인 후에만 병합합니다. 신규 구현은 `src/referral-model.js`, `src/links.js`, `data/public-referrals.json`을 기준으로 빌드합니다. 상세 사용법·스키마 및 미검증 사항은 [docs/REFERRALS.md](docs/REFERRALS.md)에 있습니다.
+
+## 교육자료 (2026-11-15 개편)
+
+‘교육자료’는 제공된 어르신용 10쪽 PDF와 간호사용 7쪽 PDF를 바탕으로 10개 질환을 제공합니다. 이전 직장류·저나트륨혈증 별도 항목 대신 원본의 변비·배변장애 및 탈수·전해질 영역으로 정리했습니다.
+
+- `data/education.json`: 질환명·검색어·웹 요약·어르신용 본문·간호사 원문 발췌와 원본 페이지 매핑. 본문은 PDF 줄바꿈만 정리했으며 핵심 실천 요약은 별도로 표시합니다.
+- `education/`: 첨부 원본 2개와 질환별 단일 페이지 PDF 10개. 빌드 시 `site/education/`에 복사합니다. 루트와 `site/` 어디서 배포해도 상대경로로 작동합니다.
+- 간호사용 화면은 해당 페이지의 원본 PDF와 접어서 볼 수 있는 텍스트 발췌를 제공합니다. 큰 글씨를 선택하면 텍스트를 펼칩니다. 임상 지침의 최신 개정 여부를 별도로 검증한 자료는 아닙니다.
+- `tests/test-education.js`: 로그인 없는 탐색, 검색, 대상 전환, PDF 다운로드, 4개 화면 폭에서 10개 자료의 배치, 출력 문서 생성을 검증합니다. 생성된 검사용 PDF는 저장소 밖의 작업 디렉터리에 둡니다.
