@@ -40,6 +40,7 @@
   }
   // Display grouping only: never rewrite the user's saved category/need IDs.
   const broadGroups = {
+    urgent:['긴급 지원 필요'],
     cost:['의료비 부담'],
     oral:['구강 문제'],
     senses:['시력·청력 문제'],
@@ -54,14 +55,14 @@
   };
   function groupedNeeds(categories) {
     const groups = refinedGroups.map(g => ({id:g.id,name:g.name,items:g.items.map(i => ({...clone(i),sourceIds:[i.id]}))}));
+    groups.unshift({id:'urgent',name:'긴급 지원 필요',standalone:true,items:[]});
     const destinations = new Map(Object.entries(broadGroups).flatMap(([id,labels]) => labels.map(label => [needsKey(label),id])));
     const byLabel = new Map(groups.flatMap(g => g.items.map(i => [needsKey(i.label),i])));
     for (const c of categories) for (const raw of c.items) {
       const k = needsKey(raw.label), existing = byLabel.get(k);
       if (existing) { if (!existing.sourceIds.includes(raw.id)) existing.sourceIds.push(raw.id); continue; }
-      const destination = destinations.get(k) || 'other';
-      let group = groups.find(g => g.id === destination);
-      if (!group) { group = {id:'other',name:'기타',items:[]}; groups.push(group); }
+      const destination = destinations.get(k) || 'access';
+      const group = groups.find(g => g.id === destination);
       const item = {...clone(raw),sourceIds:[raw.id]}; group.items.push(item); byLabel.set(k,item);
     }
     return groups;

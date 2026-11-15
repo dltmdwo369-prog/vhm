@@ -953,52 +953,7 @@ async function submitForm(thenFollow) {
 }
 
 /* ---------- 교육자료 ---------- */
-function renderEdu(id, view) {
-  const list = window.HANDOUTS || [];
-  const box = $('#tab-edu');
-  if (!id) {
-    box.innerHTML = `<div class="edu-intro"><h2>질환별 교육자료</h2><p class="hint">방문 현장에서 어르신께 설명하거나 인쇄해 드리는 한 장짜리 자료입니다. 각 자료 아래에 출처를 표기했습니다. 기관 지침과 담당 의사의 지시가 우선합니다.</p></div>
-      <div class="edu-grid">${list.filter(h => !h.parent).map(h => { const kids = list.filter(k => k.parent === h.id); return `<button class="edu-card" data-ho="${h.id}" style="--hc:${h.color}"><span class="edu-ic">${h.icon}</span><b>${esc(h.title)}</b>${kids.length ? `<span class="edu-kids">하위 자료: ${kids.map(k => esc(k.title)).join(', ')}</span>` : ''}<span>${esc(h.subtitle)}</span></button>`; }).join('')}</div>`;
-    return;
-  }
-  const h = list.find(x => x.id === id); if (!h) return renderEdu();
-  S.eduId = id; view = view === 'why' ? 'why' : 'sheet';
-  const bar = '<div class="edu-bar row"><button data-ho="">‹ 목록</button>'
-    + '<button class="primary" id="btnPrint">' + (view === 'sheet' ? '인쇄 (A4 한 장)' : '설명 근거 인쇄') + '</button>'
-    + '<div class="seg" role="tablist" aria-label="자료 보기"><button data-view="sheet" aria-pressed="' + (view === 'sheet') + '">어르신용 안내문</button>'
-    + '<button data-view="why" aria-pressed="' + (view === 'why') + '">간호사 설명 근거</button></div>'
-    + '<span class="hint">인쇄 창이 안 뜨면 ⌘P (윈도우는 Ctrl+P)</span></div>';
-  const top = h.parent ? list.find(x => x.id === h.parent) : h;
-  const fam = top ? [top].concat(list.filter(x => x.parent === top.id)) : [h];
-  const sub = fam.length > 1 ? '<div class="edu-sub" role="tablist" aria-label="하위 자료">' + fam.map((x, i) => '<button data-ho="' + x.id + '" data-keepview="1" aria-pressed="' + (x.id === h.id) + '">' + (i ? '└ ' : '') + esc(x.title) + '</button>').join('') + '</div>' : '';
-  box.innerHTML = bar + sub + (view === 'sheet' ? handoutHtml(h) : evidenceHtml(h));
-}
-function evidenceHtml(h) {
-  const srcs = (h.sources || []).concat(h.extraSources || []);
-  const sup = s => s && s.length ? '<sup>' + s.join(',') + '</sup>' : '';
-  const items = (h.evidence || []).map((e, i) => '<div class="ev-item"><h3><span class="ev-no">' + (i + 1) + '</span>' + esc(e.t) + '</h3>'
-      + (e.say && e.say !== '—' ? '<p class="ev-say"><b>이렇게 설명하세요</b> ' + esc(e.say) + '</p>' : '')
-      + '<p class="ev-why"><b>근거</b> ' + esc(e.why) + sup(e.s) + '</p></div>').join('');
-  const srcHtml = srcs.map((s, i) => '<span>' + (i + 1) + ') ' + esc(s.org) + ', 「' + esc(s.title) + '」' + (s.year ? ', ' + esc(String(s.year).replace(/\.$/, '')) : '') + (s.foreign ? ' [해외 자료]' : '') + '. ' + esc(s.url) + '</span>').join(' ');
-  return '<article class="evidence" style="--hc:' + h.color + '">'
-    + '<header class="ho-head"><div><div class="ho-kicker">방문간호사용 · 설명 근거</div><h2>' + esc(h.title) + '</h2><p>안내문 내용을 어르신께 설명할 때 쓰는 근거와 말하기 예시입니다. 위첨자 번호는 아래 출처 번호입니다.</p></div><div class="ho-ic">' + h.icon + '</div></header>'
-    + (items || '<p class="hint">정리된 설명 근거가 없습니다.</p>')
-    + (h.nurse ? '<div class="ev-check"><h3>방문 시 확인할 것</h3><ul>' + h.nurse.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '')
-    + '<footer class="ho-foot"><div class="ho-src ev-src"><b>출처</b> ' + srcHtml + '</div>'
-    + '<div class="ho-note">근거는 위 출처를 요약한 것입니다. 개인의 치료 목표와 약 조절은 담당 의사의 지시를 따릅니다. 정리: ' + esc(h.updated) + '</div></footer></article>';
-}
-const hoItem = i => Array.isArray(i) ? `<li>${i[0]}${i[1] && i[1].length ? `<sup>${i[1].join(',')}</sup>` : ''}</li>` : `<li>${i}</li>`;
-function handoutHtml(h) {
-  const sec = h.sections.map(s => `<div class="ho-sec"><h3>${esc(s.h)}</h3><ul>${s.items.map(hoItem).join('')}</ul></div>`).join('');
-  return `<article class="handout" style="--hc:${h.color};--ps:${h.printScale || 1}">
-    <header class="ho-head"><div><div class="ho-kicker">방문건강관리 건강교육</div><h2>${esc(h.title)}</h2><p>${h.lead[0]}${h.lead[1] ? `<sup>${h.lead[1].join(',')}</sup>` : ''}</p></div><div class="ho-ic">${h.icon}</div></header>
-    <div class="ho-body">${sec}</div>
-    <div class="ho-danger"><h3>⚠ 이럴 땐 바로 병원에 가거나 119에 전화하세요</h3><ul>${h.danger.map(hoItem).join('')}</ul></div>
-    <footer class="ho-foot"><div class="ho-contact">담당 방문간호사: ____________ &nbsp; 연락처: ______________</div>
-      <div class="ho-src"><b>출처</b> ${h.sources.map((s, i) => `<span>${i+1}) ${esc(s.org)}, 「${esc(s.title)}」${s.year ? ', ' + esc(String(s.year).replace(/\.$/, '')) : ''}${s.foreign ? ' [해외 자료]' : ''}. ${esc(s.url)}</span>`).join(' ')}</div>
-      <div class="ho-note">이 자료는 일반적인 건강 정보입니다. 개인의 목표 수치와 치료는 담당 의사의 지시를 따르세요. 정리: ${esc(h.updated)}</div></footer>
-  </article>`;
-}
+/* EDUCATION_MODULE */
 
 /* ---------- 보관함 ---------- */
 let ARCH = [];
@@ -1155,9 +1110,7 @@ function bind() {
     toast(await copyText(text) ? '완료 건수를 복사했습니다. 엑셀에 붙여넣으세요 (신규·방문·전화·내소·연계 순).' : '복사하지 못했습니다.', 3500); };
 
   // 교육자료
-  $('#tab-edu').addEventListener('click', e => { const b = e.target.closest('[data-ho]'); if (b) { const keep = b.dataset.keepview && document.querySelector('#tab-edu .evidence') ? 'why' : undefined; renderEdu(b.dataset.ho, keep); window.scrollTo(0, 0); }
-    const v = e.target.closest('[data-view]'); if (v && S.eduId) renderEdu(S.eduId, v.dataset.view);
-    if (e.target.id === 'btnPrint') window.print(); });
+  bindEdu();
 
   // 보관함
   $('#arAdd').onclick = () => $('#fileArchive').click();
