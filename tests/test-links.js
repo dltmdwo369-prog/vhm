@@ -116,7 +116,7 @@ const server = http.createServer((req, res) => {
 
   // 4. 요구 체크 → 추천 순서
   await page.click('[data-lkview="match"]');
-  for (const l of ['독거', '사회적 고립', '주거환경 불량(위생·수리)']) await page.click(`#tab-link .lk-chip:has-text("${l}")`);
+  for (const l of ['독거', '사회적 고립', '주거환경 불량(위생·수리)']) await page.click(`#tab-link .lk-legacy .lk-chip:has-text("${l}")`);
   const order = await page.$$eval('.lk-svc', x => x.map(e => e.querySelector('.lk-name').textContent + ':' + e.querySelector('.lk-score').textContent));
   check('많이 해당하는 순서로 추천', order.join(',') === '가상 노인맞춤돌봄:2개 해당,가상 주거개선 사업:2개 해당' || order[0].includes('2개'), order.join(', '));
   check('연계 전 확인(제3자 제공 동의) 안내 표시', /개인정보 제3자 제공 동의/.test(await page.textContent('#tab-link')));
@@ -165,7 +165,7 @@ const server = http.createServer((req, res) => {
   check('다른 기기에서 열어도 같은 목록 (드라이브 공유)', n2 === 4 && G.files.filter(f => f.name === 'vhm-links.json').length === 1, String(n2));
   await page.screenshot({ path: path.join(__dirname, 'lk-list.png'), fullPage: true });
   await p2.click('[data-lkview="match"]');
-  for (const l of ['사회적 고립', '우울감·정서 지원 필요', '인지 저하·치매 의심']) await p2.click(`#tab-link .lk-chip:has-text("${l}")`);
+  for (const l of ['사회적 고립', '우울감·정서 지원 필요', '인지 저하·치매 의심']) await p2.click(`#tab-link .lk-legacy .lk-chip:has-text("${l}")`);
   await p2.screenshot({ path: path.join(__dirname, 'lk-match.png'), fullPage: true });
   // 상담 메모 틀: 드라이브 연결된 기기에서 고치면 다른 기기에도
   await page.click('[data-tab="note"]'); await page.waitForSelector('#ntOut'); await page.waitForFunction(() => /구글 드라이브와/.test(document.querySelector('#tab-note').textContent));

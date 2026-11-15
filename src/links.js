@@ -27,7 +27,7 @@
   function emptyData() { return {schema:2, updatedAt:null, defaultsPending:true, categories:defaultCategories(), services:[], catalogReviews:{}}; }
   function normalize(d) { return M.migrate(d, emptyData()); }
 
-  const L = { data: null, modified: null, loaded: false, checks: new Set(), view: 'match', q: '', editing: null, pendingForms: [], personalLoaded:false, loading:false, busy:false, epoch:0, notice:'', filters:{field:'',group:'',route:'',intake:'',source:''}, selected:new Set(), importSnapshot:null, reviewId:null, listLimit:12 };
+  const L = { data: null, modified: null, loaded: false, checks: new Set(), view: 'match', q: '', editing: null, pendingForms: [], personalLoaded:false, loading:false, busy:false, epoch:0, notice:'', filters:{field:'',group:'',route:'',intake:'',source:''}, selected:new Set(), importSnapshot:null, reviewId:null, listLimit:12, needOpen:new Set(['cost','oral']) };
   const box = () => $('#tab-link');
   const itemById = () => { const m = {}; L.data.categories.forEach(c => c.items.forEach(i => { m[i.id] = Object.assign({ cat: c.name }, i); })); return m; };
 
@@ -90,7 +90,7 @@
   function selectedLabels() { return new Set(matchCategories().flatMap(c => c.items.filter(i => L.checks.has(i.id)).map(i => M.needsKey(i.label)))); }
   function scored() {
     const checks = selectedLabels();
-    return allServices().filter(s => s.verificationStatus !== 'needs_contact' && M.intake(s) !== 'closed').map(s => ({s,hit:needLabels(s).filter(n => checks.has(M.needsKey(n)))})).filter(x => x.hit.length)
+    return allServices().filter(s => s.verificationStatus !== 'needs_contact' && M.intake(s) !== 'closed').map(s => ({s,hit:Array.from(new Set(needLabels(s).filter(n => checks.has(M.needsKey(n))).concat(M.refinedHits(s,needLabels(s),L.checks))))})).filter(x => x.hit.length)
       .sort((a,b) => b.hit.length - a.hit.length || Number(b.s._personal) - Number(a.s._personal) || a.s.name.localeCompare(b.s.name,'ko'));
   }
   function link(url, label) { const u = M.safeUrl(url); return u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(label || u) + '</a>' : '<span class="hint">링크 미확인</span>'; }
@@ -104,12 +104,20 @@
   function serviceCard(s, hit) {
     return '<article class="lk-svc"><div class="lk-svc-h"><div><b class="lk-name">' + esc(s.name) + '</b><p class="hint">' + esc(s.org) + '</p></div><span class="lk-score">' + hit.length + '개 해당</span></div><div>' + badges(s) + '</div><p class="lk-chips">' + hit.map(n => '<span class="lk-chip">' + esc(n) + '</span>').join('') + '</p><p><b>검토 후보</b> · 대상 조건: ' + esc(s.conditions || '미확인') + '</p><p>' + esc(M.routes[s.referralCode] || M.routes[4]) + '</p><p class="hint">접수: ' + esc(s.intakeStatus || '미확인') + '</p>' + formButtons(s) + '<div class="row"><button class="small" data-detail="' + esc(s._key) + '">전체 조건·근거 보기</button><button class="small" data-sched="' + esc(s._key) + '">연계 일정 등록</button></div></article>';
   }
+  function needChip(i) {
+    return '<label class="lk-chip' + (L.checks.has(i.id) ? ' on' : '') + '"><input type="checkbox" data-need="' + esc(i.id) + '"' + (L.checks.has(i.id) ? ' checked' : '') + '> ' + esc(i.label) + '</label>';
+  }
   function matchHtml() {
-    const res = scored();
+    const res = scored(), refined = M.refinedGroups, count = refined.reduce((n,g) => n + g.items.length,0);
+    const pending = allServices().filter(s => s.verificationStatus === 'needs_contact' && M.refinedHits(s,needLabels(s),L.checks).length);
     return '<div class="lk-layout"><section class="card"><div class="card-head"><h3>대상자 요구 체크</h3><button class="small" id="lkClear">체크 초기화</button></div><div class="card-body"><p class="hint">체크는 저장·전송하지 않습니다. 탭을 떠나거나 연결을 해제하면 초기화됩니다. 이름은 입력하지 않습니다.</p>'
-      + matchCategories().map(c => '<div class="lk-cat"><div class="lk-cat-h">' + esc(c.name) + '</div><div class="lk-chips">' + c.items.map(i => '<label class="lk-chip' + (L.checks.has(i.id) ? ' on' : '') + '"><input type="checkbox" data-need="' + esc(i.id) + '"' + (L.checks.has(i.id) ? ' checked' : '') + '> ' + esc(i.label) + '</label>').join('') + '</div></div>').join('')
-      + '</div></section><section class="card"><div class="card-head"><h3>검토 후보 ' + (L.checks.size ? res.length + '건' : '') + '</h3></div><div class="card-body"><div class="infobox">요구 일치 순서이며 수급 자격 판정이 아닙니다. 연령·지역·소득·보험·중복 제한을 상세에서 확인하세요. 개인정보 제3자 제공 동의와 기관 기록 절차를 지켜주세요. 확인 필요 자료는 별도 탭에서 확인합니다.</div>'
-      + (L.checks.size ? res.length ? res.map(x => serviceCard(x.s,x.hit)).join('') : '<p class="empty">일치하는 검토 후보가 없습니다.</p>' : '<p class="empty">요구를 체크하면 검토할 서비스를 표시합니다.</p>') + '</div></section></div>';
+      + '<p><b>세부 요구 ' + refined.length + '개 분야 · ' + count + '개 항목</b><br><span class="hint">분야를 펼쳐 필요한 항목을 골라주세요. 자격 판정·진단이 아닌 상담 연결용입니다.</span></p>'
+      + refined.map(g => '<details class="lk-refined" id="refined-' + esc(g.id) + '" data-need-group="' + esc(g.id) + '"' + (L.needOpen.has(g.id) ? ' open' : '') + '><summary>' + esc(g.name) + '<span>' + g.items.filter(i => L.checks.has(i.id)).length + ' / ' + g.items.length + ' 선택</span></summary><div class="lk-chips">' + g.items.map(needChip).join('') + '</div></details>').join('')
+      + '<details class="lk-legacy" open><summary>기존·직접 관리 요구 항목</summary><p class="hint">기존 분류와 개인 서비스 연결은 그대로 사용할 수 있습니다.</p>'
+      + matchCategories().map(c => '<div class="lk-cat"><div class="lk-cat-h">' + esc(c.name) + '</div><div class="lk-chips">' + c.items.map(needChip).join('') + '</div></div>').join('') + '</details>'
+      + '</div></section><section class="card"><div class="card-head"><h3>검토 후보 ' + (L.checks.size ? res.length + '건' : '') + '</h3></div><div class="card-body"><div class="infobox">요구 일치 순서이며 수급 자격 판정이 아닙니다. 연령·지역·소득·보험·중복 제한을 상세에서 확인하세요. 개인정보 제3자 제공 동의와 기관 기록 절차를 지켜주세요. 개인 서비스는 기존의 포괄 요구로 연결될 수 있어 세부 지원내용을 확인해야 합니다.</div>'
+      + (L.checks.size ? res.length ? res.map(x => serviceCard(x.s,x.hit)).join('') : '<p class="empty">일치하는 검토 후보가 없습니다. 확인 필요 자료나 개인 서비스의 연결 항목도 확인하세요.</p>' : '<p class="empty">요구를 체크하면 검토할 서비스를 표시합니다.</p>')
+      + (pending.length ? '<aside class="warnbox lk-pending-needs"><b>관련 자료 중 담당기관 확인 필요 ' + pending.length + '건</b><p>아래 자료는 추천·신청 가능 사업이 아닙니다. 현행 운영과 지원내용 확인이 필요합니다.</p>' + pending.map(s => '<button class="link" data-detail="' + esc(s._key) + '">' + esc(s.name) + ' — 확인 필요</button>').join('') + '</aside>' : '') + '</div></section></div>';
   }
   function options(values, selected, first) { return '<option value="">' + esc(first) + '</option>' + Object.entries(values).map(([k,v]) => '<option value="' + esc(k) + '"' + (selected === k ? ' selected' : '') + '>' + esc(v) + '</option>').join(''); }
   function filteredServices() {
@@ -348,6 +356,7 @@
   /* ---------- 이벤트 ---------- */
   function bindOnce() {
     const b = box();
+    b.addEventListener('toggle', ev => { const d = ev.target; if (d.dataset.needGroup) { d.open ? L.needOpen.add(d.dataset.needGroup) : L.needOpen.delete(d.dataset.needGroup); } }, true);
     b.addEventListener('click', async ev => {
       const t = ev.target;
       const v = t.closest('[data-lkview]'); if (v) { L.view = v.dataset.lkview; L.listLimit = 12; render(); return; }

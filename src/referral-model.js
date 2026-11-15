@@ -30,6 +30,14 @@
     const ids = new Map(categories.flatMap(c => c.items.map(i => [needsKey(i.label), i.id])));
     return { ids: labels.map(n => ids.get(needsKey(n))).filter(Boolean), missing: labels.filter(n => !ids.has(needsKey(n))) };
   }
+  const refinedGroups = window.VHM_REFINED_NEEDS.groups;
+  function refinedHits(s, labels, selected) {
+    const serviceNeeds = new Set(labels.map(needsKey));
+    // Catalog copies use specific service mappings too; broad custom services keep their existing links.
+    const catalogId = s.catalogId || (!s._personal ? s.id : null);
+    return refinedGroups.flatMap(g => g.items).filter(i => selected.has(i.id) &&
+      (catalogId ? i.serviceIds.includes(catalogId) : i.parents.some(n => serviceNeeds.has(needsKey(n))))).map(i => i.label);
+  }
   function identity(s) { return key(s.name) + '|' + key(s.org ?? s.organization); }
   function isDuplicate(s, list) { return list.some(p => (p.catalogId && p.catalogId === (s.catalogId || s.id)) || identity(p) === identity(s)); }
   function mergeCatalog(d, selected, createMissing = false) {
@@ -76,5 +84,5 @@
     if (/등록장애인/.test(t)) out.push('disabled');
     return out.length ? out : ['unknown'];
   }
-  window.VHM_REFERRALS = {clone,key,needsKey,safeUrl,service,migrate,routes,mapNeeds,identity,isDuplicate,mergeCatalog,intake,intakeLabels,groups,groupLabels};
+  window.VHM_REFERRALS = {clone,key,needsKey,safeUrl,service,migrate,routes,mapNeeds,identity,isDuplicate,mergeCatalog,intake,intakeLabels,groups,groupLabels,refinedGroups,refinedHits};
 })();

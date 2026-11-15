@@ -5,7 +5,8 @@ const {chromium} = require('playwright');
 const data = JSON.parse(fs.readFileSync(path.join(__dirname,'../data/public-referrals.json'),'utf8'));
 let count = 0;
 function check(name, fn) { fn(); count++; console.log('PASS ' + name); }
-const context = {window:{VHM_PUBLIC_REFERRALS:data}, URL};
+const refined = JSON.parse(fs.readFileSync(path.join(__dirname,'../data/refined-needs.json'),'utf8'));
+const context = {window:{VHM_PUBLIC_REFERRALS:data,VHM_REFINED_NEEDS:refined}, URL};
 vm.createContext(context); vm.runInContext(fs.readFileSync(path.join(__dirname,'../src/referral-model.js'),'utf8'),context);
 const M = context.window.VHM_REFERRALS;
 check('catalog 69 unique IDs, 48 consultable + 21 needs_contact',() => {
@@ -34,6 +35,10 @@ check('repeat import and exact name/org duplicate are skipped without overwrite'
 check('housing basic/medical recipients excluded from indexed eligibility',()=>{const s=M.service(data.services.find(s=>s.id==='seoul-rent-voucher'));assert(!M.groups(s).includes('basic'));assert(!M.groups(s).includes('medical'));});
 check('general 차상위 never mapped to 본인부담경감',()=>{assert(!M.groups(M.service(eye)).includes('reduced'));assert(M.groups(M.service(data.services.find(s=>s.id==='cancer-medical'))).includes('reduced'));});
 check('waiting, closed, unknown and guide intake statuses remain distinct',()=>{assert.equal(M.intake(data.services.find(s=>s.id==='daily-care')),'waiting');assert.equal(M.intake({intakeStatus:'2026 미운영'}),'closed');assert.equal(M.intake({verificationStatus:'needs_contact',intakeStatus:'운영 확인 필요'}),'unknown');assert.equal(M.intake({intakeStatus:'상시 법정 제도'}),'guide');});
+check('refined needs have unique IDs and reference existing catalog services',()=>{const items=refined.groups.flatMap(g=>g.items);assert.equal(refined.groups.length,11);assert.equal(items.length,44);assert.equal(new Set(items.map(i=>i.id)).size,44);for(const i of items){assert(i.parents.length);for(const id of i.serviceIds)assert(data.services.some(s=>s.id===id),id);}});
+check('eye and hearing needs do not cross-match through the old combined label',()=>{const selected=new Set(['refined:eye-surgery']);assert.equal(M.refinedHits(data.services.find(s=>s.id==='eye-surgery'),[],selected).length,1);assert.equal(M.refinedHits(data.services.find(s=>s.id==='hearing-aid-local'),[],selected).length,0);assert.equal(M.refinedHits(data.services.find(s=>s.id==='eye-surgery'),[],new Set(['refined:hearing-aid'])).length,0);});
+check('specific catalog copies use specific matching; custom services keep broad IDs',()=>{const picks=new Set(['refined:repair']);assert.equal(M.refinedHits({_personal:true,catalogId:'eye-surgery'},['보조기기 필요'],picks).length,0);assert.equal(M.refinedHits({_personal:true,id:'custom'},['보조기기 필요'],picks).length,1);});
+check('several selected details count once each without mutating personal schema',()=>{const before=JSON.stringify(migrated);const hits=M.refinedHits({_personal:true,id:'custom'},['시력·청력 문제','보조기기 필요'],new Set(['refined:hearing-aid']));assert.equal(hits.length,1);assert.equal(JSON.stringify(migrated),before);});
 const SITE=path.join(__dirname,'../site');
 const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http://localhost').pathname;const file=path.join(SITE,pathname==='/'?'index.html':pathname);if(!file.startsWith(SITE+path.sep)||!fs.existsSync(file)){res.writeHead(404);return res.end();}res.writeHead(200,{'Content-Type':file.endsWith('.js')?'text/javascript':'text/html; charset=utf-8'});res.end(fs.readFileSync(file));});
 (async()=>{
@@ -60,6 +65,23 @@ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http:
   await page.click('[data-lkview="match"]');await page.locator('label.lk-chip').filter({hasText:'의료비 부담'}).locator('input').check();assert(await page.locator('.lk-svc').count()>0);assert(!(await page.locator('[data-detail="public:smile-dental"]').count()));
   assert.match(await page.textContent('#tab-link'),/검토 후보/);assert.match(await page.textContent('#tab-link'),/미운영/);
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.click('#lkClear');
+  await page.locator('#refined-senses summary').click();
+  await page.locator('input[data-need="refined:eye-surgery"]').check();
+  assert.equal(await page.locator('[data-detail="public:eye-surgery"]').count(),1);
+  assert.equal(await page.locator('.lk-svc [data-detail="public:disability-equipment-nhis"]').count(),0);
+  assert.equal(await page.locator('#refined-senses').getAttribute('open'),'');
+  await page.locator('input[data-need="refined:eye-surgery"]').uncheck();
+  await page.locator('input[data-need="refined:hearing-aid"]').check();
+  assert.equal(await page.locator('.lk-svc [data-detail="public:eye-surgery"]').count(),0);
+  assert.equal(await page.locator('.lk-svc [data-detail="public:disability-equipment-nhis"]').count(),1);
+  assert.match(await page.textContent('.lk-pending-needs'),/강서구 난청 어르신 보청기 지원/);
+  assert.equal(await page.locator('.lk-svc [data-detail="public:hearing-aid-local"]').count(),0);
+  await page.click('#lkClear');
+  await page.locator('#refined-oral input[data-need="refined:dental-disabled"]').check();
+  assert.equal(await page.locator('.lk-svc [data-detail="public:senior-dentures"]').count(),0);
+  assert.match(await page.textContent('.lk-pending-needs'),/스마일재단/);
+  check(width+'px refined needs distinguish eyes/hearing, preserve expansion, and separate unverified dental support',()=>{assert.equal(errors.length,0);assert.equal(external.length,0);});
   // Synthetic stored HTML and unsafe links must never execute or become navigable.
   await page.evaluate(()=>{LINKS._state.data.services.push(VHM_REFERRALS.service({id:'xss',name:'<img src=x onerror="window.XSS=1">',org:'<svg onload="window.XSS=2">',needs:[],forms:[{url:'javascript:window.XSS=3',name:'bad'}],officialGuideUrl:'javascript:window.XSS=4',future:{keep:true}}));});
   await page.click('[data-lkview="list"]');await page.click('[data-detail="personal:xss"]');assert.equal(await page.locator('#referralBody img,#referralBody svg,#referralBody a[href^="javascript:"]').count(),0);assert.equal(await page.evaluate(()=>window.XSS),undefined);
