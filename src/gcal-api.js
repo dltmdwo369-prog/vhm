@@ -73,6 +73,7 @@
     signOut() {
       const t = this.token; this.token = null; this.exp = 0; this.hasDrive = false;
       if (window.FEEDBACK) FEEDBACK.signOut();
+      if (window.FEATURES) FEATURES.setAccount('');
       try { sessionStorage.removeItem(TOKEN_KEY); ['vhm-consented', 'vhm-consented-drive', 'vhm-cal-ids', 'vhm-email'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
       if (t) try { fetch(REVOKE_URL + '?token=' + encodeURIComponent(t), { method: 'POST', mode: 'no-cors' }).catch(() => {}); } catch (e) {}
     }

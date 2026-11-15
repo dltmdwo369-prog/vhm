@@ -261,13 +261,16 @@ visual_theme = open(H + 'ui-source/theme-v2.css', encoding='utf-8').read()
 s = s.replace('</head>', '<style>\n' + visual_theme + '\n</style>\n</head>', 1)
 
 # 남은 Apps Script 흔적 점검
+rep('    <h3 style="margin:4px 0 10px">구글 캘린더 연결 상태</h3>', '    <div id="featureSettings" class="feature-settings"></div>\n    <h3 style="margin:4px 0 10px">구글 계정 연결</h3>\n    <p class="hint">일정 기능을 꺼도 여기서 Google 계정을 연결할 수 있습니다.</p>\n    <button type="button" id="featuresConnect">구글 계정으로 연결</button>')
+rep('  S.settings = b.settings; renderSettings(b); render(); await loadEvents();', '  S.settings = b.settings; renderSettings(b); render(); if (window.FEATURES) FEATURES.setAccount(b.email); await loadEvents();')
 rep('    <button role="tab" data-tab="set"', '    <button role="tab" data-tab="feedback" aria-selected="false">피드백</button>\n    <button role="tab" data-tab="feedback-admin" aria-selected="false" hidden>피드백 관리</button>\n    <button role="tab" data-tab="set"')
 rep('<section id="tab-set"', '<section id="tab-feedback" class="page" hidden></section>\n<section id="tab-feedback-admin" class="page" hidden></section>\n<section id="tab-set"')
 rep("['cal','note','link','box','edu','arch','set']", "['cal','note','link','box','edu','arch','set','feedback','feedback-admin']")
 rep("  if (name === 'link' && window.LINKS)", "  if ((name === 'feedback' || name === 'feedback-admin') && window.FEEDBACK) FEEDBACK.open(name === 'feedback-admin');\n  if (name === 'link' && window.LINKS)")
-s = s.replace('</body>', '<script>\n' + open(H + 'src/feedback.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
+s = s.replace('</body>', '<script>\n' + open(H + 'src/feedback-images.js', encoding='utf-8').read() + '\n</script>\n<script>\n' + open(H + 'src/feedback.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 notes = open(H + 'src/drugs.js', encoding='utf-8').read() + '\n' + open(H + 'src/supps.js', encoding='utf-8').read() + '\n' + open(H + 'src/notes.js', encoding='utf-8').read()
 s = s.replace('</script>\n</body>', '</script>\n<script>\n' + links + '\n</script>\n<script>\n' + notes + '\n</script>\n<script>\n' + open(H + 'src/archive.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
+s = s.replace('</body>', '<script>\n' + open(H + 'src/features.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 assert 'google.script' not in s, 'google.script 남음'
 assert '<?' not in s, '템플릿 태그 남음'
 os.makedirs(H + 'site', exist_ok=True)

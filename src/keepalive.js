@@ -27,6 +27,7 @@
     if (N && (N.edited || (N.extra || '').trim() || Object.values(N.pick || {}).some(v => Array.isArray(v) ? v.some(has) : has(v)) || Object.values(N.lead || {}).some(v => String(v || '').trim()))) return '상담 메모';
     const L = window.LINKS && LINKS._state; if (L && L.checks && L.checks.size) return '연계 안내 체크';
     if (window.ARCHIVE && ARCHIVE.busy()) return '보관함 파일 올리기·내려받기';
+    if (window.FEEDBACK && FEEDBACK.busy()) return '피드백 작성·이미지 첨부';
     try { if (typeof ADJ !== 'undefined' && ADJ.dirty()) return '저장 안 한 수기 실적'; } catch (e) {}
     const a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.value) return '입력 중';
     return '';

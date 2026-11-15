@@ -45,4 +45,28 @@ async function expect(label, expected, response) { const r = await response; con
   const oversized=JSON.parse(JSON.stringify(create)); oversized.writes[0].update.name+='-long';oversized.writes[0].update.fields.body=str('x'.repeat(3001));
   await expect('oversized feedback denied',403,req(':commit',a,oversized));
   await expect('feedback deletion denied even to admin',403,req(docPath,admin,null,'DELETE'));
+  const imageId=require('node:crypto').randomUUID();
+  const imageParent=root+'/feedback/images-'+Date.now();
+  const imageFields={authorId:str('alice'),name:str('가상 이미지.jpg'),dataUrl:str('data:image/jpeg;base64,/9j/AA==')};
+  const imageCreate={writes:[
+    {update:{name:imageParent,fields:{...fields,imageIds:{arrayValue:{values:[str(imageId)]}}}},currentDocument:{exists:false},updateTransforms:[{fieldPath:'createdAt',setToServerValue:'REQUEST_TIME'},{fieldPath:'updatedAt',setToServerValue:'REQUEST_TIME'}]},
+    {update:{name:imageParent+'/images/'+imageId,fields:imageFields},currentDocument:{exists:false},updateTransforms:[{fieldPath:'createdAt',setToServerValue:'REQUEST_TIME'}]}
+  ]};
+  const missing=JSON.parse(JSON.stringify(imageCreate));missing.writes.pop();
+  await expect('parent cannot reference an image that is not in the atomic commit',403,req(':commit',a,missing));
+  const svg=JSON.parse(JSON.stringify(imageCreate));svg.writes[1].update.fields.dataUrl=str('data:image/svg+xml;base64,PHN2Zy8+');
+  await expect('SVG attachment denied',403,req(':commit',a,svg));
+  const largeImage=JSON.parse(JSON.stringify(imageCreate));largeImage.writes[1].update.fields.dataUrl=str('data:image/jpeg;base64,'+'A'.repeat(245760));
+  await expect('oversized attachment denied',403,req(':commit',a,largeImage));
+  const tooMany=JSON.parse(JSON.stringify(imageCreate));tooMany.writes[0].update.fields.imageIds={arrayValue:{values:Array.from({length:4},()=>str(require('node:crypto').randomUUID()))}};
+  await expect('more than three attachment IDs denied',403,req(':commit',a,tooMany));
+  await expect('feedback and JPEG attachment created atomically',200,req(':commit',a,imageCreate));
+  const imagePath=(imageParent+'/images/'+imageId).slice(root.length);
+  await expect('author reads own attachment',200,req(imagePath,a));
+  await expect('other user cannot read attachment',403,req(imagePath,b));
+  await expect('admin reads attachment',200,req(imagePath,admin));
+  await expect('image enumeration denied',403,req(imageParent.slice(root.length)+'/images',a));
+  await expect('attachment replacement denied',403,req(imagePath,a,{fields:imageFields},'PATCH'));
+  const after=JSON.parse(JSON.stringify(imageCreate));after.writes.shift();after.writes[0].update.name=imageParent+'/images/'+require('node:crypto').randomUUID();
+  await expect('adding attachment after feedback creation denied',403,req(':commit',a,after));
 })().catch(e=>{console.error(e);process.exitCode=1;});

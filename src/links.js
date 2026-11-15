@@ -372,6 +372,7 @@
       if (t.dataset.dl) { const [sid, i] = t.dataset.dl.split(':'); const s = L.data.services.find(x => x.id === sid); const fm = s && s.forms[+i];
         if (fm) { t.disabled = true; try { await run('내려받는 중…', () => call('downloadForm', fm.fileId, fm.name)); } catch (e) {} t.disabled = false; } return; }
       if (t.dataset.sched) { const s = serviceByKey(t.dataset.sched);
+        if (window.FEATURES && !FEATURES.enabled('cal')) { toast('설정에서 일정 기능을 켠 뒤 연계 일정을 등록해 주세요.'); return; }
         showTab('cal'); openEvent(null, { kind: 'work', type: '연계', status: '예정', memo: ('연계: ' + s.name + (s.org ? ' (' + s.org + ')' : '')).slice(0, 500) }); return; }
       // 요구 항목 편집
       if (t.dataset.additem != null) { syncNeedInputs(); L.data.categories[+t.dataset.additem].items.push({ id: uid(), label: '새 항목' }); render(); return; }

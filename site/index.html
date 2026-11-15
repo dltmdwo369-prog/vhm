@@ -1515,7 +1515,10 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
 <section id="tab-feedback-admin" class="page" hidden></section>
 <section id="tab-set" class="page" hidden>
   <div class="card" style="max-width:720px"><div class="card-body">
-    <h3 style="margin:4px 0 10px">구글 캘린더 연결 상태</h3>
+    <div id="featureSettings" class="feature-settings"></div>
+    <h3 style="margin:4px 0 10px">구글 계정 연결</h3>
+    <p class="hint">일정 기능을 꺼도 여기서 Google 계정을 연결할 수 있습니다.</p>
+    <button type="button" id="featuresConnect">구글 계정으로 연결</button>
     <div class="infobox" id="setStatus"></div>
     <div class="row" style="margin-top:8px"><button id="btnSignOut">이 기기에서 연결 해제</button><span class="hint">구글 캘린더의 일정은 그대로 남습니다. 다시 쓰려면 ‘구글 계정으로 연결’을 누르세요.</span></div>
     <h3 style="margin:18px 0 8px">연결 유지</h3>
@@ -1718,6 +1721,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
     signOut() {
       const t = this.token; this.token = null; this.exp = 0; this.hasDrive = false;
       if (window.FEEDBACK) FEEDBACK.signOut();
+      if (window.FEATURES) FEATURES.setAccount('');
       try { sessionStorage.removeItem(TOKEN_KEY); ['vhm-consented', 'vhm-consented-drive', 'vhm-cal-ids', 'vhm-email'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
       if (t) try { fetch(REVOKE_URL + '?token=' + encodeURIComponent(t), { method: 'POST', mode: 'no-cors' }).catch(() => {}); } catch (e) {}
     }
@@ -2552,6 +2556,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
     if (N && (N.edited || (N.extra || '').trim() || Object.values(N.pick || {}).some(v => Array.isArray(v) ? v.some(has) : has(v)) || Object.values(N.lead || {}).some(v => String(v || '').trim()))) return '상담 메모';
     const L = window.LINKS && LINKS._state; if (L && L.checks && L.checks.size) return '연계 안내 체크';
     if (window.ARCHIVE && ARCHIVE.busy()) return '보관함 파일 올리기·내려받기';
+    if (window.FEEDBACK && FEEDBACK.busy()) return '피드백 작성·이미지 첨부';
     try { if (typeof ADJ !== 'undefined' && ADJ.dirty()) return '저장 안 한 수기 실적'; } catch (e) {}
     const a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.value) return '입력 중';
     return '';
@@ -3274,6 +3279,7 @@ async function saveSetting(patch) { const r = await run('설정 저장 중…', 
 
 /* ---------- 연결 ---------- */
 function showTab(name) {
+  if (window.FEATURES) name = FEATURES.destination(name);
   if (name !== 'link' && window.LINKS) LINKS.leave();
   $$('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
   ['cal','note','link','box','edu','arch','set','feedback','feedback-admin'].forEach(t => { const x = $('#tab-' + t); if (x) x.hidden = t !== name; });
@@ -3428,7 +3434,7 @@ function bind() {
 async function boot() {
   const b = await run('구글 캘린더 연결 중…', () => call('getBootstrap'));
   $('#connectBox').hidden = true;
-  S.settings = b.settings; renderSettings(b); render(); await loadEvents();
+  S.settings = b.settings; renderSettings(b); render(); if (window.FEATURES) FEATURES.setAccount(b.email); await loadEvents();
   if (window.MEMOLOCK) await MEMOLOCK.refresh();
   if (window.KEEP) await KEEP.resume();
 }
@@ -3463,6 +3469,38 @@ async function boot() {
 })();
 </script>
 <script>
+/* Raster-only feedback attachments. Images are resized and re-encoded locally before upload. */
+(function () {
+  'use strict';
+  const MAX_IMAGES = 3, MAX_DATA = 245760;
+  const safe = value => typeof value === 'string' && value.length <= MAX_DATA && /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(value);
+  async function prepare(file) {
+    if (!['image/jpeg','image/png','image/webp'].includes(file.type)) throw new Error('JPG, PNG, WebP 이미지만 첨부할 수 있습니다.');
+    if (!file.size || file.size > 10 * 1024 * 1024) throw new Error('이미지는 한 장당 10MB 이하로 선택해 주세요.');
+    const url = URL.createObjectURL(file), img = new Image();
+    try {
+      img.src = url; await img.decode();
+      if (!img.naturalWidth || !img.naturalHeight || img.naturalWidth * img.naturalHeight > 40000000) throw new Error('이미지 크기가 너무 큽니다. 화면 캡처나 크기를 줄인 이미지로 다시 선택해 주세요.');
+      const canvas = document.createElement('canvas');
+      let scale = Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight));
+      for (let attempt=0;attempt<8;attempt++) {
+        canvas.width = Math.max(1,Math.round(img.naturalWidth*scale)); canvas.height = Math.max(1,Math.round(img.naturalHeight*scale));
+        const ctx = canvas.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.drawImage(img,0,0,canvas.width,canvas.height);
+        for (const quality of [0.9,0.8,0.7]) {
+          const dataUrl = canvas.toDataURL('image/jpeg',quality);
+          if (safe(dataUrl)) return {id:crypto.randomUUID(),name:file.name.slice(0,120),dataUrl};
+        }
+        scale *= 0.75;
+      }
+      throw new Error('이미지를 줄이지 못했습니다. 더 작은 이미지로 다시 선택해 주세요.');
+    } catch(e) { if(e.name==='EncodingError') throw new Error('이미지 파일을 읽을 수 없습니다. 다른 이미지를 선택해 주세요.'); throw e; }
+    finally { URL.revokeObjectURL(url); }
+  }
+  window.VHM_FEEDBACK_IMAGES = {prepare, safe, MAX_IMAGES};
+})();
+
+</script>
+<script>
 /* Shared feedback only. Calendar, notes and archive data never enter this module. */
 (function () {
   'use strict';
@@ -3474,6 +3512,9 @@ async function boot() {
   const ready = () => !!(cfg.apiKey && cfg.projectId);
   const root = 'projects/' + cfg.projectId + '/databases/(default)/documents';
   const endpoint = 'https://firestore.googleapis.com/v1/' + root;
+  const images = window.VHM_FEEDBACK_IMAGES;
+  let attachments = [], preparing = false;
+  const imageCache = new Map();
   let session = null, pending = null, generation = 0, adminView = false, busy = false;
   let rows = [], cursor = null, more = false, filter = '', message = '', draft = {title:'', body:'', category:categories[0]};
   let submitId = null;
@@ -3497,7 +3538,7 @@ async function boot() {
   }
   async function authenticate() {
     if (!ready()) throw new Error('피드백 접수를 준비 중입니다. 관리자 연결 설정이 끝나면 사용할 수 있습니다.');
-    if (!valid()) throw new Error('일정 탭에서 Google 계정으로 연결한 뒤 이용해 주세요.');
+    if (!valid()) throw new Error('설정에서 Google 계정으로 연결한 뒤 이용해 주세요.');
     if (stillCurrent(session) && session.exp > Date.now() + 60000) return session;
     if (pending && pending.token === VHM_AUTH.token) return pending.promise;
     const googleToken = VHM_AUTH.token, epoch = generation;
@@ -3529,7 +3570,7 @@ async function boot() {
   const str = stringValue => ({stringValue});
   function decode(d) {
     const r = {name:d.name, version:d.updateTime};
-    for (const [k,v] of Object.entries(d.fields || {})) r[k] = v.stringValue !== undefined ? v.stringValue : v.timestampValue;
+    for (const [k,v] of Object.entries(d.fields || {})) r[k] = v.arrayValue ? (v.arrayValue.values || []).map(x => x.stringValue) : v.stringValue !== undefined ? v.stringValue : v.timestampValue;
     return r;
   }
   async function load(append) {
@@ -3548,6 +3589,62 @@ async function boot() {
   }
   function date(v) { const d = new Date(v); return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('ko-KR', {timeZone:'Asia/Seoul'}); }
   function statusHtml(s) { return '<span class="fb-status fb-' + statuses.indexOf(s) + '">' + esc(s) + '</span>'; }
+  function previews() {
+    return '<div class="fb-images">' + attachments.map(a => '<figure><img src="' + a.dataUrl + '" alt="첨부 이미지 미리보기" loading="lazy"><figcaption>' + esc(a.name) + '</figcaption><button type="button" data-fb-remove="' + a.id + '">삭제</button></figure>').join('') + '</div>';
+  }
+  function attachmentForm() {
+    if (!images) return '';
+    return '<div class="f"><label for="fbFiles">이미지 첨부 (선택 · 최대 3장)</label><input id="fbFiles" type="file" accept="image/jpeg,image/png,image/webp" multiple ' + (preparing ? 'disabled' : '') + '><p class="hint">JPG·PNG·WebP, 원본 한 장당 10MB 이하. 전송 전에 크기를 줄입니다. 대상자 이름·연락처·건강정보가 보이는 이미지는 첨부하지 마세요.</p><p role="status" class="hint">' + (preparing ? '이미지를 준비하는 중…' : attachments.length + '/3장 선택') + '</p>' + previews() + '</div>';
+  }
+  function savedAttachments(row) {
+    const ids = Array.isArray(row.imageIds) ? row.imageIds.filter(id => typeof id === 'string' && /^[a-f0-9-]{36}$/.test(id)).slice(0,3) : [];
+    if (!ids.length) return '';
+    return '<div class="fb-saved-images"><b>첨부 이미지 ' + ids.length + '장</b><div class="fb-images">' + ids.map(id => {
+      const key = row.name + '/images/' + id, cached = imageCache.get(key);
+      return cached && images && images.safe(cached.dataUrl) ? '<figure><button type="button" data-fb-expand="' + esc(key) + '" aria-label="첨부 이미지 크게 보기"><img src="' + cached.dataUrl + '" alt="피드백 첨부 이미지" loading="lazy"></button><figcaption>' + esc(cached.name) + '</figcaption></figure>' : '<button type="button" data-fb-image="' + esc(key) + '">이미지 보기</button>';
+    }).join('') + '</div></div>';
+  }
+  async function selectImages(files) {
+    if (busy || preparing || !images) return;
+    const selected = Array.from(files || []); if (!selected.length) return;
+    if (attachments.length + selected.length > images.MAX_IMAGES) { message = '이미지는 최대 3장까지 첨부할 수 있습니다.'; render(); return; }
+    const epoch = generation; preparing = true; message = ''; render();
+    try {
+      const prepared = await Promise.all(selected.map(images.prepare));
+      if (epoch !== generation) return;
+      attachments.push(...prepared); submitId = null;
+    } catch(e) { if (epoch === generation) message = e.message || '이미지를 준비하지 못했습니다.'; }
+    finally { if (epoch === generation) { preparing = false; render(); } }
+  }
+  function expandImage(key) {
+    const cached = imageCache.get(key); if (!cached || !images.safe(cached.dataUrl)) return;
+    let dialog = $('#fbImageDialog');
+    if (!dialog) {
+      dialog = document.createElement('dialog'); dialog.id = 'fbImageDialog';
+      dialog.setAttribute('aria-label','첨부 이미지 크게 보기');
+      dialog.innerHTML = '<div class="fb-heading"><b>첨부 이미지</b><button type="button">닫기</button></div><p></p><img alt="피드백 첨부 이미지">';
+      document.body.appendChild(dialog); dialog.querySelector('button').onclick = () => dialog.close();
+    }
+    dialog.querySelector('p').textContent = cached.name;
+    dialog.querySelector('img').src = cached.dataUrl; dialog.showModal();
+  }
+  async function loadImage(button) {
+    if (button.disabled) return;
+    const epoch = generation, key = button.dataset.fbImage;
+    button.disabled = true; button.textContent = '이미지 불러오는 중…';
+    try {
+      const s = await authenticate();
+      const data = await json('https://firestore.googleapis.com/v1/' + key, {headers:{Authorization:'Bearer ' + s.token}});
+      if (epoch !== generation || !stillCurrent(s)) return;
+      const image = decode(data);
+      if (!images || !images.safe(image.dataUrl)) throw new Error('표시할 수 없는 이미지입니다.');
+      imageCache.set(key,image);
+      const figure = document.createElement('figure'), view = document.createElement('button'), img = document.createElement('img'), caption = document.createElement('figcaption');
+      view.type = 'button'; view.setAttribute('aria-label','첨부 이미지 크게 보기'); view.onclick = () => expandImage(key);
+      img.src = image.dataUrl; img.alt = '피드백 첨부 이미지'; caption.textContent = image.name;
+      view.appendChild(img); figure.append(view,caption); button.replaceWith(figure);
+    } catch(e) { if (epoch === generation) { button.disabled = false; button.textContent = '이미지 다시 불러오기'; const status = $(adminView ? '#tab-feedback-admin [role="status"]' : '#tab-feedback [role="status"]'); if (status) status.textContent = e.message || '이미지를 불러오지 못했습니다.'; } }
+  }
   function render() {
     const box = $(adminView ? '#tab-feedback-admin' : '#tab-feedback');
     if (!box) return;
@@ -3556,9 +3653,9 @@ async function boot() {
     const visible = rows.filter(r => !filter || r.status === filter);
     box.innerHTML = '<div class="card fb-wrap"><div class="fb-heading"><div><h2>' + (adminView ? '피드백 관리' : '피드백') + '</h2><p class="hint">' + (adminView ? '사용자 의견을 확인하고 처리 상태와 답변을 남겨 주세요.' : '불편한 점이나 개선 의견을 남겨 주세요. 내가 보낸 의견과 처리 상태를 확인할 수 있습니다.') + '</p></div><button type="button" id="fbRefresh" ' + (busy ? 'disabled' : '') + '>새로고침</button></div>'
       + '<p class="hint">공유 주소: <a href="https://dltmdwo369-prog.github.io/vhm/">https://dltmdwo369-prog.github.io/vhm/</a></p>'
-      + '<p role="status" aria-live="polite" class="infobox">' + esc(message || (busy ? '불러오는 중…' : !ready() ? '피드백 접수를 준비 중입니다. 관리자 연결 설정이 끝나면 사용할 수 있습니다.' : !valid() ? '일정 탭에서 Google 계정으로 연결한 뒤 이용해 주세요.' : active ? (adminView ? '관리자 · ' : '') + session.email : '계정 확인 후 이용할 수 있습니다.')) + '</p>'
-      + (!adminView ? '<form id="fbForm"><fieldset ' + (!active || busy ? 'disabled' : '') + '><legend>새 피드백</legend><label class="f">종류<select name="category">' + categories.map(c => '<option ' + (draft.category === c ? 'selected' : '') + '>' + c + '</option>').join('') + '</select></label><label class="f">제목<input name="title" required maxlength="100" value="' + esc(draft.title) + '" placeholder="어떤 점을 알려주시겠어요?"></label><label class="f">내용<textarea name="body" rows="6" required maxlength="3000" placeholder="문제가 생긴 화면과 동작, 개선 의견 등을 적어 주세요.">' + esc(draft.body) + '</textarea></label><p class="hint">작성한 제목·내용과 로그인 이메일이 관리자에게 전달됩니다. 대상자 이름·연락처·건강정보는 적지 마세요. 일정과 상담 메모는 첨부되지 않습니다.</p><label class="opt"><input type="checkbox" name="consent" required> 위 내용을 확인했으며 피드백 전달에 동의합니다.</label><button class="primary" type="submit">' + (busy ? '처리 중…' : '피드백 보내기') + '</button></fieldset></form>' : '')
-      + (active ? '<div class="fb-heading"><h3>' + (adminView ? '전체 피드백' : '내 피드백') + '</h3><label>상태 <select id="fbFilter"><option value="">전체</option>' + statuses.map(s => '<option ' + (filter === s ? 'selected' : '') + '>' + s + '</option>').join('') + '</select></label></div><p class="hint">불러온 ' + rows.length + '건 중 ' + visible.length + '건 표시' + (more ? ' · 더 불러올 피드백이 있습니다.' : '') + '</p><div class="fb-list">' + (visible.length ? visible.map(r => '<article class="fb-item"><div class="fb-heading"><h4>' + esc(r.title) + '</h4>' + statusHtml(r.status) + '</div><p class="hint">' + esc(r.category) + ' · 접수 ' + esc(date(r.createdAt)) + (adminView ? ' · ' + esc(r.authorEmail) : '') + '</p><p class="fb-text">' + esc(r.body) + '</p>' + (adminView ? '<form data-fb-item="' + esc(r.name) + '"><label class="f">처리 상태<select name="status">' + statuses.map(s => '<option ' + (s === r.status ? 'selected' : '') + '>' + s + '</option>').join('') + '</select></label><label class="f">답변<textarea name="reply" rows="3" maxlength="3000">' + esc(r.reply) + '</textarea></label><button type="submit" ' + (busy ? 'disabled' : '') + '>변경 저장</button></form>' : r.reply ? '<div class="infobox"><b>관리자 답변</b><p class="fb-text">' + esc(r.reply) + '</p></div>' : '<p class="hint">관리자 답변을 기다리고 있습니다.</p>') + '<p class="hint">최근 변경 ' + esc(date(r.updatedAt)) + '</p></article>').join('') : '<p class="hint">' + (filter ? '이 상태의 피드백이 없습니다.' : '아직 접수된 피드백이 없습니다.') + '</p>') + '</div>' + (more ? '<button type="button" id="fbMore" ' + (busy ? 'disabled' : '') + '>더 불러오기</button>' : '') : '') + '</div>';
+      + '<p role="status" aria-live="polite" class="infobox">' + esc(message || (busy ? '불러오는 중…' : !ready() ? '피드백 접수를 준비 중입니다. 관리자 연결 설정이 끝나면 사용할 수 있습니다.' : !valid() ? '설정에서 Google 계정으로 연결한 뒤 이용해 주세요.' : active ? (adminView ? '관리자 · ' : '') + session.email : '계정 확인 후 이용할 수 있습니다.')) + '</p>'
+      + (!adminView ? '<form id="fbForm"><fieldset ' + (!active || busy ? 'disabled' : '') + '><legend>새 피드백</legend><label class="f">종류<select name="category">' + categories.map(c => '<option ' + (draft.category === c ? 'selected' : '') + '>' + c + '</option>').join('') + '</select></label><label class="f">제목<input name="title" required maxlength="100" value="' + esc(draft.title) + '" placeholder="어떤 점을 알려주시겠어요?"></label><label class="f">내용<textarea name="body" rows="6" required maxlength="3000" placeholder="문제가 생긴 화면과 동작, 개선 의견 등을 적어 주세요.">' + esc(draft.body) + '</textarea></label>' + attachmentForm() + '<p class="hint">작성한 제목·내용·첨부 이미지와 로그인 이메일이 관리자에게 전달됩니다. 대상자 이름·연락처·건강정보는 적지 마세요. 일정과 상담 메모는 첨부되지 않습니다.</p><label class="opt"><input type="checkbox" name="consent" required> 위 내용을 확인했으며 피드백 전달에 동의합니다.</label><button class="primary" type="submit" ' + (preparing ? 'disabled' : '') + '>' + (busy ? '처리 중…' : '피드백 보내기') + '</button></fieldset></form>' : '')
+      + (active ? '<div class="fb-heading"><h3>' + (adminView ? '전체 피드백' : '내 피드백') + '</h3><label>상태 <select id="fbFilter"><option value="">전체</option>' + statuses.map(s => '<option ' + (filter === s ? 'selected' : '') + '>' + s + '</option>').join('') + '</select></label></div><p class="hint">불러온 ' + rows.length + '건 중 ' + visible.length + '건 표시' + (more ? ' · 더 불러올 피드백이 있습니다.' : '') + '</p><div class="fb-list">' + (visible.length ? visible.map(r => '<article class="fb-item"><div class="fb-heading"><h4>' + esc(r.title) + '</h4>' + statusHtml(r.status) + '</div><p class="hint">' + esc(r.category) + ' · 접수 ' + esc(date(r.createdAt)) + (adminView ? ' · ' + esc(r.authorEmail) : '') + '</p><p class="fb-text">' + esc(r.body) + '</p>' + savedAttachments(r) + (adminView ? '<form data-fb-item="' + esc(r.name) + '"><label class="f">처리 상태<select name="status">' + statuses.map(s => '<option ' + (s === r.status ? 'selected' : '') + '>' + s + '</option>').join('') + '</select></label><label class="f">답변<textarea name="reply" rows="3" maxlength="3000">' + esc(r.reply) + '</textarea></label><button type="submit" ' + (busy ? 'disabled' : '') + '>변경 저장</button></form>' : r.reply ? '<div class="infobox"><b>관리자 답변</b><p class="fb-text">' + esc(r.reply) + '</p></div>' : '<p class="hint">관리자 답변을 기다리고 있습니다.</p>') + '<p class="hint">최근 변경 ' + esc(date(r.updatedAt)) + '</p></article>').join('') : '<p class="hint">' + (filter ? '이 상태의 피드백이 없습니다.' : '아직 접수된 피드백이 없습니다.') + '</p>') + '</div>' + (more ? '<button type="button" id="fbMore" ' + (busy ? 'disabled' : '') + '>더 불러오기</button>' : '') : '') + '</div>';
     $('#fbRefresh').onclick = () => open(adminView);
     if ($('#fbFilter')) $('#fbFilter').onchange = e => { filter = e.target.value; render(); };
     if ($('#fbMore')) $('#fbMore').onclick = () => action(() => load(true));
@@ -3566,11 +3663,15 @@ async function boot() {
       const f = $('#fbForm');
       f.oninput = e => { draft = {title:f.elements.title.value, body:f.elements.body.value, category:f.elements.category.value}; if (e.target.name !== 'consent') submitId = null; };
       f.onsubmit = e => { e.preventDefault(); submit(f); };
+      if ($('#fbFiles')) $('#fbFiles').onchange = e => selectImages(e.target.files);
+      f.querySelectorAll('[data-fb-remove]').forEach(b => b.onclick = () => { attachments = attachments.filter(a => a.id !== b.dataset.fbRemove); submitId = null; render(); });
     }
+    box.querySelectorAll('[data-fb-image]').forEach(b => b.onclick = () => loadImage(b));
+    box.querySelectorAll('[data-fb-expand]').forEach(b => b.onclick = () => expandImage(b.dataset.fbExpand));
     box.querySelectorAll('[data-fb-item]').forEach(f => f.onsubmit = e => { e.preventDefault(); update(f); });
   }
   async function action(fn) {
-    if (busy) return;
+    if (busy || preparing) return;
     const epoch = generation; busy = true; message = ''; render();
     try { await fn(); } catch (e) { if (epoch === generation) message = e.message || '요청에 실패했습니다.'; }
     finally { if (epoch === generation) { busy = false; render(); } }
@@ -3584,9 +3685,12 @@ async function boot() {
       // Retain the ID on uncertain network failures: retry cannot create duplicate records.
       if (!submitId) submitId = crypto.randomUUID();
       const fields = {authorId:str(s.uid), authorEmail:str(s.email), title:str(title), body:str(body), category:str(category), status:str('접수'), reply:str('')};
-      await db(':commit', {writes:[{update:{name:root + '/feedback/' + submitId, fields}, currentDocument:{exists:false}, updateTransforms:[{fieldPath:'createdAt',setToServerValue:'REQUEST_TIME'},{fieldPath:'updatedAt',setToServerValue:'REQUEST_TIME'}]}]}, s);
+      if (attachments.length) fields.imageIds = {arrayValue:{values:attachments.map(a => str(a.id))}};
+      const writes = [{update:{name:root + '/feedback/' + submitId, fields}, currentDocument:{exists:false}, updateTransforms:[{fieldPath:'createdAt',setToServerValue:'REQUEST_TIME'},{fieldPath:'updatedAt',setToServerValue:'REQUEST_TIME'}]}];
+      for (const image of attachments) writes.push({update:{name:root + '/feedback/' + submitId + '/images/' + image.id,fields:{authorId:str(s.uid),name:str(image.name),dataUrl:str(image.dataUrl)}},currentDocument:{exists:false},updateTransforms:[{fieldPath:'createdAt',setToServerValue:'REQUEST_TIME'}]});
+      await db(':commit', {writes}, s);
       if (!stillCurrent(s)) return;
-      draft = {title:'',body:'',category:categories[0]}; submitId = null;
+      draft = {title:'',body:'',category:categories[0]}; submitId = null; attachments = [];
       message = '피드백이 접수되었습니다.';
       await load(false);
     });
@@ -3604,7 +3708,7 @@ async function boot() {
     });
   }
   async function open(admin) {
-    if (busy) return;
+    if (busy || preparing) return;
     $(admin ? '#tab-feedback' : '#tab-feedback-admin').innerHTML = '';
     adminView = !!admin; rows = []; cursor = null; more = false;
     return action(() => load(false));
@@ -3612,10 +3716,19 @@ async function boot() {
   function signOut() {
     generation++; session = null; pending = null; rows = []; cursor = null; more = false; busy = false;
     draft = {title:'',body:'',category:categories[0]}; submitId = null; message = '';
+    attachments = []; preparing = false; imageCache.clear();
+    const dialog = $('#fbImageDialog'); if (dialog) { dialog.close(); dialog.remove(); }
     $('[data-tab="feedback-admin"]').hidden = true;
     $('#tab-feedback-admin').innerHTML = ''; $('#tab-feedback').innerHTML = '';
   }
-  window.FEEDBACK = {open, signOut};
+  function hasWork() {
+    return busy || preparing || attachments.length > 0 || !!(draft.title.trim() || draft.body.trim())
+      || Array.from(document.querySelectorAll('[data-fb-item]')).some(f => {
+        const row = rows.find(r => r.name === f.dataset.fbItem);
+        return row && (f.elements.reply.value !== row.reply || f.elements.status.value !== row.status);
+      });
+  }
+  window.FEEDBACK = {open, signOut, busy:hasWork};
   // Check role after calendar boot so the management tab is visible to the administrator.
   if (ready() && valid()) authenticate().catch(() => {});
   const style = document.createElement('style');
@@ -3641,6 +3754,13 @@ async function boot() {
     .fb-wrap button{flex-shrink:0;max-width:100%;height:auto;min-height:40px;line-height:1.65;white-space:normal;overflow-wrap:anywhere}
     .fb-wrap fieldset:disabled{opacity:1}
     .fb-wrap fieldset:disabled :is(input,select,textarea){color:var(--sub);background:#f5f8f6;opacity:1}
+    .fb-images{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:12px;margin:12px 0}
+    .fb-images figure{min-width:0;margin:0;border:1px solid var(--line);border-radius:10px;padding:10px;overflow-wrap:anywhere}
+    .fb-images img{display:block;max-width:100%;width:100%;height:140px;object-fit:contain;background:#f5f8f6}
+    .fb-images figcaption{font-size:12px;line-height:1.6;margin:8px 0;overflow-wrap:anywhere}
+    .fb-images figure>button:has(img){width:100%;padding:0;background:transparent}
+    #fbImageDialog{max-width:min(94vw,1100px);max-height:92vh;padding:20px;overflow:auto;border:1px solid var(--line);border-radius:14px}
+    #fbImageDialog img{display:block;max-width:100%;height:auto}#fbImageDialog p{overflow-wrap:anywhere}
     @media(max-width:560px){.fb-wrap{padding:18px 16px}.fb-wrap fieldset{padding:14px 12px}.fb-heading>div{flex-basis:100%}.fb-wrap .f>input,.fb-wrap .f>select,.fb-wrap .f>textarea{padding:8px 10px}}
   `;
   document.head.appendChild(style);
@@ -4146,6 +4266,7 @@ window.VHM_PUBLIC_REFERRALS = {"datasetId": "vhm-link-research-2026-11-15", "sch
       if (t.dataset.dl) { const [sid, i] = t.dataset.dl.split(':'); const s = L.data.services.find(x => x.id === sid); const fm = s && s.forms[+i];
         if (fm) { t.disabled = true; try { await run('내려받는 중…', () => call('downloadForm', fm.fileId, fm.name)); } catch (e) {} t.disabled = false; } return; }
       if (t.dataset.sched) { const s = serviceByKey(t.dataset.sched);
+        if (window.FEATURES && !FEATURES.enabled('cal')) { toast('설정에서 일정 기능을 켠 뒤 연계 일정을 등록해 주세요.'); return; }
         showTab('cal'); openEvent(null, { kind: 'work', type: '연계', status: '예정', memo: ('연계: ' + s.name + (s.org ? ' (' + s.org + ')' : '')).slice(0, 500) }); return; }
       // 요구 항목 편집
       if (t.dataset.additem != null) { syncNeedInputs(); L.data.categories[+t.dataset.additem].items.push({ id: uid(), label: '새 항목' }); render(); return; }
@@ -5250,6 +5371,61 @@ window.VHM_SUPPS = [
   window.addEventListener('beforeunload', e => { if (A.busy) { e.preventDefault(); e.returnValue = ''; } });
   function reset() { A.folderId = null; A.files = []; if (A.built) { const l = el('arList'); if (l) l.innerHTML = ''; } }
   window.ARCHIVE = { open, reset, busy: () => A.busy > 0, _state: A };
+})();
+
+</script>
+<script>
+/* Feature visibility is local to this browser and Google account. Never deletes data. */
+(function () {
+  'use strict';
+  const items = [
+    ['cal','일정','업무·개인 일정과 실적'],
+    ['note','상담 메모','상담 메모 작성과 복사'],
+    ['link','연계 안내','지원 서비스 검색과 개인 목록'],
+    ['box','보관함','Google Drive 임시 파일 보관'],
+    ['edu','교육자료','질환별 안내문과 인쇄 자료'],
+    ['feedback','피드백','의견 접수와 처리 상태 확인']
+  ];
+  let account = '', prefs = {}, notice = '';
+  const key = () => 'vhm-features:v1:' + encodeURIComponent(account || 'guest');
+  const enabled = id => !items.some(x => x[0] === id) || prefs[id] !== false;
+  function destination(id) { return enabled(id) ? id : (items.find(x => enabled(x[0])) || ['set'])[0]; }
+  function apply() {
+    for (const [id] of items) {
+      const b = document.querySelector('[data-tab="' + id + '"]');
+      if (b) b.hidden = !enabled(id);
+    }
+    const selected = document.querySelector('.tabs [aria-selected="true"]');
+    if (selected && !enabled(selected.dataset.tab)) showTab(destination(selected.dataset.tab));
+  }
+  function render() {
+    const el = document.getElementById('featureSettings'); if (!el) return;
+    el.innerHTML = '<h3>사용할 기능</h3><p class="hint">사용하지 않는 기능은 메뉴에서 숨길 수 있습니다. 다시 켜면 그대로 이용할 수 있으며 저장된 데이터는 삭제되지 않습니다.</p><p class="hint">이 브라우저에서 ' + (account ? '로그인 계정별로' : '로그인 전 설정으로') + ' 저장됩니다. 설정 메뉴는 항상 표시됩니다.</p><div class="feature-list">' + items.map(([id,label,desc]) => '<label class="feature-row"><span><b>' + label + '</b><span class="hint">' + desc + '</span></span><span class="feature-control"><span data-feature-state="' + id + '">' + (enabled(id) ? '켜짐' : '꺼짐') + '</span><input type="checkbox" role="switch" data-feature="' + id + '" aria-label="' + label + ' 기능" ' + (enabled(id) ? 'checked' : '') + '><span class="feature-track" aria-hidden="true"></span></span></label>').join('') + '</div><p id="featureNotice" class="hint" role="status"></p>';
+    document.getElementById('featureNotice').textContent = notice;
+    el.querySelectorAll('[data-feature]').forEach(input => input.onchange = () => {
+      const id = input.dataset.feature, previous = prefs[id]; prefs[id] = input.checked;
+      try { localStorage.setItem(key(), JSON.stringify(prefs)); notice = '기능 설정을 저장했습니다.'; }
+      catch (_) { prefs[id] = previous; notice = '이 브라우저에서 설정을 저장할 수 없습니다. 저장 공간과 브라우저 설정을 확인해 주세요.'; }
+      apply(); render();
+      const replacement = el.querySelector('[data-feature="' + id + '"]'); if (replacement) replacement.focus();
+    });
+  }
+  function setAccount(email) {
+    account = String(email || '').trim().toLowerCase(); prefs = {}; notice = '';
+    try { const data = JSON.parse(localStorage.getItem(key()) || '{}'); if (data && typeof data === 'object' && !Array.isArray(data)) for (const [id] of items) if (typeof data[id] === 'boolean') prefs[id] = data[id]; } catch (_) {}
+    apply(); render();
+  }
+  const style = document.createElement('style');
+  style.textContent = '.feature-settings{margin:0 0 24px;padding-bottom:20px;border-bottom:1px solid var(--line)}.feature-list{display:grid;gap:0}.feature-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid var(--line);cursor:pointer;min-width:0}.feature-row>span:first-child{min-width:0;overflow-wrap:anywhere}.feature-row .hint{display:block;margin-top:3px}.feature-control{display:flex;align-items:center;gap:8px;position:relative;flex:none;font-size:12px;color:var(--sub)}.feature-control input{position:absolute;right:0;width:44px;height:26px;margin:0;opacity:0;cursor:pointer;z-index:1}.feature-track{display:block;width:44px;height:26px;border:1px solid #84968e;border-radius:20px;background:#7d8d85;pointer-events:none;position:relative}.feature-track:after{content:"";position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform .15s}.feature-control input:checked+.feature-track{background:var(--accent);border-color:var(--accent)}.feature-control input:checked+.feature-track:after{transform:translateX(18px)}.feature-control input:focus-visible+.feature-track{outline:3px solid #78bba7;outline-offset:3px}.tabs button[hidden]{display:none}';
+  document.head.appendChild(style);
+  const connect = document.getElementById('featuresConnect');
+  if (connect) {
+    connect.disabled = !(window.VHM_CONFIG && VHM_CONFIG.clientId);
+    connect.onclick = () => VHM_AUTH.request('base');
+  }
+  window.FEATURES = {enabled, destination, setAccount};
+  let email = ''; try { if (window.VHM_AUTH && VHM_AUTH.valid()) email = localStorage.getItem('vhm-email') || ''; } catch (_) {}
+  setAccount(email);
 })();
 
 </script>

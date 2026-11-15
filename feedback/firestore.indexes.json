@@ -7,5 +7,5 @@
       {"fieldPath": "createdAt", "order": "DESCENDING"}
     ]
   }],
-  "fieldOverrides": []
+  "fieldOverrides": [{"collectionGroup":"images","fieldPath":"dataUrl","indexes":[]}]
 }
