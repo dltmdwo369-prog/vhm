@@ -94,6 +94,12 @@
     }
     return {data:out,added,duplicates,missing:Array.from(missing)};
   }
+  function attachmentState(s, research) {
+    const attached = (s.forms || []).some(f => f && f.fileId && (!f.type || f.type === 'file'));
+    if (attached) return {...s,verificationStatus:'consultable',_attachmentReady:true};
+    if (s.attachmentReviewEnabled || (research && research.verificationStatus === 'needs_contact')) return {...s,verificationStatus:'needs_contact',_attachmentReady:false};
+    return {...s,_attachmentReady:false};
+  }
   function intake(s) {
     if (s.verificationStatus === 'needs_contact') return 'unknown';
     const t = text(s.intakeStatus);
@@ -118,5 +124,5 @@
     if (/등록장애인/.test(t)) out.push('disabled');
     return out.length ? out : ['unknown'];
   }
-  window.VHM_REFERRALS = {clone,key,needsKey,safeUrl,service,migrate,routes,mapNeeds,identity,isDuplicate,mergeCatalog,intake,intakeLabels,groups,groupLabels,refinedGroups,refinedHits,groupedNeeds,expandNeedSelection};
+  window.VHM_REFERRALS = {clone,key,needsKey,safeUrl,service,migrate,routes,mapNeeds,identity,isDuplicate,mergeCatalog,intake,intakeLabels,groups,groupLabels,refinedGroups,refinedHits,groupedNeeds,expandNeedSelection,attachmentState};
 })();

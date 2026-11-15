@@ -29,7 +29,7 @@ function api(method, url, headers, buf) {
     return [200, { files: G.files.filter(f => !f.trashed && f.name === name && (!mime || f.mimeType === mime) && (!par || f.parents.includes(par))).map(f => ({ id: f.id, name: f.name, modifiedTime: f.modifiedTime, mimeType: f.mimeType })) }];
   }
   if (p === '/drive/v3/files' && method === 'POST') { const md = json(); const f = { id: nid('f'), name: md.name, mimeType: md.mimeType, parents: md.parents || [], modifiedTime: nowIso(), content: Buffer.alloc(0) }; G.files.push(f); return [200, { id: f.id }]; }
-  if (p === '/upload/drive/v3/files' && method === 'POST') { const mp = parseMultipart(buf, headers['content-type']);
+  if (p === '/upload/drive/v3/files' && method === 'POST') { if (G.failUpload) { G.failUpload=false; return [503,{error:{message:'mock upload failed'}}]; } const mp = parseMultipart(buf, headers['content-type']);
     const f = { id: nid('f'), name: mp.meta.name, mimeType: mp.meta.mimeType || 'application/octet-stream', parents: mp.meta.parents || [], modifiedTime: nowIso(), content: mp.content }; G.files.push(f);
     return [200, { id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modifiedTime, webViewLink: 'https://drive.google.com/file/d/' + f.id + '/view' }]; }
   if ((m = /^\/upload\/drive\/v3\/files\/([^/]+)$/.exec(p)) && method === 'PATCH') { const f = G.files.find(x => x.id === m[1]); if (f.name === 'vhm-links.json' && G.conflictOnPatch) { G.conflictOnPatch = false; f.modifiedTime = 'race-' + (++seq); return [412, {error:{message:'revision changed'}}]; } if (f.name === 'vhm-links.json' && headers['if-match'] !== '"' + f.modifiedTime + '"') return [412,{error:{message:'etag mismatch'}}]; f.content = buf; f.modifiedTime = nowIso(); return [200, { id: f.id, modifiedTime: f.modifiedTime }]; }
@@ -257,6 +257,54 @@ const server = http.createServer((req, res) => {
   await p2.click('[data-lkview="io"]');
   await p2.setInputFiles('#lkFile',{name:'mock-restore.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(withReview))}); await idle(p2);
   check('백업 복원 시 새 메타데이터·확인 기록 왕복', JSON.parse(lf.content).catalogReviews['smile-dental'].checkedAt === '2026-11-15' && JSON.parse(lf.content).services.find(s => s.catalogId === 'eye-surgery').officialGuideUrl === imported.officialGuideUrl);
+  // Evidence attachments complete only this account's pending workflow.
+  const evidenceFile={name:'mock-official-letter.pdf',mimeType:'application/pdf',buffer:Buffer.from('synthetic blank official form')};
+  const uploadInEditor=async(file=evidenceFile)=>{
+    await p2.setInputFiles('#svcFile',file);
+    await p2.waitForFunction(()=>document.querySelector('#svcUploadStatus').textContent.startsWith('파일 업로드 완료'));
+    await p2.waitForFunction(()=>!document.querySelector('#svcSave').disabled);
+  };
+  await p2.click('[data-lkview="pending"]');
+  await p2.locator('#tab-link [data-attach="personal:catalog-copy-smile-dental"]').click();
+  const originalPending=Buffer.from(lf.content);
+  await uploadInEditor();
+  check('파일 업로드만 하고 저장 전이면 원격 목록·상태는 그대로', originalPending.equals(lf.content));
+  await p2.click('#svcDlg [data-close]');
+  check('업로드 후 편집 취소 시 확인 대기 유지', originalPending.equals(lf.content) && !!(await p2.$('#tab-link [data-attach="personal:catalog-copy-smile-dental"]')));
+  await p2.locator('#tab-link [data-attach="personal:catalog-copy-smile-dental"]').click();await uploadInEditor();
+  G.omitEtag=true;await p2.click('#svcSave');await p2.waitForFunction(()=>!document.querySelector('#svcSave').disabled);
+  check('메타데이터 저장 실패면 파일이 있어도 완료 상태로 표시하지 않음', originalPending.equals(lf.content) && await p2.evaluate(()=>!VHM_REFERRALS.attachmentState(LINKS._state.data.services.find(s=>s.catalogId==='smile-dental'),VHM_PUBLIC_REFERRALS.services.find(s=>s.id==='smile-dental'))._attachmentReady));
+  G.omitEtag=false;await p2.click('#svcSave');await p2.waitForSelector('#svcDlg:not([open])',{state:'attached'});
+  check('첨부 저장으로 개인 확인 대기 해제, 공개 원본 상태·연락처·의뢰 요건 보존', !(await p2.$('#tab-link [data-attach="personal:catalog-copy-smile-dental"]')) && await p2.evaluate(()=>VHM_PUBLIC_REFERRALS.services.find(s=>s.id==='smile-dental').verificationStatus==='needs_contact') && JSON.parse(lf.content).services.find(s=>s.catalogId==='smile-dental').referralCode===4);
+  await p2.click('[data-lkview="list"]');await p2.fill('#lkQ','스마일재단');await p2.click('[data-detail="personal:catalog-copy-smile-dental"]');
+  check('자료 등록 완료는 공식 검증과 구분해 표시', /개인 자료 등록 완료 \(공식 검증 아님\)/.test(await p2.textContent('#referralBody')) && /미확인/.test(await p2.textContent('#referralBody')));
+  const [evidenceDownload]=await Promise.all([p2.waitForEvent('download'),p2.locator('#referralBody [data-dl]').click()]);
+  check('공문·양식 내려받기 내용 보존', fs.readFileSync(await evidenceDownload.path(),'utf8')==='synthetic blank official form');
+  await p2.click('[data-refclose="referralDlg"]');await p2.click('[data-edit="catalog-copy-smile-dental"]');
+  const trashBefore=G.log.filter(x=>x.startsWith('PATCH /drive')).length;
+  await p2.click('[data-rmform="0"]');await p2.click('#svcSave');await p2.waitForSelector('#svcDlg:not([open])',{state:'attached'});
+  check('마지막 파일 연결 제거 시 확인 대기로 복귀, 파일을 원격 삭제하지 않음', await p2.evaluate(()=>!VHM_REFERRALS.attachmentState(LINKS._state.data.services.find(s=>s.catalogId==='smile-dental'),VHM_PUBLIC_REFERRALS.services.find(s=>s.id==='smile-dental'))._attachmentReady) && G.log.filter(x=>x.startsWith('PATCH /drive')).length===trashBefore);
+  await p2.click('#lkFilterClear');await p2.click('#lkAdd');
+  await uploadInEditor({name:'synthetic-new-service.hwp',mimeType:'application/octet-stream',buffer:Buffer.from('synthetic blank hwp placeholder')});
+  check('개인 서비스는 파일만 첨부해도 이름 자동 입력', await p2.inputValue('#svcForm [name=name]')==='synthetic-new-service');
+  await p2.click('#svcSave');await p2.waitForSelector('#svcDlg:not([open])',{state:'attached'});
+  const newService=JSON.parse(lf.content).services.find(s=>s.name==='synthetic-new-service');
+  check('추가 필수 조건 없이 파일만으로 개인 등록 완료·스키마 보존', newService.forms[0].fileId && newService.attachmentReviewEnabled && newService.attachmentRegisteredAt && await p2.evaluate(id=>VHM_REFERRALS.attachmentState(LINKS._state.data.services.find(s=>s.id===id))._attachmentReady,newService.id));
+  await p2.click('#lkAdd');G.failUpload=true;
+  await p2.setInputFiles('#svcFile',evidenceFile);await p2.waitForFunction(()=>document.querySelector('#svcUploadStatus').textContent.startsWith('업로드 실패'));
+  await p2.fill('#svcForm [name=name]','mock-upload-failed');await p2.click('#svcSave');await p2.waitForSelector('#svcDlg:not([open])',{state:'attached'});
+  check('업로드 실패 후에는 등록 완료로 처리하지 않음', await p2.evaluate(()=>{const s=LINKS._state.data.services.find(s=>s.name==='mock-upload-failed');return !s.forms.length && VHM_REFERRALS.attachmentState(s).verificationStatus==='needs_contact';}));
+  await p2.click('#lkAdd');await p2.fill('#svcForm [name=name]','mock-link-only');await p2.fill('#svcLinkUrl','https://example.org/guide');await p2.click('#svcAddLink');await p2.click('#svcSave');await p2.waitForSelector('#svcDlg:not([open])',{state:'attached'});
+  check('링크만 등록한 새 개인 서비스는 확인 필요 유지', await p2.evaluate(()=>VHM_REFERRALS.attachmentState(LINKS._state.data.services.find(s=>s.name==='mock-link-only')).verificationStatus==='needs_contact'));
+  await p2.click('[data-lkview="pending"]');await p2.locator('#tab-link [data-attach="public:boas-dental"]').click();await uploadInEditor();await p2.click('#svcSave');await p2.waitForSelector('#svcDlg:not([open])',{state:'attached'});
+  const boas=JSON.parse(lf.content).services.filter(s=>s.catalogId==='boas-dental');
+  check('공개 확인 필요 사업에도 직접 첨부 가능, 개인 복사본 1개로 보존', boas.length===1 && boas[0].catalogVersion && boas[0].forms[0].fileId && boas[0].catalogNeedLabels.includes('구강 문제'));
+  await p2.click('[data-lkview="list"]');await p2.fill('#lkQ','보아스');await p2.locator('#tab-link [data-attach="personal:'+boas[0].id+'"]').click();await p2.click('#svcSave');await p2.waitForSelector('#svcDlg:not([open])',{state:'attached'});
+  check('자료 재저장에도 동일 사업 중복 생성 없음', JSON.parse(lf.content).services.filter(s=>s.catalogId==='boas-dental').length===1);
+  const p3=await newPage(true);await openLinks(p3);
+  check('다른 기기에서도 첨부·등록 완료 상태 복원', await p3.evaluate(id=>{const s=LINKS._state.data.services.find(s=>s.catalogId===id);return s.forms[0].fileId && VHM_REFERRALS.attachmentState(s,VHM_PUBLIC_REFERRALS.services.find(s=>s.id===id))._attachmentReady;},'boas-dental'));
+  await p3.context().close();
+
   await p2.click('[data-tab="set"]'); await p2.click('#btnSignOut'); await p2.click('[data-tab="link"]');
   check('연결 해제 시 개인 목록과 요구 체크 초기화, 공개자료 유지', await p2.evaluate(() => !LINKS._state.personalLoaded && LINKS._state.data.services.length === 0 && LINKS._state.checks.size === 0) && /공개자료 69건/.test(await p2.textContent('#tab-link')));
 

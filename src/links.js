@@ -45,24 +45,27 @@
     } finally { if (epoch === L.epoch) { L.loading = false; render(); } }
   }
 
-  async function save(msg) {
+  async function save(msg, data = L.data) {
     if (!L.personalLoaded) { alert('먼저 개인 목록을 불러오세요. 공개자료는 연결 없이 볼 수 있습니다.'); return false; }
-    L.data.updatedAt = new Date().toISOString();
-    let r = await run('드라이브에 저장 중…', () => call('linksSave', L.data, L.modified, false));
+    const epoch = L.epoch; data.updatedAt = new Date().toISOString();
+    let r = await run('드라이브에 저장 중…', () => call('linksSave', data, L.modified, false));
+    if (epoch !== L.epoch) return false;
     if (r.conflict) {
       const pick = await choose('다른 기기에서 먼저 바뀌었습니다', '<p>이 목록을 연 뒤 다른 기기(휴대폰 등)에서 연계 목록이 수정되었습니다.</p><p class="hint"><b>다시 불러오기</b>: 방금 바꾼 내용은 버리고 최신 목록을 엽니다.<br>다른 기기의 변경을 보호하기 위해 최신 목록을 불러온 뒤 다시 수정합니다.</p>',
         [{ label: '다시 불러오기', value: 'reload' }]);
       await load(); return false;
     }
-    L.modified = r.modifiedTime; if (msg) toast(msg); return true;
+    L.data = data; L.modified = r.modifiedTime; if (msg) toast(msg); return true;
   }
 
   /* ---------- 화면 ---------- */
   function render() {
     if (!L.loaded) return;
     const counts = PUBLIC.reduce((a,s) => { a[s.verificationStatus] = (a[s.verificationStatus] || 0) + 1; return a; }, {});
-    const tabs = [['match','요구 체크 → 추천'],['list','서비스 목록'],['pending','담당기관 확인 필요 (' + (counts.needs_contact || 0) + ')'],['needs','요구 항목'],['io','가져오기·백업']];
-    box().innerHTML = '<div class="lk-summary"><h2>강서구 연계 안내</h2><p>공개자료 ' + PUBLIC.length + '건 · 상담 및 연계 가능 <b>' + (counts.consultable || 0) + '</b>건 · 담당기관 확인 필요 <b>' + (counts.needs_contact || 0) + '</b>건</p><p class="hint">자료 기준 ' + esc(CATALOG.checkedAt) + ' · <b>상담 및 연계 가능 ≠ 현재 접수 중·지원 확정</b><br>조사자료에 기재된 안내입니다. 접수·예산·대상 자격은 의뢰 전 담당기관에 확인하세요.</p></div>'
+    const personalReady = allServices().filter(s => s._attachmentReady).length;
+    const pendingCount = allServices().filter(s => s.verificationStatus === 'needs_contact').length;
+    const tabs = [['match','요구 체크 → 추천'],['list','서비스 목록'],['pending','담당기관 확인 필요 (' + pendingCount + ')'],['needs','요구 항목'],['io','가져오기·백업']];
+    box().innerHTML = '<div class="lk-summary"><h2>강서구 연계 안내</h2><p>공개자료 ' + PUBLIC.length + '건 · 상담 및 연계 가능 <b>' + (counts.consultable || 0) + '</b>건 · 담당기관 확인 필요 <b>' + (counts.needs_contact || 0) + '</b>건 (공개 원본 기준)</p><p>내 자료 등록 완료 ' + personalReady + '건 · 내 확인 대기 ' + pendingCount + '건</p><p class="hint">자료 기준 ' + esc(CATALOG.checkedAt) + ' · <b>상담 및 연계 가능 ≠ 현재 접수 중·지원 확정</b><br>조사자료에 기재된 안내입니다. 접수·예산·대상 자격은 의뢰 전 담당기관에 확인하세요.</p></div>'
       + '<div class="lk-bar row"><div class="seg" role="tablist" aria-label="연계 안내 보기">' + tabs.map(t => '<button data-lkview="' + t[0] + '" aria-pressed="' + (L.view === t[0]) + '">' + t[1] + '</button>').join('') + '</div></div>'
       + '<div class="lk-personal row"><span>' + (L.personalLoaded ? '개인 Drive 목록 ' + L.data.services.length + '건 · 공개자료와 별도 보관' : '공개자료는 로그인 없이 이용 가능합니다. 개인 Drive 목록은 별도로 불러옵니다.') + '</span><button class="small" id="lkDrive">' + (L.personalLoaded ? '개인 목록 다시 불러오기' : '개인 목록·드라이브 연결') + '</button><span role="status">' + esc(L.notice) + '</span></div>'
       + '<div class="hint lk-special">2026년 안내: 강서구 일상돌봄은 예산 소진으로 대기 신청만 가능 · 이동푸드마켓은 미운영(별도 신청 불가) · 그냥드림은 신규 운영 안내(당일 수량 확인).</div>'
@@ -72,7 +75,7 @@
   function allServices() {
     const personal = L.data.services.map(s => {
       const research = PUBLIC.find(p => p.id === s.catalogId || M.identity(p) === M.identity(s));
-      return Object.assign({},s,{_personal:true,_key:'personal:' + s.id},research && research.verificationStatus === 'needs_contact' ? {verificationStatus:'needs_contact'} : {});
+      return Object.assign(M.attachmentState(s,research),{_personal:true,_key:'personal:' + s.id});
     });
     return personal.concat(PUBLIC.filter(s => !M.isDuplicate(s, personal)).map(s => Object.assign({}, s, {_key:'public:' + s.id})));
   }
@@ -99,10 +102,11 @@
   function formButtons(s) {
     if (!s.forms.length) return '<span class="hint">' + esc(s.formsNote || '담당기관에 최신 양식 요청') + '</span>';
     return s.forms.map((f,i) => f.fileId
-      ? '<span class="lk-form">📄 ' + esc(f.name) + ' <button class="small" data-dl="' + esc(s.id) + ':' + i + '">내려받기</button>' + (f.link ? link(f.link,'드라이브에서 열기') : '') + '</span>'
+      ? '<span class="lk-form">📄 <span class="lk-form-name">' + esc(f.name) + '</span> <button class="small" data-dl="' + esc(s.id) + ':' + i + '">내려받기</button>' + (f.link ? link(f.link,'드라이브에서 열기') : '') + '</span>'
       : '<span class="lk-form">' + link(f.url, (f.type === 'official_attachment_page' ? '서식 게시 페이지: ' : '') + f.name) + '</span>').join('');
   }
-  function badges(s) { return '<span class="badge">' + (s._personal ? '개인 목록' : '공개 조사자료') + '</span> <span class="badge">' + esc(s.verificationStatus === 'needs_contact' ? '담당기관 확인 필요' : s.verificationStatus === 'consultable' ? '상담 및 연계 가능' : '개인 등록·검증 미확인') + '</span> <span class="badge">' + esc(M.intakeLabels[M.intake(s)]) + '</span>'; }
+  function verificationLabel(s) { return s._attachmentReady ? '개인 자료 등록 완료 (공식 검증 아님)' : s.verificationStatus === 'needs_contact' ? '담당기관 확인 필요' : s.verificationStatus === 'consultable' ? '상담 및 연계 가능' : '개인 등록·검증 미확인'; }
+  function badges(s) { return '<span class="badge">' + (s._personal ? '개인 목록' : '공개 조사자료') + '</span> <span class="badge">' + esc(verificationLabel(s)) + '</span> <span class="badge">' + esc(M.intakeLabels[M.intake(s)]) + '</span>'; }
   function serviceCard(s, hit) {
     return '<article class="lk-svc"><div class="lk-svc-h"><div><b class="lk-name">' + esc(s.name) + '</b><p class="hint">' + esc(s.org) + '</p></div><span class="lk-score">' + hit.length + '개 해당</span></div><div>' + badges(s) + '</div><p class="lk-chips">' + hit.map(n => '<span class="lk-chip">' + esc(n) + '</span>').join('') + '</p><p><b>검토 후보</b> · 대상 조건: ' + esc(s.conditions || '미확인') + '</p><p>' + esc(M.routes[s.referralCode] || M.routes[4]) + '</p><p class="hint">접수: ' + esc(s.intakeStatus || '미확인') + '</p>' + formButtons(s) + '<div class="row"><button class="small" data-detail="' + esc(s._key) + '">전체 조건·근거 보기</button><button class="small" data-sched="' + esc(s._key) + '">연계 일정 등록</button></div></article>';
   }
@@ -138,7 +142,7 @@
       + [['field','분야',Object.fromEntries(FIELDS.map(x => [x,x]))],['group','대상 자격',M.groupLabels],['route','의뢰 방식',M.routes],['intake','접수 상태',M.intakeLabels],['source','자료 출처',{public:'공개자료',personal:'개인 목록'}]].map(([k,label,values]) => '<label>' + label + '<select data-lkfilter="' + k + '">' + options(values,f[k],label + ' 전체') + '</select></label>').join('')
       + '<button id="lkFilterClear">필터 초기화</button></div><div class="row"><b role="status">검색 결과 ' + list.length + '건</b><button class="primary" id="lkAdd">+ 개인 서비스 추가</button></div>'
       + '<div class="lk-list">' + list.slice(0,L.listLimit).map(s => '<article class="lk-row"><div><button class="link lk-title" data-detail="' + esc(s._key) + '">' + esc(s.name) + '</button><p class="hint">' + esc(s.org) + ' · ' + esc(s.field) + '</p><div>' + badges(s) + '</div><p>대상 조건: ' + esc(s.conditions || '미확인') + '</p><p>' + esc(M.routes[s.referralCode] || M.routes[4]) + '</p><p class="hint">접수: ' + esc(s.intakeStatus || '미확인') + '</p>'
-      + (s._personal ? '<button class="small" data-edit="' + esc(s.id) + '">개인 서비스 수정</button>' : '') + '</div></article>').join('') + (list.length ? '' : '<p class="empty">검색 결과가 없습니다.</p>') + '</div>' + (list.length > L.listLimit ? '<button id="lkShowMore">더 보기 (' + Math.min(L.listLimit,list.length) + '/' + list.length + ')</button>' : '');
+      + '<button class="small" data-attach="' + esc(s._key) + '">공문·양식 업로드</button> ' + (s._personal ? '<button class="small" data-edit="' + esc(s.id) + '">개인 서비스 수정</button>' : '') + '</div></article>').join('') + (list.length ? '' : '<p class="empty">검색 결과가 없습니다.</p>') + '</div>' + (list.length > L.listLimit ? '<button id="lkShowMore">더 보기 (' + Math.min(L.listLimit,list.length) + '/' + list.length + ')</button>' : '');
   }
 
   function needsHtml() {
@@ -217,11 +221,16 @@
 
   /* ---------- 서비스 편집 ---------- */
   function openSvc(s) {
-    L.editing = s ? JSON.parse(JSON.stringify(s)) : { id: '', name: '', org: '', field: '복지', needs: [], conditions: '', contact: '', apply: '', docs: '', memo: '', forms: [] };
+    L.editing = s ? JSON.parse(JSON.stringify(s)) : { id: '', name: '', org: '', field: '복지', needs: [], conditions: '', contact: '', apply: '', docs: '', memo: '', forms: [], verificationStatus:'needs_contact', attachmentReviewEnabled:true };
+    if (L.editing.forms.some(f => f.fileId)) L.editing.attachmentReviewEnabled = true;
     L.pendingForms = [];
     const e = L.editing, f = $('#svcForm');
-    $('#svcTitle').textContent = s ? '서비스 수정' : '서비스 추가';
+    $('#svcTitle').textContent = s && s.id ? '서비스 수정' : '개인 서비스·자료 추가';
     f.innerHTML = '<div class="form-grid">'
+      + '<div class="full"><div class="hint" style="margin-bottom:4px">공문·신청양식 (파일당 20MB 이하, 개인 Drive 저장; 링크만 등록하면 확인 대기는 유지)</div><div id="svcForms"></div>'
+      + '<div class="row" style="margin-top:6px"><button type="button" class="small" id="svcAddFile">공문·양식 파일 첨부</button><input type="file" id="svcFile" multiple hidden>'
+      + '<input id="svcLinkName" placeholder="링크 이름" style="width:130px"><input id="svcLinkUrl" placeholder="https://..." style="flex:1;min-width:140px"><button type="button" class="small" id="svcAddLink">링크 추가</button></div></div>'
+      + '<p class="full hint" id="svcUploadStatus" role="status">공문·빈 신청양식 파일을 첨부한 뒤 저장하면 내 확인 대기가 해제됩니다. 서비스명은 비어 있으면 파일명으로 채웁니다. 추천에 사용하려면 해당 요구도 선택하세요.</p>'
       + '<label class="f">서비스명<input name="name" maxlength="80" required value="' + esc(e.name) + '"></label>'
       + '<label class="f">기관<input name="org" maxlength="80" value="' + esc(e.org) + '"></label>'
       + '<label class="f">분야<select name="field">' + FIELDS.map(x => '<option' + (x === e.field ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label><div></div>'
@@ -232,27 +241,43 @@
       + '<label class="f">신청 방법<input name="apply" value="' + esc(e.apply) + '" placeholder="예: 주민센터 방문 신청"></label>'
       + '<label class="f full">필요 서류<textarea name="docs" rows="2">' + esc(e.docs) + '</textarea></label>'
       + '<label class="f full">메모<textarea name="memo" rows="2">' + esc(e.memo) + '</textarea></label>'
-      + '<div class="full"><div class="hint" style="margin-bottom:4px">양식 (파일은 드라이브에 올라가고, 링크는 신청 페이지 주소)</div><div id="svcForms"></div>'
-      + '<div class="row" style="margin-top:6px"><button type="button" class="small" id="svcAddFile">파일 첨부</button><input type="file" id="svcFile" multiple hidden>'
-      + '<input id="svcLinkName" placeholder="링크 이름" style="width:130px"><input id="svcLinkUrl" placeholder="https://..." style="flex:1;min-width:140px"><button type="button" class="small" id="svcAddLink">링크 추가</button></div></div>'
-      + '<div class="full warnbox">서비스 목록에는 기관 정보만 넣습니다. 대상자 이름·연락처는 넣지 마세요.</div></div>';
-    renderForms(); $('#svcDelete').hidden = !s; $('#svcDlg').showModal();
+      + '<div class="full warnbox">서비스 목록에는 기관 정보만 넣습니다. 대상자 이름·연락처는 넣지 마세요. 작성된 대상자 서류 대신 개인정보 없는 공문·빈 양식만 첨부하세요.</div></div>';
+    renderForms(); $('#svcDelete').hidden = !s || !s.id; $('#svcDlg').showModal();
   }
   function renderForms() {
     const e = L.editing;
-    $('#svcForms').innerHTML = e.forms.length ? e.forms.map((f, i) => '<div class="lk-form">' + (f.type === 'file' ? '📄 ' : '🔗 ') + esc(f.name) + ' <button type="button" class="small link" data-rmform="' + i + '">빼기</button></div>').join('') : '<span class="hint">없음</span>';
+    $('#svcForms').innerHTML = e.forms.length ? e.forms.map((f, i) => '<div class="lk-form">' + (f.type === 'file' ? '📄 ' : '🔗 ') + '<span class="lk-form-name">' + esc(f.name) + '</span> <button type="button" class="small link" data-rmform="' + i + '">빼기</button></div>').join('') : '<span class="hint">없음</span>';
   }
   async function saveSvc() {
     const f = $('#svcForm'), e = L.editing;
     const el = k => f.elements.namedItem(k);
-    e.name = el('name').value.trim(); if (!e.name) { alert('서비스명을 입력하세요.'); return; }
+    e.name = el('name').value.trim(); if (!e.name && e.forms.some(f => f.fileId)) e.name = ((e.forms.find(f => f.fileId) || {}).name || '').replace(/\.[^.]+$/, '').trim().slice(0,80) || '첨부 자료'; if (!e.name) { alert('서비스명을 입력하세요.'); return; }
     e.org = el('org').value.trim(); e.field = el('field').value; e.needs = $$('input[name=needs]:checked', f).map(x => x.value);
     ['conditions', 'contact', 'apply', 'docs', 'memo'].forEach(k => e[k] = el(k).value.trim());
-    const i = L.data.services.findIndex(s => s.id === e.id);
-    if (!e.id) { e.id = uid(); L.data.services.push(e); } else L.data.services[i] = e;
-    if (await save('저장했습니다.')) { $('#svcDlg').close(); render(); }
+    const next = M.clone(L.data); if (!e.id) e.id = uid();
+    const i = next.services.findIndex(s => s.id === e.id);
+    if (i < 0) next.services.push(M.clone(e)); else next.services[i] = M.clone(e);
+    $('#svcSave').disabled = true;
+    try {
+      if (await save(e.forms.some(f => f.fileId) ? '저장했습니다. 개인 자료 등록 완료로 처리했습니다.' : '저장했습니다.', next)) { $('#svcDlg').close(); render(); }
+    } catch (error) { alert('저장하지 못했습니다. 파일은 개인 Drive에 남아 있으며 다시 저장할 수 있습니다: ' + (error.message || error)); }
+    finally { $('#svcSave').disabled = false; }
+
   }
 
+  function openAttachments(k) {
+    if (!L.personalLoaded) { alert('개인 Drive에만 저장합니다. 먼저 개인 목록·드라이브 연결을 눌러주세요.'); return; }
+    const src = serviceByKey(k); if (!src) return;
+    let draft;
+    if (src._personal) draft = L.data.services.find(s => s.id === src.id);
+    else {
+      draft = M.service(src); draft.catalogId = src.id; draft.catalogVersion = CATALOG.datasetId;
+      draft.catalogNeedLabels = M.clone(src.needs); draft.needs = M.mapNeeds(src.needs,L.data.categories).ids;
+      draft.id = ''; draft.attachmentReviewEnabled = true;
+      delete draft._key; delete draft._personal; delete draft._attachmentReady;
+    }
+    if ($('#referralDlg').open) $('#referralDlg').close(); openSvc(draft);
+  }
   function detailRow(label, value) { return '<div class="lk-kv"><b>' + esc(label) + '</b><span>' + esc(value || '미확인').replace(/\n/g,'<br>') + '</span></div>'; }
   function showDetail(k) {
     const s = serviceByKey(k); if (!s) return;
@@ -262,7 +287,7 @@
       + detailRow('운영기관 / 분야',s.org + ' / ' + s.field)
       + detailRow('적용 지역',s.region || s.scope || (s._personal && !s.catalogId ? '' : CATALOG.scope + ' (세부 거주요건은 대상 조건·기관 확인)'))
       + detailRow('기준연도',s.referenceYear || (s.catalogId || !s._personal ? CATALOG.checkedAt.slice(0,4) + '년 조사자료 (현행 접수 보장 아님)' : ''))
-      + detailRow('검증 상태',s.verificationStatus === 'needs_contact' ? '담당기관 확인 필요' : s.verificationStatus === 'consultable' ? '상담 및 연계 가능' : '개인 등록·검증 미확인')
+      + detailRow('검증 상태',verificationLabel(s))
       + detailRow('접수 상태',s.intakeStatus) + detailRow('대상 조건',s.conditions)
       + detailRow('연령',s.ageConditions || '대상 조건에 기재된 연령을 확인; 별도 구조화 정보 없음')
       + detailRow('경제·보험·장애·질환',s.conditions) + detailRow('제외·중복·지원 범위',s.exceptionsAndNotes || s.memo)
@@ -273,8 +298,9 @@
       + '<div class="lk-kv"><b>공식 안내</b><span>' + (M.safeUrl(s.officialGuideUrl) ? link(s.officialGuideUrl,s.officialSourceTitle || '공식 안내 원문 (제목 미확인)') + '<br>' + esc(s.officialGuideUrl) : '미확인') + '</span></div>'
       + detailRow('근거 발행일',s.sourcePublishedDate) + detailRow('조사자료 확인일',s.checkedAt)
       + detailRow('요구 / 별칭',needLabels(s).join(', ') + ((s.aliases || []).length ? '\n별칭: ' + s.aliases.join(', ') : ''))
+      + '<div class="row"><button data-attach="' + esc(s._key) + '">공문·신청양식 업로드 / 관리</button></div><p class="hint">개인 Drive에 파일을 첨부하고 저장하면 내 확인 대기를 해제합니다. 실제 사업 운영·신청 자격의 공식 검증은 아닙니다.</p>'
       + (review ? detailRow('개인 확인 기록 (공개 분류 유지)',JSON.stringify(review,null,2)) : '')
-      + (s.verificationStatus === 'needs_contact' ? '<button data-review="' + esc(s.catalogId || s.id) + '">담당기관 확인 기록 수정</button>' : '');
+      + ((s.verificationStatus === 'needs_contact' || (s.catalogId && PUBLIC.some(p => p.id === s.catalogId && p.verificationStatus === 'needs_contact'))) ? '<button data-review="' + esc(s.catalogId || s.id) + '">담당기관 확인 기록 수정</button>' : '');
     $('#referralDlg').showModal();
   }
   function catalogImportHtml() {
@@ -328,6 +354,7 @@
     for (const id of ['referralDlg','referralReviewDlg']) document.getElementById(id).addEventListener('click',async e => {
       const t = e.target.closest('button'); if (!t) return;
       if (t.dataset.refclose) { document.getElementById(t.dataset.refclose).close(); return; }
+      if (t.dataset.attach) { openAttachments(t.dataset.attach); return; }
       if (t.dataset.review) { openReview(t.dataset.review); return; }
       if (t.dataset.dl) { const [sid,i] = t.dataset.dl.split(':'), s = L.data.services.find(s => s.id === sid); if (s && s.forms[+i]) try { await call('downloadForm',s.forms[+i].fileId,s.forms[+i].name); } catch(e) { alert(e.message); } return; }
       if (t.id === 'lkReviewSave') {
@@ -369,6 +396,7 @@
       if (t.id === 'lkDrive') { t.disabled = true; try { if (!VHM_AUTH.valid()) { L.notice = '먼저 일정 탭에서 구글 계정으로 연결하세요. 공개자료는 계속 이용할 수 있습니다.'; render(); return; } if (!VHM_AUTH.hasDrive) await VHM_AUTH.request('drive'); await load(); } catch (e) { toast(e.message || String(e), 5000); t.disabled = false; } return; }
       if (t.id === 'lkClear') { L.checks.clear(); render(); return; }
       if (t.closest('[data-detail]') || ['lkFilterClear','lkCatalogPreview','lkCatalogCommit','lkCatalogCancel','lkCatalogBackup'].includes(t.id)) { await catalogClick(t); return; }
+      const attach = t.closest('[data-attach]'); if (attach) { openAttachments(attach.dataset.attach); return; }
       if (t.id === 'lkAdd') { if (!L.personalLoaded) { alert('먼저 개인 목록·드라이브 연결을 눌러주세요.'); return; } openSvc(null); return; }
       const ed = t.closest('[data-edit]'); if (ed) { openSvc(L.data.services.find(s => s.id === ed.dataset.edit)); return; }
       if (t.dataset.dl) { const [sid, i] = t.dataset.dl.split(':'); const s = L.data.services.find(x => x.id === sid); const fm = s && s.forms[+i];
@@ -417,9 +445,7 @@
       if (t.id === 'svcAddLink') { const url = $('#svcLinkUrl').value.trim(), name = $('#svcLinkName').value.trim() || '링크';
         if (!M.safeUrl(url)) { alert('https:// 로 시작하는 주소를 넣어 주세요.'); return; }
         L.editing.forms.push({ type: 'link', url, name }); $('#svcLinkUrl').value = ''; $('#svcLinkName').value = ''; renderForms(); return; }
-      if (t.dataset.rmform != null) { const fm = L.editing.forms[+t.dataset.rmform];
-        if (fm.type === 'file' && confirm('‘' + fm.name + '’ 파일을 드라이브 휴지통으로도 보낼까요? (취소를 누르면 목록에서만 뺍니다)')) { try { await run('삭제 중…', () => call('trashForm', fm.fileId)); } catch (e) {} }
-        L.editing.forms.splice(+t.dataset.rmform, 1); renderForms(); return; }
+      if (t.dataset.rmform != null) { L.editing.forms.splice(+t.dataset.rmform,1); renderForms(); return; }
       if (t.id === 'svcSave') { saveSvc(); return; }
       if (t.id === 'svcDelete') { if (!confirm('‘' + L.editing.name + '’ 서비스를 목록에서 지울까요? (첨부 양식 파일은 드라이브에 남습니다)')) return;
         L.data.services = L.data.services.filter(s => s.id !== L.editing.id); if (await save('지웠습니다.')) { $('#svcDlg').close(); render(); } return; }
@@ -427,8 +453,26 @@
     });
     $('#svcDlg').addEventListener('change', async ev => {
       const t = ev.target;
-      if (t.id === 'svcFile') { const files = Array.from(t.files); t.value = '';
-        for (const file of files) { try { const fm = await run('올리는 중… ' + file.name, () => call('uploadForm', file)); L.editing.forms.push(fm); renderForms(); } catch (e) {} } return; }
+      if (t.id === 'svcFile') {
+        const files = Array.from(t.files); t.value = ''; if (!files.length) return;
+        if (!confirm('대상자 개인정보가 없는 공문·빈 신청양식만 선택했나요?')) return;
+        const epoch = L.epoch, editing = L.editing;
+        $('#svcSave').disabled = true; $('#svcAddFile').disabled = true;
+        try {
+          for (const file of files) {
+            try {
+              const fm = await run('올리는 중… ' + file.name, () => call('uploadForm',file));
+              if (epoch !== L.epoch || editing !== L.editing) return;
+              fm.uploadedAt = new Date().toISOString(); editing.forms.push(fm); editing.attachmentReviewEnabled = true;
+              editing.attachmentRegisteredAt = fm.uploadedAt;
+              const name = $('#svcForm').elements.namedItem('name');
+              if (!name.value.trim()) name.value = file.name.replace(/\.[^.]+$/, '').slice(0,80);
+              renderForms(); $('#svcUploadStatus').textContent = '파일 업로드 완료. 저장을 누르면 내 확인 대기에서 해제됩니다. 공식 접수·지원 자격은 별도 확인하세요.';
+            } catch (e) { $('#svcUploadStatus').textContent = '업로드 실패: ' + (e.message || e); }
+          }
+        } finally { $('#svcSave').disabled = false; $('#svcAddFile').disabled = false; }
+        return;
+      }
       if (t.name === 'needs') t.closest('.lk-chip').classList.toggle('on', t.checked);
     });
   }
