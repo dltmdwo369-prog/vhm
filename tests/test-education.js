@@ -14,7 +14,7 @@ const pass=name=>{count++;console.log('PASS '+name);};
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
  browser=await chromium.launch({executablePath:process.env.VHM_CHROMIUM||'/usr/bin/chromium',args:['--no-sandbox']});
  const page=await browser.newPage(),errors=[],external=[];page.on('pageerror',e=>errors.push(e.message));
- await page.route('**/*',route=>{if(!route.request().url().startsWith(base)){external.push(route.request().url());return route.abort();}if(route.request().url().endsWith('/config.js'))return route.fulfill({contentType:'text/javascript',body:"window.VHM_CONFIG={clientId:''}"});return route.continue();});
+ await page.route('**/*',route=>{const url=route.request().url();if(['chrome:','chrome-extension:'].includes(new URL(url).protocol))return route.continue();if(!url.startsWith(base)){external.push(url);return route.abort();}if(url.endsWith('/config.js'))return route.fulfill({contentType:'text/javascript',body:"window.VHM_CONFIG={clientId:''}"});return route.continue();});
  await page.goto(base);await page.click('[data-tab="edu"]');assert.equal(await page.locator('.edu-card').count(),10);pass('education works without Google sign-in');
  await page.fill('#eduQuery','고지혈증');assert.equal(await page.locator('.edu-card').count(),1);assert.equal(await page.locator('.edu-card h3').innerText(),'이상지질혈증');
  await page.fill('#eduQuery','혈 당');assert.equal(await page.locator('.edu-card').count(),1);
