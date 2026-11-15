@@ -632,18 +632,21 @@
   const LINK_FOLDER = '방문건강관리 연계자료', LINK_FILE = 'vhm-links.json';
   function needDrive() { if (!Auth.valid()) throw new AuthNeeded(); if (!Auth.hasDrive) { const e = new Error('구글 드라이브 연결이 필요합니다.'); e.noDrive = true; throw e; } }
   const qEsc = v => String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  async function driveFind(name, mime, parent) {
+  async function driveFind(name, mime, parent, unique = false) {
     let q = "name = '" + qEsc(name) + "' and trashed = false";
     if (mime) q += " and mimeType = '" + mime + "'";
     if (parent) q += " and '" + parent + "' in parents";
     const r = await api('GET', DRIVE + '/files', { query: { q, spaces: 'drive', fields: 'files(id,name,modifiedTime,mimeType)', orderBy: 'modifiedTime desc', pageSize: 10 } });
+    if (unique && (r.files || []).length > 1) throw new Error('동일 이름의 연계자료 폴더 또는 목록 파일이 여러 개입니다. 원본을 백업하고 파일을 확인하세요. 자동 병합·삭제하지 않습니다.');
     return (r.files || [])[0] || null;
   }
   let LINK = null;   // { folderId, fileId }
-  async function linkFolder() {
+  async function linkFolder(create = true) {
     if (LINK && LINK.folderId) return LINK.folderId;
-    const f = await driveFind(LINK_FOLDER, 'application/vnd.google-apps.folder');
+    const f = await driveFind(LINK_FOLDER, 'application/vnd.google-apps.folder', null, true);
+    if (!f && !create) { LINK = null; return null; }
     const id = f ? f.id : (await api('POST', DRIVE + '/files', { body: { name: LINK_FOLDER, mimeType: 'application/vnd.google-apps.folder' }, query: { fields: 'id' } })).id;
+    if (!f) await driveFind(LINK_FOLDER, 'application/vnd.google-apps.folder', null, true);
     LINK = Object.assign(LINK || {}, { folderId: id }); return id;
   }
   function multipart(meta, blob, mime) {
@@ -653,30 +656,41 @@
   }
   async function linksLoad() {
     needDrive();
-    const folder = await linkFolder();
-    const f = await driveFind(LINK_FILE, null, folder);
+    const folder = await linkFolder(false);
+    if (!folder) return { data: null, modifiedTime: null };
+    const f = await driveFind(LINK_FILE, null, folder, true);
     if (!f) { LINK.fileId = null; return { data: null, modifiedTime: null }; }
     LINK.fileId = f.id;
     const res = await api('GET', DRIVE + '/files/' + f.id, { query: { alt: 'media' }, raw: true });
-    let data = null; try { data = JSON.parse(await res.text()); } catch (e) { throw new Error('연계 목록 파일을 읽지 못했습니다 (파일이 손상되었을 수 있습니다).'); }
+    let data; try { data = JSON.parse(await res.text()); } catch (e) { throw new Error('연계 목록 파일을 읽지 못했습니다 (파일이 손상되었을 수 있습니다).'); }
     return { data, modifiedTime: f.modifiedTime };
   }
-  /** baseModified: 불러올 때의 수정 시각. 그 사이 다른 기기에서 바뀌었으면 conflict 로 알려 줌 */
+  /** No force overwrite: preserve remote edits, and use If-Match when Drive exposes its ETag. */
   async function linksSave(data, baseModified, force) {
     needDrive();
     const folder = await linkFolder();
+    const existing = await driveFind(LINK_FILE, null, folder, true);
+    if (existing && (!LINK.fileId || existing.id !== LINK.fileId)) return {ok:false, conflict:true};
+    if (!existing && LINK.fileId) return {ok:false, conflict:true};
     const json = JSON.stringify(data, null, 1);
     if (LINK.fileId) {
-      if (!force && baseModified) {
-        const meta = await api('GET', DRIVE + '/files/' + LINK.fileId, { query: { fields: 'modifiedTime,trashed' } });
-        if (!meta.trashed && meta.modifiedTime !== baseModified) return { ok: false, conflict: true };
-      }
-      const r = await api('PATCH', UPLOAD + '/files/' + LINK.fileId, { query: { uploadType: 'media', fields: 'id,modifiedTime' }, rawBody: json, contentType: 'application/json' });
-      return { ok: true, modifiedTime: r.modifiedTime };
+      const response = await api('GET', DRIVE + '/files/' + LINK.fileId, { query: { fields: 'modifiedTime,trashed' }, raw:true });
+      const meta = await response.json(), etag = response.headers.get('etag');
+      if (meta.trashed || !baseModified || meta.modifiedTime !== baseModified) return {ok:false, conflict:true};
+      // A revision check alone has a race. Fail closed if the server omits the conditional-write token.
+      if (!etag) throw new Error('동시 수정 보호용 ETag를 받지 못했습니다. 원격 자료를 덮어쓰지 않았습니다. 다시 불러오거나 Google 응답을 확인하세요.');
+      try {
+        const r = await api('PATCH', UPLOAD + '/files/' + LINK.fileId, { query: { uploadType: 'media', fields: 'id,modifiedTime' }, rawBody: json, contentType: 'application/json', ifMatch:etag });
+        return { ok: true, modifiedTime: r.modifiedTime };
+      } catch (e) { if (e.status === 412 || e.status === 404) return {ok:false, conflict:true}; throw e; }
     }
+    if (baseModified) return {ok:false, conflict:true};
     const mp = multipart({ name: LINK_FILE, parents: [folder], mimeType: 'application/json' }, new Blob([json]), 'application/json');
     const r = await api('POST', UPLOAD + '/files', { query: { uploadType: 'multipart', fields: 'id,modifiedTime' }, rawBody: mp.body, contentType: mp.type });
-    LINK.fileId = r.id; return { ok: true, modifiedTime: r.modifiedTime };
+    LINK.fileId = r.id;
+    // Drive does not offer unique-name creation. Detect simultaneous first-file creation and stop further writes.
+    await driveFind(LINK_FILE, null, folder, true);
+    return { ok: true, modifiedTime: r.modifiedTime };
   }
   /* 상담 메모 틀 (질문 항목·문장 틀만. 대상자 정보·체크 내용은 저장하지 않음) */
   const NOTE_FILE = 'vhm-notes.json'; let NOTE_ID = null;

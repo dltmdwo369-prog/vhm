@@ -1,6 +1,6 @@
 # 웹앱 화면(Index.html)을 호스팅용 index.html 로 바꿉니다.
 # 원본: ui-source/Index.html, Handouts.html  +  src/gcal-api.js
-import os, re
+import os, re, json
 import os
 ROOT = os.path.dirname(os.path.abspath(__file__)) + '/'
 SRC = ROOT + 'ui-source/'
@@ -96,7 +96,12 @@ s = s.replace(old_start, """async function boot() {
 """)
 
 # ===== 연계 안내 탭 =====
-links = open(H + 'src/links.js', encoding='utf-8').read()
+catalog = json.load(open(H + 'data/public-referrals.json', encoding='utf-8'))
+assert len({x['id'] for x in catalog['services']}) == len(catalog['services']), 'duplicate catalog IDs'
+assert all(x['verificationStatus'] in ('consultable', 'needs_contact') and x['referralCode'] in (1,2,3,4) for x in catalog['services'])
+# Prevent data from closing the inline script, even in future catalog updates.
+catalog_js = json.dumps(catalog, ensure_ascii=False).replace('<', '\\u003c').replace('>', '\\u003e').replace('&', '\\u0026')
+links = 'window.VHM_PUBLIC_REFERRALS = ' + catalog_js + ';\n' + open(H + 'src/referral-model.js', encoding='utf-8').read() + '\n' + open(H + 'src/links.js', encoding='utf-8').read()
 rep('    <button role="tab" data-tab="edu" aria-selected="false">교육자료</button>', '    <button role="tab" data-tab="note" aria-selected="false">상담 메모</button>\n    <button role="tab" data-tab="link" aria-selected="false">연계 안내</button>\n    <button role="tab" data-tab="box" aria-selected="false">보관함</button>\n    <button role="tab" data-tab="edu" aria-selected="false">교육자료</button>')
 rep('<section id="tab-edu" class="page" hidden></section>', '<section id="tab-note" class="page" hidden></section>\n<section id="tab-link" class="page" hidden></section>\n<section id="tab-box" class="page" hidden></section>\n<section id="tab-edu" class="page" hidden></section>')
 rep("  ['cal','edu','arch','set'].forEach(t => $('#tab-' + t).hidden = t !== name);", "  ['cal','note','link','box','edu','arch','set'].forEach(t => { const x = $('#tab-' + t); if (x) x.hidden = t !== name; });\n  if (name === 'link' && window.LINKS) LINKS.open();\n  if (name === 'box' && window.ARCHIVE) ARCHIVE.open();\n  if (name === 'note' && window.NOTES) NOTES.open();")

@@ -276,3 +276,21 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* Referral catalog: scoped to the referral tab and its dialogs. */
+#tab-link .lk-summary{background:linear-gradient(120deg,#123f35,#1f6f5b);color:#fff;padding:18px 20px;border-radius:18px;margin-bottom:14px}
+#tab-link .lk-summary h2{margin:0;font-size:20px}#tab-link .lk-summary .hint{color:#e3f2e9}
+#tab-link .lk-personal{padding:10px 0;font-size:13px}#tab-link .lk-special{background:#fff8e6;padding:12px;border-radius:10px;margin:8px 0 14px;color:#624817}
+#tab-link .lk-bar .seg{flex-wrap:wrap;max-width:100%}#tab-link .lk-bar button{white-space:normal}
+#tab-link .lk-filter{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px;align-items:end}
+#tab-link .lk-filter label{display:flex;flex-direction:column;gap:4px;font-size:13px}#tab-link .lk-filter input,#tab-link .lk-filter select{width:100%;min-width:0}
+#tab-link .lk-title{text-align:left;font-size:15px;font-weight:700}#tab-link .lk-list{margin-top:12px}
+#tab-link .lk-row{display:block;padding:14px}#tab-link .lk-svc{margin-top:12px}#tab-link .lk-svc .row{margin-top:12px}
+#tab-link .lk-import-picks{max-height:260px;overflow:auto;display:grid;gap:8px;margin:12px 0}#tab-link .lk-import-picks label{display:flex;gap:8px;align-items:flex-start}
+#tab-link :is(.lk-svc,.lk-row,.lk-layout,.card,.lk-kv),#referralDlg :is(.lk-kv,span,a),#referralReviewDlg{min-width:0;overflow-wrap:anywhere}
+#referralDlg,#referralReviewDlg{max-width:calc(100vw - 24px)}#referralDlg .lk-kv{display:grid;grid-template-columns:130px minmax(0,1fr);gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+#referralReviewBody{display:grid;gap:10px}#referralReviewBody label{display:flex;flex-direction:column;gap:4px}
+@media(max-width:600px){#tab-link .lk-layout{grid-template-columns:minmax(0,1fr)}#tab-link .lk-filter{grid-template-columns:minmax(0,1fr)}#tab-link .lk-summary{padding:14px}#referralDlg .lk-kv{grid-template-columns:minmax(0,1fr);gap:4px}#tab-link .lk-svc-h{flex-wrap:wrap}#tab-link .lk-bar .seg{display:flex;width:100%}#tab-link .lk-bar button{flex:1 1 45%;padding:9px 6px}}
+
+#tab-link .lk-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}#tab-link .lk-list .lk-row{margin:0}#tab-link #lkShowMore{margin-top:12px;width:100%}
+@media(max-width:700px){#tab-link .lk-list{grid-template-columns:minmax(0,1fr)}}

@@ -1045,6 +1045,7 @@ async function saveSetting(patch) { const r = await run('설정 저장 중…', 
 
 /* ---------- 연결 ---------- */
 function showTab(name) {
+  if (name !== 'link' && window.LINKS) LINKS.leave();
   $$('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
   ['cal','edu','arch','set'].forEach(t => $('#tab-' + t).hidden = t !== name);
   if (name === 'edu') renderEdu(); if (name === 'arch') loadArchive().catch(() => {});

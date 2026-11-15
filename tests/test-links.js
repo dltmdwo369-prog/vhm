@@ -5,7 +5,7 @@ const { A: AUTH, install: installAuth, connectVia } = require('./fake-auth.js');
 const SITE = require('path').join(__dirname, '..', 'site');
 const R = []; const check = (n, ok, info = '') => R.push(`${ok ? 'PASS' : 'FAIL'} ${n}${info ? ' — ' + info : ''}`);
 let seq = 0; const nid = p => p + (++seq).toString(36);
-const G = { cals: [{ id: 'me@example.com', summary: 'me@example.com', primary: true, accessRole: 'owner' }], events: { 'me@example.com': [] }, files: [], grantDrive: true, log: [] };
+const G = { cals: [{ id: 'me@example.com', summary: 'me@example.com', primary: true, accessRole: 'owner' }], events: { 'me@example.com': [] }, files: [], grantDrive: true, log: [], conflictOnPatch:false, omitEtag:false };
 function nowIso() { return new Date(Date.now() + seq * 1000).toISOString(); }
 function parseMultipart(buf, ctype) {
   const b = /boundary=([^;]+)/.exec(ctype)[1]; const s = buf.toString('binary'); const parts = s.split('--' + b).slice(1, -1);
@@ -32,7 +32,7 @@ function api(method, url, headers, buf) {
   if (p === '/upload/drive/v3/files' && method === 'POST') { const mp = parseMultipart(buf, headers['content-type']);
     const f = { id: nid('f'), name: mp.meta.name, mimeType: mp.meta.mimeType || 'application/octet-stream', parents: mp.meta.parents || [], modifiedTime: nowIso(), content: mp.content }; G.files.push(f);
     return [200, { id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modifiedTime, webViewLink: 'https://drive.google.com/file/d/' + f.id + '/view' }]; }
-  if ((m = /^\/upload\/drive\/v3\/files\/([^/]+)$/.exec(p)) && method === 'PATCH') { const f = G.files.find(x => x.id === m[1]); f.content = buf; f.modifiedTime = nowIso(); return [200, { id: f.id, modifiedTime: f.modifiedTime }]; }
+  if ((m = /^\/upload\/drive\/v3\/files\/([^/]+)$/.exec(p)) && method === 'PATCH') { const f = G.files.find(x => x.id === m[1]); if (f.name === 'vhm-links.json' && G.conflictOnPatch) { G.conflictOnPatch = false; f.modifiedTime = 'race-' + (++seq); return [412, {error:{message:'revision changed'}}]; } if (f.name === 'vhm-links.json' && headers['if-match'] !== '"' + f.modifiedTime + '"') return [412,{error:{message:'etag mismatch'}}]; f.content = buf; f.modifiedTime = nowIso(); return [200, { id: f.id, modifiedTime: f.modifiedTime }]; }
   if ((m = /^\/drive\/v3\/files\/([^/]+)$/.exec(p))) { const f = G.files.find(x => x.id === m[1]); if (!f) return [404, { error: { message: 'nf' } }];
     if (method === 'GET' && u.searchParams.get('alt') === 'media') return [200, f.content, f.mimeType];
     if (method === 'GET') return [200, { modifiedTime: f.modifiedTime, trashed: !!f.trashed }];
@@ -53,7 +53,8 @@ const server = http.createServer((req, res) => {
     const page = await ctx.newPage(); page.errors = []; page.on('pageerror', e => page.errors.push(e.message)); page.on('dialog', d => d.accept());
     AUTH.driveOk = drive; AUTH.granted.clear(); AUTH.log = []; await installAuth(page);
     await page.route('https://www.googleapis.com/**', async r => { const q = r.request(); const [st, js, ct] = api(q.method(), q.url(), q.headers(), q.postDataBuffer() || Buffer.alloc(0));
-      await r.fulfill({ status: st, contentType: ct || 'application/json', body: Buffer.isBuffer(js) ? js : (js == null ? '' : JSON.stringify(js)) }); });
+      const match = /\/drive\/v3\/files\/([^/?]+)/.exec(q.url()); const file = match && G.files.find(f => f.id === match[1]);
+      await r.fulfill({ status: st, headers: file && !G.omitEtag ? {etag:'"' + file.modifiedTime + '"','access-control-expose-headers':'etag'} : {}, contentType: ct || 'application/json', body: Buffer.isBuffer(js) ? js : (js == null ? '' : JSON.stringify(js)) }); });
     await page.goto(BASE); await connectVia(page, '#btnConnect'); await page.waitForSelector('#connectBox[hidden]', { state: 'attached' });
     return page;
   }
@@ -77,7 +78,7 @@ const server = http.createServer((req, res) => {
   const folder = G.files.find(f => f.mimeType === 'application/vnd.google-apps.folder'), listFile = G.files.find(f => f.name === 'vhm-links.json');
   const onLinkTab = await page.$eval('#tab-link', x => !x.hidden);
   check('드라이브는 따로 요청 (드라이브 권한만, 처음엔 동의 화면) → 돌아오면 연계 탭', reqs[1] === 'https://www.googleapis.com/auth/drive.file' && prompts.join() === 'consent,consent' && onLinkTab, JSON.stringify(reqs) + JSON.stringify(prompts));
-  check('드라이브에 ‘방문건강관리 연계자료’ 폴더와 목록 파일 생성', folder && folder.name === '방문건강관리 연계자료' && listFile && listFile.parents[0] === folder.id);
+  check('열람만으로 개인 Drive 폴더·목록 파일을 생성하지 않음', !folder && !listFile && !G.log.some(x => x.startsWith('POST /drive') || x.startsWith('POST /upload')));
   const nChips = await page.$$eval('.lk-chip input[data-need]', x => x.length);
   check('기본 요구 항목 표시 + ‘임시 기본값’ 안내', nChips >= 25 && /임시 기본값/.test(await page.textContent('#tab-link')), String(nChips));
 
@@ -95,7 +96,7 @@ const server = http.createServer((req, res) => {
   const saved = JSON.parse(G.files.find(f => f.name === 'vhm-links.json').content.toString('utf8'));
   const svc = saved.services[0]; const upFile = G.files.find(f => f.name === 'referral-form.txt');
   check('서비스 저장 → 드라이브 목록 파일에 기록', saved.services.length === 1 && svc.name === '가상 노인맞춤돌봄' && svc.needs.length === 3 && svc.field === '돌봄');
-  check('양식 파일은 같은 폴더에 업로드, 링크도 저장', upFile && upFile.parents[0] === folder.id && upFile.content.toString() === '가상 의뢰서 양식' && svc.forms.length === 2 && svc.forms[1].url === 'https://example.org/apply');
+  check('양식 파일은 같은 폴더에 업로드, 링크도 저장', upFile && upFile.parents[0] === G.files.find(f => f.mimeType === 'application/vnd.google-apps.folder').id && upFile.content.toString() === '가상 의뢰서 양식' && svc.forms.length === 2 && svc.forms[1].url === 'https://example.org/apply');
 
   // 3. 엑셀 붙여넣기 가져오기
   await page.click('[data-lkview="io"]');
@@ -129,7 +130,7 @@ const server = http.createServer((req, res) => {
   check('양식 내려받기 (드라이브 API 경유)', fs.readFileSync(dpath, 'utf8') === '가상 의뢰서 양식' && dl.suggestedFilename() === 'referral-form.txt', dl.suggestedFilename());
 
   // 6. 연계 일정 등록 → 일정 탭에 ‘연계’ 일정 작성창
-  await page.click('.lk-svc [data-sched]'); await page.waitForSelector('#eventDlg[open]');
+  await page.click('.lk-svc:has-text("가상 노인맞춤돌봄") [data-sched]'); await page.waitForSelector('#eventDlg[open]');
   const ty = await page.inputValue('#eventForm select[name=type]'), memo = await page.inputValue('#eventForm textarea[name=memo]');
   check('연계 일정 등록 → 유형 ‘연계’, 메모에 서비스명', ty === '연계' && /연계: 가상/.test(memo), ty + ' / ' + memo);
   await page.click('#eventDlg [data-close]');
@@ -151,7 +152,7 @@ const server = http.createServer((req, res) => {
 
   // 8. 다른 기기에서 수정 → 충돌 안내
   const lf = G.files.find(f => f.name === 'vhm-links.json'); lf.modifiedTime = new Date(Date.now() + 99e6).toISOString();
-  await page.click('[data-lkview="list"]'); await page.click('.lk-row >> nth=0'); await page.waitForSelector('#svcDlg[open]');
+  await page.click('[data-lkview="list"]'); await page.click('[data-edit] >> nth=0'); await page.waitForSelector('#svcDlg[open]');
   await page.fill('#svcForm [name=memo]', '충돌 테스트'); await page.click('#svcSave');
   await page.waitForSelector('#chooseDlg[open]'); const ctext = await page.textContent('#chooseBody');
   await page.click('#chooseBtns button:has-text("다시 불러오기")'); await idle(page);
@@ -178,5 +179,81 @@ const server = http.createServer((req, res) => {
   await p2.setViewportSize({ width: 390, height: 844 });
   check('휴대폰 폭 가로 스크롤 없음', !(await p2.evaluate(() => document.documentElement.scrollWidth > innerWidth)));
   check('스크립트 오류 없음', page.errors.length === 0 && p2.errors.length === 0, page.errors.concat(p2.errors).join(' | '));
+  // New catalog + migration integration: all records are synthetic or public institution metadata.
+  await p2.click('[data-tab="link"]'); await p2.click('#lkDrive'); await idle(p2);
+  const beforeImport = Buffer.from(lf.content), rawLegacy = JSON.parse(lf.content);
+  rawLegacy.futureTop = {preserve:'yes'}; rawLegacy.schema = 1;
+  rawLegacy.services[0].futureField = {nested:['retained']};
+  lf.content = Buffer.from(JSON.stringify(rawLegacy)); lf.modifiedTime = 'legacy-' + (++seq);
+  await p2.click('#lkDrive'); await idle(p2);
+  check('v1 로드 마이그레이션은 원격 파일에 쓰지 않음', JSON.parse(lf.content).schema === 1 && await p2.evaluate(() => LINKS._state.data.schema === 2));
+  const rawBeforeRead = Buffer.from(lf.content), requestsBeforeChecks = G.log.length;
+  await p2.click('[data-lkview="match"]'); await p2.locator('input[data-need]').first().check();
+  await p2.click('[data-lkview="list"]'); await p2.selectOption('[data-lkfilter="group"]','medical');
+  check('요구·자격 필터는 Google 호출·원격 저장 없이 동작', rawBeforeRead.equals(lf.content) && G.log.length === requestsBeforeChecks);
+  await p2.click('#lkFilterClear');
+  await p2.click('[data-lkview="io"]'); await p2.locator('[data-catalog-select="eye-surgery"]').check();
+  await p2.locator('[data-catalog-select="smile-dental"]').check();
+  await p2.click('#lkCatalogPreview'); await p2.waitForSelector('#lkCatalogCommit');
+  check('공개자료 선택 미리보기만으로 원격 변경 없음', /추가 2건/.test(await p2.textContent('#lkCatalogPreviewBox')) && rawBeforeRead.equals(lf.content));
+  await p2.click('#lkCatalogCancel');
+  check('가져오기 취소 시 자료 보존', rawBeforeRead.equals(lf.content));
+  await p2.click('#lkCatalogPreview'); await p2.waitForSelector('#lkCatalogCommit');
+  await p2.click('#lkCatalogCommit');
+  check('백업 없이는 병합 저장 차단', rawBeforeRead.equals(lf.content));
+  const [backup] = await Promise.all([p2.waitForEvent('download'),p2.click('#lkCatalogBackup')]);
+  const backupPath = await backup.path(); const backupData = JSON.parse(fs.readFileSync(backupPath,'utf8'));
+  check('병합 전 백업에 구형 목록·미래 필드 보존', backupData.schema === 1 && backupData.futureTop.preserve === 'yes' && backupData.services[0].futureField.nested[0] === 'retained');
+  await p2.check('#lkBackupSaved'); if (await p2.$('#lkMissingConsent')) await p2.check('#lkMissingConsent');
+  await p2.click('#lkCatalogCommit'); await idle(p2); await p2.waitForFunction(() => LINKS._state.data.services.some(s => s.catalogId === 'eye-surgery'));
+  const merged = JSON.parse(lf.content);
+  const imported = merged.services.find(s => s.catalogId === 'eye-surgery');
+  check('선택 병합은 기존 서비스·신필드·미래 필드를 보존', merged.services.length === rawLegacy.services.length + 2 && merged.futureTop.preserve === 'yes' && merged.services[0].futureField.nested[0] === 'retained' && imported.officialGuideUrl && imported.preapprovalStatus && imported.checkedAt);
+  check('공개 라벨은 기존 요구 ID로 매핑', imported.needs.every(id => merged.categories.some(c => c.items.some(i => i.id === id))) && imported.catalogNeedLabels.includes('의료비 부담'));
+  await p2.click('[data-lkview="io"]'); await p2.check('[data-catalog-select="eye-surgery"]');
+  await p2.click('#lkCatalogPreview'); await p2.waitForSelector('#lkCatalogCommit');
+  check('중복 가져오기 멱등성', /추가 0건 · 중복 제외 1건/.test(await p2.textContent('#lkCatalogPreviewBox')) && await p2.isDisabled('#lkCatalogCommit'));
+  await p2.click('#lkCatalogCancel'); await p2.uncheck('[data-catalog-select="eye-surgery"]'); await p2.check('[data-catalog-select="rare-disease"]');
+  await p2.click('#lkCatalogPreview'); await p2.waitForSelector('#lkCatalogCommit');
+  check('알 수 없는 요구는 미리보기에서 보고', /희귀질환 치료·관리/.test(await p2.textContent('#lkCatalogPreviewBox')) && !!(await p2.$('#lkMissingConsent')));
+  const [b2] = await Promise.all([p2.waitForEvent('download'),p2.click('#lkCatalogBackup')]); await b2.path();
+  await p2.check('#lkBackupSaved'); await p2.check('#lkMissingConsent');
+  lf.modifiedTime = 'remote-' + (++seq); const remoteSaved = Buffer.from(lf.content);
+  await p2.click('#lkCatalogCommit'); await idle(p2); await p2.waitForFunction(() => LINKS._state.notice === '' && !LINKS._state.importSnapshot);
+  check('미리보기 이후 다른 기기 수정 시 병합 중단·원격 보존', remoteSaved.equals(lf.content) && !JSON.parse(lf.content).services.some(s => s.catalogId === 'rare-disease'));
+  await p2.click('[data-lkview="io"]'); await p2.click('#lkCatalogPreview'); await p2.waitForSelector('#lkCatalogCommit');
+  const [b3] = await Promise.all([p2.waitForEvent('download'),p2.click('#lkCatalogBackup')]); await b3.path();
+  await p2.check('#lkBackupSaved'); if (await p2.$('#lkMissingConsent')) await p2.check('#lkMissingConsent');
+  G.conflictOnPatch = true;
+  await p2.click('#lkCatalogCommit'); await idle(p2); await p2.waitForFunction(() => !LINKS._state.importSnapshot);
+  check('메타데이터 확인 후 PATCH 경합도 If-Match로 차단', remoteSaved.equals(lf.content) && !JSON.parse(lf.content).services.some(s => s.catalogId === 'rare-disease'));
+  await p2.waitForFunction(expected => LINKS._state.modified === expected, lf.modifiedTime);
+  G.omitEtag = true;
+  const noEtagContent = Buffer.from(lf.content);
+  const noEtag = await p2.evaluate(async () => { try { await SERVER.linksSave(LINKS._state.data, LINKS._state.modified, false); return ''; } catch(e) { return e.message; } });
+  check('ETag 누락 시 저장을 중단하여 기존 원격 자료 보호', /ETag/.test(noEtag) && noEtagContent.equals(lf.content), noEtag);
+  G.omitEtag = false;
+  const duplicate = Object.assign({},lf,{id:'duplicate-mock-list'}); G.files.push(duplicate);
+  const duplicateMessage = await p2.evaluate(async () => { try { await SERVER.linksLoad(); return ''; } catch(e) { return e.message; } });
+  check('동일 이름 원격 파일 여러 개면 임의 선택·덮어쓰기 중단', /여러 개/.test(duplicateMessage) && noEtagContent.equals(lf.content));
+  G.files.splice(G.files.indexOf(duplicate),1); await p2.click('#lkDrive'); await idle(p2);
+  // Record verification without promoting pending research.
+  await p2.click('[data-lkview="pending"]'); await p2.locator('[data-detail="personal:catalog-copy-smile-dental"]').click();
+  await p2.click('[data-review="smile-dental"]');
+  await p2.fill('[data-review-field="operation"]','운영 여부 전화 확인 필요 (가상 기록)');
+  await p2.fill('[data-review-field="gangseo"]','강서구 의뢰 가능 여부 확인 중');
+  await p2.fill('[data-review-field="agency"]','가상 담당부서');
+  await p2.fill('[data-review-field="recommendation"]','추천서 최신본 요청 중');
+  await p2.fill('[data-review-field="checkedAt"]','2026-11-15');
+  await p2.click('#lkReviewSave'); await p2.waitForSelector('#referralReviewDlg:not([open])',{state:'attached'});
+  const withReview = JSON.parse(lf.content);
+  check('확인 기록 저장 후에도 확인 필요 상태 유지', withReview.catalogReviews['smile-dental'].gangseo.includes('강서구') && withReview.services.find(s => s.catalogId === 'smile-dental').verificationStatus === 'needs_contact');
+  // Backup restore round trip (synthetic data, full metadata).
+  await p2.click('[data-lkview="io"]');
+  await p2.setInputFiles('#lkFile',{name:'mock-restore.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(withReview))}); await idle(p2);
+  check('백업 복원 시 새 메타데이터·확인 기록 왕복', JSON.parse(lf.content).catalogReviews['smile-dental'].checkedAt === '2026-11-15' && JSON.parse(lf.content).services.find(s => s.catalogId === 'eye-surgery').officialGuideUrl === imported.officialGuideUrl);
+  await p2.click('[data-tab="set"]'); await p2.click('#btnSignOut'); await p2.click('[data-tab="link"]');
+  check('연결 해제 시 개인 목록과 요구 체크 초기화, 공개자료 유지', await p2.evaluate(() => !LINKS._state.personalLoaded && LINKS._state.data.services.length === 0 && LINKS._state.checks.size === 0) && /공개자료 69건/.test(await p2.textContent('#tab-link')));
+
   console.log(R.join('\n')); await b.close(); server.close();
 })().catch(e => { console.log(R.join('\n')); console.error('CRASH', e); process.exit(1); });
