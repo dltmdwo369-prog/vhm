@@ -38,6 +38,39 @@
     return refinedGroups.flatMap(g => g.items).filter(i => selected.has(i.id) &&
       (catalogId ? i.serviceIds.includes(catalogId) : i.parents.some(n => serviceNeeds.has(needsKey(n))))).map(i => i.label);
   }
+  // Display grouping only: never rewrite the user's saved category/need IDs.
+  const broadGroups = {
+    cost:['의료비 부담'],
+    oral:['구강 문제'],
+    senses:['시력·청력 문제'],
+    disease:['고혈압·당뇨 등 만성질환 관리','암 치료·관리','약 복용 관리 어려움','희귀질환 치료·관리'],
+    mobility:['관절·척추 통증','거동 불편·보행 보조 필요','재활·운동 필요','보조기기 필요'],
+    care:['일상생활 도움 필요','장기요양 필요','보호자 부재·돌봄 부담','퇴원 후 돌봄','방문 진료·간호 필요'],
+    food:['영양 불량·식사량 감소','식사 준비 어려움'],
+    mental:['인지 저하·치매 의심','우울감·정서 지원 필요','음주 문제','정신건강 사례관리'],
+    safety:['독거','사회적 고립','안전 설비 필요','낙상 위험'],
+    housing:['주거환경 불량(위생·수리)','냉난방 어려움'],
+    access:['병원 동행 필요','생계 곤란']
+  };
+  function groupedNeeds(categories) {
+    const groups = refinedGroups.map(g => ({id:g.id,name:g.name,items:g.items.map(i => ({...clone(i),sourceIds:[i.id]}))}));
+    const destinations = new Map(Object.entries(broadGroups).flatMap(([id,labels]) => labels.map(label => [needsKey(label),id])));
+    const byLabel = new Map(groups.flatMap(g => g.items.map(i => [needsKey(i.label),i])));
+    for (const c of categories) for (const raw of c.items) {
+      const k = needsKey(raw.label), existing = byLabel.get(k);
+      if (existing) { if (!existing.sourceIds.includes(raw.id)) existing.sourceIds.push(raw.id); continue; }
+      const destination = destinations.get(k) || 'other';
+      let group = groups.find(g => g.id === destination);
+      if (!group) { group = {id:'other',name:'기타',items:[]}; groups.push(group); }
+      const item = {...clone(raw),sourceIds:[raw.id]}; group.items.push(item); byLabel.set(k,item);
+    }
+    return groups;
+  }
+  function expandNeedSelection(groups, selected) {
+    const out = new Set(selected);
+    for (const g of groups) for (const i of g.items) if (i.sourceIds.some(id => selected.has(id))) i.sourceIds.forEach(id => out.add(id));
+    return out;
+  }
   function identity(s) { return key(s.name) + '|' + key(s.org ?? s.organization); }
   function isDuplicate(s, list) { return list.some(p => (p.catalogId && p.catalogId === (s.catalogId || s.id)) || identity(p) === identity(s)); }
   function mergeCatalog(d, selected, createMissing = false) {
@@ -84,5 +117,5 @@
     if (/등록장애인/.test(t)) out.push('disabled');
     return out.length ? out : ['unknown'];
   }
-  window.VHM_REFERRALS = {clone,key,needsKey,safeUrl,service,migrate,routes,mapNeeds,identity,isDuplicate,mergeCatalog,intake,intakeLabels,groups,groupLabels,refinedGroups,refinedHits};
+  window.VHM_REFERRALS = {clone,key,needsKey,safeUrl,service,migrate,routes,mapNeeds,identity,isDuplicate,mergeCatalog,intake,intakeLabels,groups,groupLabels,refinedGroups,refinedHits,groupedNeeds,expandNeedSelection};
 })();

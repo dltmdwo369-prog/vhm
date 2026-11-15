@@ -296,7 +296,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
 @media(max-width:700px){#tab-link .lk-list{grid-template-columns:minmax(0,1fr)}}
 
 /* Fine-grained needs use native keyboard-accessible disclosure controls. */
-#tab-link .lk-refined,#tab-link .lk-legacy{border:1px solid var(--line);border-radius:10px;padding:10px;margin:10px 0;background:#fff}
-#tab-link .lk-refined summary,#tab-link .lk-legacy summary{cursor:pointer;font-weight:700;overflow-wrap:anywhere}
+#tab-link .lk-refined{border:1px solid var(--line);border-radius:10px;padding:10px;margin:10px 0;background:#fff}
+#tab-link .lk-refined summary{cursor:pointer;font-weight:700;overflow-wrap:anywhere}
 #tab-link .lk-refined summary span{display:block;font-size:12px;font-weight:400;color:var(--sub);margin:4px 0}
 #tab-link .lk-refined .lk-chips{margin-top:10px}#tab-link .lk-pending-needs{margin-top:16px}#tab-link .lk-pending-needs button{display:block;text-align:left;white-space:normal}
