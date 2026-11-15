@@ -3484,6 +3484,9 @@ async function boot() {
     try { r = await fetch(url, options); } catch (_) { throw new Error('인터넷 연결을 확인한 뒤 다시 시도해 주세요.'); }
     const data = await r.json().catch(() => ({}));
     if (!r.ok) {
+      const reason = data.error && data.error.message || '';
+      if (/CONFIGURATION_NOT_FOUND|OPERATION_NOT_ALLOWED|SERVICE_DISABLED/.test(reason)) throw new Error('관리자가 피드백 연결을 준비 중입니다. 설정이 끝난 뒤 다시 이용해 주세요.');
+      if (/INVALID_IDP_RESPONSE|INVALID_CREDENTIAL|INVALID_OAUTH/.test(reason)) throw new Error('Google 계정 확인에 실패했습니다. 연결을 해제한 뒤 다시 연결해 주세요. 계속 실패하면 관리자에게 알려 주세요.');
       if (r.status === 401) session = null;
       if (r.status === 409 || r.status === 412) throw new Error('다른 곳에서 변경되었거나 이미 접수된 항목입니다. 새로고침해 확인해 주세요.');
       if (r.status === 403) throw new Error('피드백 접근 권한이 없습니다. 관리자에게 연결 설정을 확인해 달라고 요청해 주세요.');
