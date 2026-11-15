@@ -2935,7 +2935,7 @@ async function boot() {
   }
   function attachmentForm() {
     if (!images) return '';
-    return '<div class="f"><label for="fbFiles">이미지 첨부 (선택 · 최대 3장)</label><input id="fbFiles" type="file" accept="image/jpeg,image/png,image/webp" multiple ' + (preparing ? 'disabled' : '') + '><p class="hint">JPG·PNG·WebP, 원본 한 장당 10MB 이하. 전송 전에 크기를 줄입니다. 대상자 이름·연락처·건강정보가 보이는 이미지는 첨부하지 마세요.</p><p role="status" class="hint">' + (preparing ? '이미지를 준비하는 중…' : attachments.length + '/3장 선택') + '</p>' + previews() + '</div>';
+    return '<div class="f"><label for="fbFiles">이미지 첨부 (선택 · 최대 3장)</label><input id="fbFiles" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden><button type="button" id="fbChoose" ' + (preparing ? 'disabled' : '') + '>이미지 추가</button><p class="hint">JPG·PNG·WebP, 원본 한 장당 10MB 이하. 전송 전에 크기를 줄입니다. 대상자 이름·연락처·건강정보가 보이는 이미지는 첨부하지 마세요.</p><p role="status" class="hint">' + (preparing ? '이미지를 준비하는 중…' : attachments.length + '/3장 선택') + '</p>' + previews() + '</div>';
   }
   function savedAttachments(row) {
     const ids = Array.isArray(row.imageIds) ? row.imageIds.filter(id => typeof id === 'string' && /^[a-f0-9-]{36}$/.test(id)).slice(0,3) : [];
@@ -3005,6 +3005,7 @@ async function boot() {
       f.oninput = e => { draft = {title:f.elements.title.value, body:f.elements.body.value, category:f.elements.category.value}; if (e.target.name !== 'consent') submitId = null; };
       f.onsubmit = e => { e.preventDefault(); submit(f); };
       if ($('#fbFiles')) $('#fbFiles').onchange = e => selectImages(e.target.files);
+      if ($('#fbChoose')) $('#fbChoose').onclick = () => $('#fbFiles').click();
       f.querySelectorAll('[data-fb-remove]').forEach(b => b.onclick = () => { attachments = attachments.filter(a => a.id !== b.dataset.fbRemove); submitId = null; render(); });
     }
     box.querySelectorAll('[data-fb-image]').forEach(b => b.onclick = () => loadImage(b));
@@ -3095,6 +3096,7 @@ async function boot() {
     .fb-wrap button{flex-shrink:0;max-width:100%;height:auto;min-height:40px;line-height:1.65;white-space:normal;overflow-wrap:anywhere}
     .fb-wrap fieldset:disabled{opacity:1}
     .fb-wrap fieldset:disabled :is(input,select,textarea){color:var(--sub);background:#f5f8f6;opacity:1}
+    .fb-wrap #fbForm{margin-bottom:24px}.fb-wrap #fbChoose{align-self:flex-start}
     .fb-images{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:12px;margin:12px 0}
     .fb-images figure{min-width:0;margin:0;border:1px solid var(--line);border-radius:10px;padding:10px;overflow-wrap:anywhere}
     .fb-images img{display:block;max-width:100%;width:100%;height:140px;object-fit:contain;background:#f5f8f6}
