@@ -3619,7 +3619,30 @@ async function boot() {
   // Check role after calendar boot so the management tab is visible to the administrator.
   if (ready() && valid()) authenticate().catch(() => {});
   const style = document.createElement('style');
-  style.textContent = '.fb-wrap{max-width:940px;margin:auto}.fb-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.fb-heading h2,.fb-heading h3,.fb-heading h4{margin:8px 0}.fb-wrap fieldset{border:1px solid var(--line);border-radius:10px;padding:16px;margin:16px 0}.fb-wrap .f{margin-bottom:12px}.fb-wrap .opt{margin:12px 0}.fb-wrap a{overflow-wrap:anywhere}.fb-item{border-top:1px solid var(--line);padding:16px 0;overflow-wrap:anywhere}.fb-text{white-space:pre-wrap;overflow-wrap:anywhere}.fb-status{display:inline-block;padding:4px 10px;border-radius:20px;font-weight:700;font-size:13px}.fb-0{background:#e3ecff;color:#1d4ed8}.fb-1{background:#fff3d6;color:#805300}.fb-2{background:#e6f4ea;color:#1e6b3a}.fb-wrap input,.fb-wrap select,.fb-wrap textarea{max-width:100%;box-sizing:border-box}.fb-wrap fieldset:disabled{opacity:.65}';
+  style.textContent = `
+    .fb-wrap{width:100%;max-width:940px;min-width:0;margin:auto;padding:24px;overflow:visible;box-sizing:border-box;line-height:1.65;overflow-wrap:anywhere}
+    .fb-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;min-width:0}
+    .fb-heading>div{flex:1 1 240px;min-width:0}
+    .fb-heading h2,.fb-heading h3,.fb-heading h4{margin:0;line-height:1.5;white-space:normal;overflow-wrap:anywhere}
+    .fb-heading .hint{margin:8px 0 0}
+    .fb-wrap fieldset{min-inline-size:0;width:100%;border:1px solid var(--line);border-radius:10px;padding:16px;margin:20px 0 0}
+    .fb-wrap legend{max-width:100%;padding:0 6px;white-space:normal;line-height:1.65}
+    .fb-wrap .f{min-width:0;margin-bottom:16px;line-height:1.65}
+    .fb-wrap .opt{display:flex;align-items:flex-start;gap:8px;margin:16px 0;line-height:1.65}
+    .fb-wrap .opt input{flex:none;width:16px;height:16px;min-height:0;margin:4px 0 0;padding:0}
+    .fb-wrap a{overflow-wrap:anywhere}
+    .fb-item{min-width:0;border-top:1px solid var(--line);padding:20px 0;overflow-wrap:anywhere}
+    .fb-text{white-space:pre-wrap;overflow-wrap:anywhere}
+    .fb-status{display:inline-block;flex-shrink:0;padding:4px 10px;border-radius:20px;font-weight:700;font-size:13px;line-height:1.65}
+    .fb-0{background:#e3ecff;color:#1d4ed8}.fb-1{background:#fff3d6;color:#805300}.fb-2{background:#e6f4ea;color:#1e6b3a}
+    .fb-wrap input,.fb-wrap select,.fb-wrap textarea{min-width:0;max-width:100%;height:auto;box-sizing:border-box;line-height:1.65}
+    .fb-wrap .f>input,.fb-wrap .f>select,.fb-wrap .f>textarea{width:100%;padding:9px 12px}
+    .fb-wrap textarea{min-height:140px}
+    .fb-wrap button{flex-shrink:0;max-width:100%;height:auto;min-height:40px;line-height:1.65;white-space:normal;overflow-wrap:anywhere}
+    .fb-wrap fieldset:disabled{opacity:1}
+    .fb-wrap fieldset:disabled :is(input,select,textarea){color:var(--sub);background:#f5f8f6;opacity:1}
+    @media(max-width:560px){.fb-wrap{padding:18px 16px}.fb-wrap fieldset{padding:14px 12px}.fb-heading>div{flex-basis:100%}.fb-wrap .f>input,.fb-wrap .f>select,.fb-wrap .f>textarea{padding:8px 10px}}
+  `;
   document.head.appendChild(style);
 })();
 
