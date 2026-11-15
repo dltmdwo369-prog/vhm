@@ -1408,6 +1408,8 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
     <button role="tab" data-tab="link" aria-selected="false">연계 안내</button>
     <button role="tab" data-tab="box" aria-selected="false">보관함</button>
     <button role="tab" data-tab="edu" aria-selected="false">교육자료</button>
+    <button role="tab" data-tab="feedback" aria-selected="false">피드백</button>
+    <button role="tab" data-tab="feedback-admin" aria-selected="false" hidden>피드백 관리</button>
     <button role="tab" data-tab="set" aria-selected="false">설정</button>
   </nav>
   <div class="sync" id="sync"><span class="spin"></span> 불러오는 중…</div>
@@ -1509,6 +1511,8 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
 </section>
 
 <!-- ===== 설정 ===== -->
+<section id="tab-feedback" class="page" hidden></section>
+<section id="tab-feedback-admin" class="page" hidden></section>
 <section id="tab-set" class="page" hidden>
   <div class="card" style="max-width:720px"><div class="card-body">
     <h3 style="margin:4px 0 10px">구글 캘린더 연결 상태</h3>
@@ -1685,7 +1689,8 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
       let consented = false, hint = '';
       try { consented = !!localStorage.getItem(drive ? 'vhm-consented-drive' : 'vhm-consented'); hint = localStorage.getItem('vhm-email') || '';
         sessionStorage.setItem(STATE_KEY, JSON.stringify({ st, drive, silent, at: Date.now() })); } catch (e) {}
-      const q = new URLSearchParams({ client_id: CFG.clientId, redirect_uri: REDIRECT, response_type: 'token', scope: drive ? DRIVE_SCOPE : CAL_SCOPE, include_granted_scopes: 'true', state: st });
+      const identityScopes = CFG.feedback && CFG.feedback.apiKey ? ' openid email profile' : '';
+      const q = new URLSearchParams({ client_id: CFG.clientId, redirect_uri: REDIRECT, response_type: 'token', scope: (drive ? DRIVE_SCOPE : CAL_SCOPE) + identityScopes, include_granted_scopes: 'true', state: st });
       if (silent) q.set('prompt', 'none'); else if (!consented) q.set('prompt', 'consent');
       if (hint) q.set('login_hint', hint);
       location.assign(AUTH_URL + '?' + q.toString());
@@ -1712,6 +1717,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
     },
     signOut() {
       const t = this.token; this.token = null; this.exp = 0; this.hasDrive = false;
+      if (window.FEEDBACK) FEEDBACK.signOut();
       try { sessionStorage.removeItem(TOKEN_KEY); ['vhm-consented', 'vhm-consented-drive', 'vhm-cal-ids', 'vhm-email'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
       if (t) try { fetch(REVOKE_URL + '?token=' + encodeURIComponent(t), { method: 'POST', mode: 'no-cors' }).catch(() => {}); } catch (e) {}
     }
@@ -3270,7 +3276,8 @@ async function saveSetting(patch) { const r = await run('설정 저장 중…', 
 function showTab(name) {
   if (name !== 'link' && window.LINKS) LINKS.leave();
   $$('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
-  ['cal','note','link','box','edu','arch','set'].forEach(t => { const x = $('#tab-' + t); if (x) x.hidden = t !== name; });
+  ['cal','note','link','box','edu','arch','set','feedback','feedback-admin'].forEach(t => { const x = $('#tab-' + t); if (x) x.hidden = t !== name; });
+  if ((name === 'feedback' || name === 'feedback-admin') && window.FEEDBACK) FEEDBACK.open(name === 'feedback-admin');
   if (name === 'link' && window.LINKS) LINKS.open();
   if (name === 'box' && window.ARCHIVE) ARCHIVE.open();
   if (name === 'note' && window.NOTES) NOTES.open();
@@ -3454,6 +3461,165 @@ async function boot() {
     if (rr && rr.silentFailed) toast('자동으로 다시 연결하지 못했습니다. 지금 연결은 곧 끝납니다. 끝나면 ‘구글 계정으로 연결’을 눌러 주세요.', 9000);
   } catch (e) {}
 })();
+</script>
+<script>
+/* Shared feedback only. Calendar, notes and archive data never enter this module. */
+(function () {
+  'use strict';
+  const cfg = (window.VHM_CONFIG || {}).feedback || {};
+  const statuses = ['접수', '미해결', '해결완료'];
+  const categories = ['오류 신고', '개선 제안', '사용 문의', '기타'];
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const ready = () => !!(cfg.apiKey && cfg.projectId);
+  const root = 'projects/' + cfg.projectId + '/databases/(default)/documents';
+  const endpoint = 'https://firestore.googleapis.com/v1/' + root;
+  let session = null, pending = null, generation = 0, adminView = false, busy = false;
+  let rows = [], cursor = null, more = false, filter = '', message = '', draft = {title:'', body:'', category:categories[0]};
+  let submitId = null;
+  function valid() { return window.VHM_AUTH && VHM_AUTH.valid(); }
+  function stillCurrent(s) { return s && valid() && s.googleToken === VHM_AUTH.token; }
+  async function json(url, options) {
+    let r;
+    try { r = await fetch(url, options); } catch (_) { throw new Error('인터넷 연결을 확인한 뒤 다시 시도해 주세요.'); }
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (r.status === 401) session = null;
+      if (r.status === 409 || r.status === 412) throw new Error('다른 곳에서 변경되었거나 이미 접수된 항목입니다. 새로고침해 확인해 주세요.');
+      if (r.status === 403) throw new Error('피드백 접근 권한이 없습니다. 관리자에게 연결 설정을 확인해 달라고 요청해 주세요.');
+      if (r.status === 401) throw new Error('로그인 시간이 지났습니다. Google 계정으로 다시 연결해 주세요.');
+      throw new Error('피드백 요청에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+    }
+    return data;
+  }
+  async function authenticate() {
+    if (!ready()) throw new Error('피드백 접수를 준비 중입니다. 관리자 연결 설정이 끝나면 사용할 수 있습니다.');
+    if (!valid()) throw new Error('일정 탭에서 Google 계정으로 연결한 뒤 이용해 주세요.');
+    if (stillCurrent(session) && session.exp > Date.now() + 60000) return session;
+    if (pending && pending.token === VHM_AUTH.token) return pending.promise;
+    const googleToken = VHM_AUTH.token, epoch = generation;
+    const task = (async () => {
+      const r = await json('https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=' + encodeURIComponent(cfg.apiKey), {
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
+          requestUri:location.origin + location.pathname,
+          postBody:new URLSearchParams({access_token:googleToken, providerId:'google.com'}).toString(),
+          returnSecureToken:true
+        })
+      });
+      if (epoch !== generation || !valid() || VHM_AUTH.token !== googleToken) throw new Error('계정 연결이 변경되었습니다. 다시 열어 주세요.');
+      const s = {googleToken, token:r.idToken, uid:r.localId, email:r.email, exp:Date.now() + Number(r.expiresIn) * 1000, admin:false};
+      if (!s.uid || !s.token) throw new Error('Google 계정을 확인하지 못했습니다. 다시 연결해 주세요.');
+      // Presentation only: Firestore rules independently enforce this exact verified account.
+      s.admin = s.email === 'dltmdwo369@gmail.com';
+      if (epoch !== generation || !stillCurrent(s)) throw new Error('계정 연결이 변경되었습니다. 다시 열어 주세요.');
+      session = s;
+      $('[data-tab="feedback-admin"]').hidden = !s.admin;
+      return s;
+    })();
+    const entry = {token:googleToken, promise:task}; pending = entry;
+    try { return await task; } finally { if (pending === entry) pending = null; }
+  }
+  async function db(path, body, s) {
+    if (!stillCurrent(s)) throw new Error('Google 계정으로 다시 연결해 주세요.');
+    return json(endpoint + path, {method:'POST', headers:{Authorization:'Bearer ' + s.token, 'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  }
+  const str = stringValue => ({stringValue});
+  function decode(d) {
+    const r = {name:d.name, version:d.updateTime};
+    for (const [k,v] of Object.entries(d.fields || {})) r[k] = v.stringValue !== undefined ? v.stringValue : v.timestampValue;
+    return r;
+  }
+  async function load(append) {
+    const s = await authenticate();
+    if (adminView && !s.admin) throw new Error('관리자만 피드백 관리를 이용할 수 있습니다.');
+    const q = {from:[{collectionId:'feedback'}], orderBy:[{field:{fieldPath:'createdAt'}, direction:'DESCENDING'},{field:{fieldPath:'__name__'}, direction:'DESCENDING'}], limit:51};
+    if (!adminView) q.where = {fieldFilter:{field:{fieldPath:'authorId'}, op:'EQUAL', value:str(s.uid)}};
+    if (append && cursor) q.startAt = {values:[{timestampValue:cursor.createdAt},{referenceValue:cursor.name}], before:false};
+    const result = await db(':runQuery', {structuredQuery:q}, s);
+    if (!stillCurrent(s)) return;
+    const docs = result.filter(x => x.document).map(x => decode(x.document));
+    more = docs.length > 50;
+    const page = docs.slice(0,50);
+    cursor = page.length ? page[page.length - 1] : null;
+    rows = (append ? rows : []).concat(page).sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  }
+  function date(v) { const d = new Date(v); return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('ko-KR', {timeZone:'Asia/Seoul'}); }
+  function statusHtml(s) { return '<span class="fb-status fb-' + statuses.indexOf(s) + '">' + esc(s) + '</span>'; }
+  function render() {
+    const box = $(adminView ? '#tab-feedback-admin' : '#tab-feedback');
+    if (!box) return;
+    const authed = stillCurrent(session), isAdmin = authed && session.admin;
+    const active = authed && (!adminView || isAdmin);
+    const visible = rows.filter(r => !filter || r.status === filter);
+    box.innerHTML = '<div class="card fb-wrap"><div class="fb-heading"><div><h2>' + (adminView ? '피드백 관리' : '피드백') + '</h2><p class="hint">' + (adminView ? '사용자 의견을 확인하고 처리 상태와 답변을 남겨 주세요.' : '불편한 점이나 개선 의견을 남겨 주세요. 내가 보낸 의견과 처리 상태를 확인할 수 있습니다.') + '</p></div><button type="button" id="fbRefresh" ' + (busy ? 'disabled' : '') + '>새로고침</button></div>'
+      + '<p class="hint">공유 주소: <a href="https://dltmdwo369-prog.github.io/vhm/">https://dltmdwo369-prog.github.io/vhm/</a></p>'
+      + '<p role="status" aria-live="polite" class="infobox">' + esc(message || (busy ? '불러오는 중…' : !ready() ? '피드백 접수를 준비 중입니다. 관리자 연결 설정이 끝나면 사용할 수 있습니다.' : !valid() ? '일정 탭에서 Google 계정으로 연결한 뒤 이용해 주세요.' : active ? (adminView ? '관리자 · ' : '') + session.email : '계정 확인 후 이용할 수 있습니다.')) + '</p>'
+      + (!adminView ? '<form id="fbForm"><fieldset ' + (!active || busy ? 'disabled' : '') + '><legend>새 피드백</legend><label class="f">종류<select name="category">' + categories.map(c => '<option ' + (draft.category === c ? 'selected' : '') + '>' + c + '</option>').join('') + '</select></label><label class="f">제목<input name="title" required maxlength="100" value="' + esc(draft.title) + '" placeholder="어떤 점을 알려주시겠어요?"></label><label class="f">내용<textarea name="body" rows="6" required maxlength="3000" placeholder="문제가 생긴 화면과 동작, 개선 의견 등을 적어 주세요.">' + esc(draft.body) + '</textarea></label><p class="hint">작성한 제목·내용과 로그인 이메일이 관리자에게 전달됩니다. 대상자 이름·연락처·건강정보는 적지 마세요. 일정과 상담 메모는 첨부되지 않습니다.</p><label class="opt"><input type="checkbox" name="consent" required> 위 내용을 확인했으며 피드백 전달에 동의합니다.</label><button class="primary" type="submit">' + (busy ? '처리 중…' : '피드백 보내기') + '</button></fieldset></form>' : '')
+      + (active ? '<div class="fb-heading"><h3>' + (adminView ? '전체 피드백' : '내 피드백') + '</h3><label>상태 <select id="fbFilter"><option value="">전체</option>' + statuses.map(s => '<option ' + (filter === s ? 'selected' : '') + '>' + s + '</option>').join('') + '</select></label></div><p class="hint">불러온 ' + rows.length + '건 중 ' + visible.length + '건 표시' + (more ? ' · 더 불러올 피드백이 있습니다.' : '') + '</p><div class="fb-list">' + (visible.length ? visible.map(r => '<article class="fb-item"><div class="fb-heading"><h4>' + esc(r.title) + '</h4>' + statusHtml(r.status) + '</div><p class="hint">' + esc(r.category) + ' · 접수 ' + esc(date(r.createdAt)) + (adminView ? ' · ' + esc(r.authorEmail) : '') + '</p><p class="fb-text">' + esc(r.body) + '</p>' + (adminView ? '<form data-fb-item="' + esc(r.name) + '"><label class="f">처리 상태<select name="status">' + statuses.map(s => '<option ' + (s === r.status ? 'selected' : '') + '>' + s + '</option>').join('') + '</select></label><label class="f">답변<textarea name="reply" rows="3" maxlength="3000">' + esc(r.reply) + '</textarea></label><button type="submit" ' + (busy ? 'disabled' : '') + '>변경 저장</button></form>' : r.reply ? '<div class="infobox"><b>관리자 답변</b><p class="fb-text">' + esc(r.reply) + '</p></div>' : '<p class="hint">관리자 답변을 기다리고 있습니다.</p>') + '<p class="hint">최근 변경 ' + esc(date(r.updatedAt)) + '</p></article>').join('') : '<p class="hint">' + (filter ? '이 상태의 피드백이 없습니다.' : '아직 접수된 피드백이 없습니다.') + '</p>') + '</div>' + (more ? '<button type="button" id="fbMore" ' + (busy ? 'disabled' : '') + '>더 불러오기</button>' : '') : '') + '</div>';
+    $('#fbRefresh').onclick = () => open(adminView);
+    if ($('#fbFilter')) $('#fbFilter').onchange = e => { filter = e.target.value; render(); };
+    if ($('#fbMore')) $('#fbMore').onclick = () => action(() => load(true));
+    if ($('#fbForm')) {
+      const f = $('#fbForm');
+      f.oninput = e => { draft = {title:f.elements.title.value, body:f.elements.body.value, category:f.elements.category.value}; if (e.target.name !== 'consent') submitId = null; };
+      f.onsubmit = e => { e.preventDefault(); submit(f); };
+    }
+    box.querySelectorAll('[data-fb-item]').forEach(f => f.onsubmit = e => { e.preventDefault(); update(f); });
+  }
+  async function action(fn) {
+    if (busy) return;
+    const epoch = generation; busy = true; message = ''; render();
+    try { await fn(); } catch (e) { if (epoch === generation) message = e.message || '요청에 실패했습니다.'; }
+    finally { if (epoch === generation) { busy = false; render(); } }
+  }
+  function submit(f) {
+    if (!f.reportValidity()) return;
+    const title = f.elements.title.value.trim(), body = f.elements.body.value.trim(), category = f.elements.category.value;
+    if (!title || !body) { message = '제목과 내용을 입력해 주세요.'; render(); return; }
+    return action(async () => {
+      const s = await authenticate();
+      // Retain the ID on uncertain network failures: retry cannot create duplicate records.
+      if (!submitId) submitId = crypto.randomUUID();
+      const fields = {authorId:str(s.uid), authorEmail:str(s.email), title:str(title), body:str(body), category:str(category), status:str('접수'), reply:str('')};
+      await db(':commit', {writes:[{update:{name:root + '/feedback/' + submitId, fields}, currentDocument:{exists:false}, updateTransforms:[{fieldPath:'createdAt',setToServerValue:'REQUEST_TIME'},{fieldPath:'updatedAt',setToServerValue:'REQUEST_TIME'}]}]}, s);
+      if (!stillCurrent(s)) return;
+      draft = {title:'',body:'',category:categories[0]}; submitId = null;
+      message = '피드백이 접수되었습니다.';
+      await load(false);
+    });
+  }
+  function update(f) {
+    const status = f.elements.status.value, reply = f.elements.reply.value.trim();
+    const row = rows.find(r => r.name === f.dataset.fbItem);
+    if (!row || !statuses.includes(status) || reply.length > 3000) return;
+    return action(async () => {
+      const s = await authenticate();
+      if (!s.admin) throw new Error('관리자만 상태를 변경할 수 있습니다.');
+      await db(':commit', {writes:[{update:{name:row.name,fields:{status:str(status),reply:str(reply)}}, updateMask:{fieldPaths:['status','reply']}, currentDocument:{updateTime:row.version}, updateTransforms:[{fieldPath:'updatedAt',setToServerValue:'REQUEST_TIME'}]}]}, s);
+      message = '처리 상태와 답변을 저장했습니다.';
+      await load(false);
+    });
+  }
+  async function open(admin) {
+    if (busy) return;
+    $(admin ? '#tab-feedback' : '#tab-feedback-admin').innerHTML = '';
+    adminView = !!admin; rows = []; cursor = null; more = false;
+    return action(() => load(false));
+  }
+  function signOut() {
+    generation++; session = null; pending = null; rows = []; cursor = null; more = false; busy = false;
+    draft = {title:'',body:'',category:categories[0]}; submitId = null; message = '';
+    $('[data-tab="feedback-admin"]').hidden = true;
+    $('#tab-feedback-admin').innerHTML = ''; $('#tab-feedback').innerHTML = '';
+  }
+  window.FEEDBACK = {open, signOut};
+  // Check role after calendar boot so the management tab is visible to the administrator.
+  if (ready() && valid()) authenticate().catch(() => {});
+  const style = document.createElement('style');
+  style.textContent = '.fb-wrap{max-width:940px;margin:auto}.fb-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.fb-heading h2,.fb-heading h3,.fb-heading h4{margin:8px 0}.fb-wrap fieldset{border:1px solid var(--line);border-radius:10px;padding:16px;margin:16px 0}.fb-wrap .f{margin-bottom:12px}.fb-wrap .opt{margin:12px 0}.fb-wrap a{overflow-wrap:anywhere}.fb-item{border-top:1px solid var(--line);padding:16px 0;overflow-wrap:anywhere}.fb-text{white-space:pre-wrap;overflow-wrap:anywhere}.fb-status{display:inline-block;padding:4px 10px;border-radius:20px;font-weight:700;font-size:13px}.fb-0{background:#e3ecff;color:#1d4ed8}.fb-1{background:#fff3d6;color:#805300}.fb-2{background:#e6f4ea;color:#1e6b3a}.fb-wrap input,.fb-wrap select,.fb-wrap textarea{max-width:100%;box-sizing:border-box}.fb-wrap fieldset:disabled{opacity:.65}';
+  document.head.appendChild(style);
+})();
+
 </script>
 <script>
 window.VHM_REFINED_NEEDS = {"version": "refined-needs-2026-11-15", "notice": "세부 요구는 상담할 검토 후보를 좁히며, 사업의 세부 지원내용이나 자격을 확정하지 않습니다.", "groups": [{"id": "cost", "name": "의료비·수술비", "items": [{"id": "refined:surgery-cost", "label": "수술·입원비 지원 상담", "parents": ["의료비 부담"], "serviceIds": ["emergency-national", "emergency-seoul", "disaster-medical", "redcross-hope", "boramae-medical-social", "ewha-medical-social"]}, {"id": "refined:outpatient-cost", "label": "외래 진료비 부담 상담", "parents": ["의료비 부담"], "serviceIds": ["disaster-medical", "nhis-ceiling", "boramae-medical-social", "ewha-medical-social", "disability-medical"]}, {"id": "refined:urgent-cost", "label": "갑작스러운 치료비·위기 지원", "parents": ["의료비 부담", "긴급 지원 필요"], "serviceIds": ["emergency-national", "emergency-seoul", "seoul-hope", "case-management"]}, {"id": "refined:refund-cost", "label": "의료비 환급·중복지원 확인", "parents": ["의료비 부담"], "serviceIds": ["nhis-ceiling", "disaster-medical"]}]}, {"id": "oral", "name": "치과·구강", "items": [{"id": "refined:oral-check", "label": "구강검진·구강위생 상담", "parents": ["구강 문제"], "serviceIds": ["oral-health"]}, {"id": "refined:dentures", "label": "틀니 제작·유지관리 상담", "parents": ["구강 문제", "의료비 부담"], "serviceIds": ["senior-dentures", "oral-health"]}, {"id": "refined:dental-pain", "label": "치통·치과 진료 연결", "parents": ["구강 문제"], "serviceIds": ["oral-health", "yonsei-student", "korea-medical-volunteer"]}, {"id": "refined:dental-disabled", "label": "장애인 치과·보철 지원 상담", "parents": ["구강 문제", "의료비 부담"], "serviceIds": ["smile-dental", "boas-dental", "goodpeople-dental"]}]}, {"id": "senses", "name": "눈·귀", "items": [{"id": "refined:eye-surgery", "label": "백내장 등 안과 수술 지원 상담", "parents": ["시력·청력 문제", "의료비 부담"], "serviceIds": ["eye-surgery", "hansayeon"]}, {"id": "refined:vision", "label": "시력 저하·안과 검사 상담", "parents": ["시력·청력 문제"], "serviceIds": ["eye-surgery"]}, {"id": "refined:hearing-aid", "label": "난청·보청기 급여 상담", "parents": ["시력·청력 문제", "보조기기 필요"], "serviceIds": ["disability-equipment-nhis", "hearing-aid-local"]}, {"id": "refined:cochlear", "label": "인공달팽이관·외부장치 지원 상담", "parents": ["시력·청력 문제", "보조기기 필요"], "serviceIds": ["cochlear-implant"]}]}, {"id": "disease", "name": "질환·복약 관리", "items": [{"id": "refined:chronic", "label": "혈압·혈당 등 건강관리 상담", "parents": ["고혈압·당뇨 등 만성질환 관리"], "serviceIds": ["ai-iot", "healthy-age-center", "seonam-health-network", "gangseo-elder-health"]}, {"id": "refined:medication", "label": "복약 정리·건강상담 연결", "parents": ["약 복용 관리 어려움", "고혈압·당뇨 등 만성질환 관리"], "serviceIds": ["healthy-age-center", "seonam-health-network", "ai-iot"]}, {"id": "refined:cancer", "label": "암 치료비·의료사회복지 상담", "parents": ["암 치료·관리", "의료비 부담"], "serviceIds": ["cancer-medical", "disaster-medical", "ewha-medical-social", "boramae-medical-social"]}, {"id": "refined:rare", "label": "희귀질환 치료비·제도 상담", "parents": ["희귀질환 치료·관리", "의료비 부담"], "serviceIds": ["rare-disease"]}]}, {"id": "mobility", "name": "관절·재활·보조기기", "items": [{"id": "refined:knee", "label": "무릎 수술·인공관절 지원 상담", "parents": ["관절·척추 통증", "의료비 부담"], "serviceIds": ["knee-surgery", "hansayeon"]}, {"id": "refined:rehab", "label": "보행·신체기능 재활 상담", "parents": ["재활·운동 필요", "거동 불편·보행 보조 필요"], "serviceIds": ["disability-rehabilitation", "adult-exercise", "healthy-age-center", "seonam-health-network", "hwagen-rehab"]}, {"id": "refined:equipment", "label": "휠체어·보행 보조기기 마련", "parents": ["보조기기 필요", "거동 불편·보행 보조 필요"], "serviceIds": ["disability-equipment", "disability-equipment-nhis", "rental-child"]}, {"id": "refined:repair", "label": "이동보조기기 고장·수리", "parents": ["보조기기 필요"], "serviceIds": ["wheelchair-repair"]}]}, {"id": "care", "name": "일상생활·퇴원 후 돌봄", "items": [{"id": "refined:daily", "label": "세면·가사 등 일상 도움", "parents": ["일상생활 도움 필요"], "serviceIds": ["care-sos", "elderly-tailored", "activity-assistance", "daily-care"]}, {"id": "refined:discharge", "label": "퇴원 직후 돌봄 연결", "parents": ["퇴원 후 돌봄"], "serviceIds": ["integrated-care", "care-sos", "seonam-health-network", "healthy-age-center", "nmc-public-linkage", "boramae-health-network"]}, {"id": "refined:longterm", "label": "장기요양 등급·이용 상담", "parents": ["장기요양 필요"], "serviceIds": ["longtermcare", "integrated-care"]}, {"id": "refined:caregap", "label": "가족 부재·돌봄 공백", "parents": ["보호자 부재·돌봄 부담", "일상생활 도움 필요"], "serviceIds": ["care-sos", "daily-care", "elderly-tailored", "integrated-care", "emergency-care-local"]}]}, {"id": "food", "name": "식사·영양·먹거리", "items": [{"id": "refined:meal-delivery", "label": "조리 어려움·식사배달 상담", "parents": ["식사 준비 어려움"], "serviceIds": ["senior-food", "care-sos", "rehome-senior"]}, {"id": "refined:food-shortage", "label": "먹거리·생필품 부족", "parents": ["생계 곤란", "식사 준비 어려움"], "serviceIds": ["free-food-immediate", "food-bank"]}, {"id": "refined:nutrition", "label": "식사량 감소·영양 관리 상담", "parents": ["영양 불량·식사량 감소"], "serviceIds": ["senior-food", "healthy-age-center", "ai-iot"]}, {"id": "refined:chewing", "label": "저작 불편으로 식사 어려움", "parents": ["구강 문제", "영양 불량·식사량 감소"], "serviceIds": ["oral-health", "senior-dentures"]}]}, {"id": "mental", "name": "기억력·마음건강", "items": [{"id": "refined:memory", "label": "기억력 저하·치매 검사 상담", "parents": ["인지 저하·치매 의심"], "serviceIds": ["dementia"]}, {"id": "refined:dementia-care", "label": "치매 등록·가족 돌봄 상담", "parents": ["인지 저하·치매 의심", "보호자 부재·돌봄 부담"], "serviceIds": ["dementia", "longtermcare"]}, {"id": "refined:mood", "label": "우울·불안·정서상담 연결", "parents": ["우울감·정서 지원 필요"], "serviceIds": ["mental-welfare", "mental-counseling", "mental-total-care"]}, {"id": "refined:mental-case", "label": "음주·정신건강 사례관리 상담", "parents": ["음주 문제", "정신건강 사례관리"], "serviceIds": ["mental-welfare", "mental-total-care", "eunpyeong-medical"]}]}, {"id": "safety", "name": "독거·고립·안전", "items": [{"id": "refined:isolation", "label": "안부 확인·고립 완화", "parents": ["독거", "사회적 고립"], "serviceIds": ["elderly-tailored", "mental-welfare", "case-management"]}, {"id": "refined:emergency-safety", "label": "독거 응급상황·안전확인 상담", "parents": ["독거", "안전 설비 필요"], "serviceIds": ["emergency-safety", "elderly-tailored"]}, {"id": "refined:fall", "label": "낙상 예방·생활 안전 상담", "parents": ["낙상 위험", "안전 설비 필요"], "serviceIds": ["disability-rehabilitation", "healthy-age-center", "home-repair"]}, {"id": "refined:family-burden", "label": "가족의 돌봄 부담 상담", "parents": ["보호자 부재·돌봄 부담"], "serviceIds": ["integrated-care", "longtermcare", "care-sos"]}]}, {"id": "housing", "name": "주거·냉난방", "items": [{"id": "refined:home-repair", "label": "집수리·주거 안전 개선", "parents": ["주거환경 불량(위생·수리)", "안전 설비 필요"], "serviceIds": ["home-repair", "case-management"]}, {"id": "refined:heating", "label": "단열·난방설비 개선", "parents": ["냉난방 어려움", "주거환경 불량(위생·수리)"], "serviceIds": ["energy-efficiency", "eco-boiler-old"]}, {"id": "refined:energy-bill", "label": "냉난방 요금 부담", "parents": ["냉난방 어려움", "생계 곤란"], "serviceIds": ["energy-voucher"]}, {"id": "refined:rent", "label": "월세·주거비 지원 상담", "parents": ["주거환경 불량(위생·수리)", "생계 곤란"], "serviceIds": ["seoul-rent-voucher", "case-management"]}]}, {"id": "access", "name": "이동·기관 연결·생계", "items": [{"id": "refined:accompany", "label": "진료·검사 때 동행 필요", "parents": ["병원 동행 필요"], "serviceIds": ["seoul-health-ride", "daily-care"]}, {"id": "refined:taxi", "label": "장애로 병원 이동 어려움", "parents": ["병원 동행 필요", "거동 불편·보행 보조 필요"], "serviceIds": ["disability-taxi", "seoul-health-ride"]}, {"id": "refined:socialwork", "label": "병원 사회복지사 상담 연결", "parents": ["의료비 부담", "퇴원 후 돌봄"], "serviceIds": ["ewha-medical-social", "boramae-medical-social", "boramae-health-network", "nmc-public-linkage", "redcross-hope"]}, {"id": "refined:income", "label": "입원·치료로 생계 곤란", "parents": ["생계 곤란", "긴급 지원 필요"], "serviceIds": ["seoul-sickleave", "emergency-national", "emergency-seoul", "seoul-hope", "case-management"]}]}]};

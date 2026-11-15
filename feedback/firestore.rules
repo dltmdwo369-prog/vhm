@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+    function admin() {
+      return signedIn() && request.auth.token.email == 'dltmdwo369@gmail.com';
+    }
+    match /feedback/{id} {
+      allow read: if signedIn() && (resource.data.authorId == request.auth.uid || admin());
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll(['authorId', 'authorEmail', 'title', 'body', 'category', 'status', 'reply', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['authorId', 'authorEmail', 'title', 'body', 'category', 'status', 'reply', 'createdAt', 'updatedAt'])
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.authorEmail == request.auth.token.email
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 100
+        && request.resource.data.body is string && request.resource.data.body.size() > 0 && request.resource.data.body.size() <= 3000
+        && request.resource.data.category in ['오류 신고', '개선 제안', '사용 문의', '기타']
+        && request.resource.data.status == '접수' && request.resource.data.reply == ''
+        && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
+      allow update: if admin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reply', 'updatedAt'])
+        && request.resource.data.status in ['접수', '미해결', '해결완료']
+        && request.resource.data.reply is string && request.resource.data.reply.size() <= 3000
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+  }
+}

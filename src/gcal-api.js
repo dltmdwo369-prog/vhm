@@ -44,7 +44,8 @@
       let consented = false, hint = '';
       try { consented = !!localStorage.getItem(drive ? 'vhm-consented-drive' : 'vhm-consented'); hint = localStorage.getItem('vhm-email') || '';
         sessionStorage.setItem(STATE_KEY, JSON.stringify({ st, drive, silent, at: Date.now() })); } catch (e) {}
-      const q = new URLSearchParams({ client_id: CFG.clientId, redirect_uri: REDIRECT, response_type: 'token', scope: drive ? DRIVE_SCOPE : CAL_SCOPE, include_granted_scopes: 'true', state: st });
+      const identityScopes = CFG.feedback && CFG.feedback.apiKey ? ' openid email profile' : '';
+      const q = new URLSearchParams({ client_id: CFG.clientId, redirect_uri: REDIRECT, response_type: 'token', scope: (drive ? DRIVE_SCOPE : CAL_SCOPE) + identityScopes, include_granted_scopes: 'true', state: st });
       if (silent) q.set('prompt', 'none'); else if (!consented) q.set('prompt', 'consent');
       if (hint) q.set('login_hint', hint);
       location.assign(AUTH_URL + '?' + q.toString());
@@ -71,6 +72,7 @@
     },
     signOut() {
       const t = this.token; this.token = null; this.exp = 0; this.hasDrive = false;
+      if (window.FEEDBACK) FEEDBACK.signOut();
       try { sessionStorage.removeItem(TOKEN_KEY); ['vhm-consented', 'vhm-consented-drive', 'vhm-cal-ids', 'vhm-email'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
       if (t) try { fetch(REVOKE_URL + '?token=' + encodeURIComponent(t), { method: 'POST', mode: 'no-cors' }).catch(() => {}); } catch (e) {}
     }

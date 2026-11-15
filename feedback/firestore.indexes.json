@@ -1,0 +1,11 @@
+{
+  "indexes": [{
+    "collectionGroup": "feedback",
+    "queryScope": "COLLECTION",
+    "fields": [
+      {"fieldPath": "authorId", "order": "ASCENDING"},
+      {"fieldPath": "createdAt", "order": "DESCENDING"}
+    ]
+  }],
+  "fieldOverrides": []
+}
