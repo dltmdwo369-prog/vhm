@@ -1397,6 +1397,9 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
 #tab-link .lk-refined summary span{display:block;font-size:12px;font-weight:400;color:var(--sub);margin:4px 0}
 #tab-link .lk-refined .lk-chips{margin-top:10px}#tab-link .lk-pending-needs{margin-top:16px}#tab-link .lk-pending-needs button{display:block;text-align:left;white-space:normal}
 
+#tab-link .lk-urgent{padding:12px;margin-bottom:12px;border:1px solid #e9c589;border-left:4px solid #b57720;border-radius:10px;background:#fff8eb}
+#tab-link .lk-urgent .lk-chip{font-weight:700;background:transparent;border:0;padding:4px;min-height:36px}#tab-link .lk-urgent .lk-chip.on{color:#775012}
+
 </style>
 </head>
 <body>
@@ -3692,6 +3695,7 @@ window.VHM_PUBLIC_REFERRALS = {"datasetId": "vhm-link-research-2026-11-15", "sch
   }
   // Display grouping only: never rewrite the user's saved category/need IDs.
   const broadGroups = {
+    urgent:['긴급 지원 필요'],
     cost:['의료비 부담'],
     oral:['구강 문제'],
     senses:['시력·청력 문제'],
@@ -3706,14 +3710,14 @@ window.VHM_PUBLIC_REFERRALS = {"datasetId": "vhm-link-research-2026-11-15", "sch
   };
   function groupedNeeds(categories) {
     const groups = refinedGroups.map(g => ({id:g.id,name:g.name,items:g.items.map(i => ({...clone(i),sourceIds:[i.id]}))}));
+    groups.unshift({id:'urgent',name:'긴급 지원 필요',standalone:true,items:[]});
     const destinations = new Map(Object.entries(broadGroups).flatMap(([id,labels]) => labels.map(label => [needsKey(label),id])));
     const byLabel = new Map(groups.flatMap(g => g.items.map(i => [needsKey(i.label),i])));
     for (const c of categories) for (const raw of c.items) {
       const k = needsKey(raw.label), existing = byLabel.get(k);
       if (existing) { if (!existing.sourceIds.includes(raw.id)) existing.sourceIds.push(raw.id); continue; }
-      const destination = destinations.get(k) || 'other';
-      let group = groups.find(g => g.id === destination);
-      if (!group) { group = {id:'other',name:'기타',items:[]}; groups.push(group); }
+      const destination = destinations.get(k) || 'access';
+      const group = groups.find(g => g.id === destination);
       const item = {...clone(raw),sourceIds:[raw.id]}; group.items.push(item); byLabel.set(k,item);
     }
     return groups;
@@ -3888,9 +3892,11 @@ window.VHM_PUBLIC_REFERRALS = {"datasetId": "vhm-link-research-2026-11-15", "sch
     const res = scored(), refined = checkGroups(), count = refined.reduce((n,g) => n + g.items.length,0);
     const selected = selectedNeedIds();
     const pending = allServices().filter(s => s.verificationStatus === 'needs_contact' && M.refinedHits(s,needLabels(s),selected).length);
-    return '<div class="lk-layout"><section class="card"><div class="card-head"><h3>대상자 요구 체크</h3><button class="small" id="lkClear">체크 초기화</button></div><div class="card-body"><p class="hint">체크는 저장·전송하지 않습니다. 탭을 떠나거나 연결을 해제하면 초기화됩니다. 이름은 입력하지 않습니다.</p>'
-      + '<p><b>대상자 요구 ' + refined.length + '개 분야 · ' + count + '개 항목</b><br><span class="hint">분야를 펼쳐 필요한 항목을 골라주세요. 자격 판정·진단이 아닌 상담 연결용입니다.</span></p>'
-      + refined.map(g => '<details class="lk-refined" id="refined-' + esc(g.id) + '" data-need-group="' + esc(g.id) + '"' + (L.needOpen.has(g.id) ? ' open' : '') + '><summary>' + esc(g.name) + '<span>' + g.items.filter(i => i.sourceIds.some(id => L.checks.has(id))).length + ' / ' + g.items.length + ' 선택</span></summary><div class="lk-chips">' + g.items.map(needChip).join('') + '</div></details>').join('')
+    return '<div class="lk-layout"><section class="card"><div class="card-head"><h3>대상자 요구 체크</h3><button class="small" id="lkClear">체크 초기화</button></div><div class="card-body">'
+      + refined.filter(g => g.standalone && g.items.length).map(g => '<div class="lk-urgent" id="refined-' + esc(g.id) + '">' + g.items.map(needChip).join('') + '</div>').join('')
+      + '<p class="hint">체크는 저장·전송하지 않습니다. 탭을 떠나거나 연결을 해제하면 초기화됩니다. 이름은 입력하지 않습니다.</p>'
+      + '<p><b>대상자 요구 ' + refined.filter(g => !g.standalone).length + '개 분야 · ' + count + '개 항목</b><br><span class="hint">분야를 펼쳐 필요한 항목을 골라주세요. 자격 판정·진단이 아닌 상담 연결용입니다.</span></p>'
+      + refined.filter(g => !g.standalone).map(g => '<details class="lk-refined" id="refined-' + esc(g.id) + '" data-need-group="' + esc(g.id) + '"' + (L.needOpen.has(g.id) ? ' open' : '') + '><summary>' + esc(g.name) + '<span>' + g.items.filter(i => i.sourceIds.some(id => L.checks.has(id))).length + ' / ' + g.items.length + ' 선택</span></summary><div class="lk-chips">' + g.items.map(needChip).join('') + '</div></details>').join('')
       + '</div></section><section class="card"><div class="card-head"><h3>검토 후보 ' + (L.checks.size ? res.length + '건' : '') + '</h3></div><div class="card-body"><div class="infobox">요구 일치 순서이며 수급 자격 판정이 아닙니다. 연령·지역·소득·보험·중복 제한을 상세에서 확인하세요. 개인정보 제3자 제공 동의와 기관 기록 절차를 지켜주세요. 개인 서비스는 기존의 포괄 요구로 연결될 수 있어 세부 지원내용을 확인해야 합니다.</div>'
       + (L.checks.size ? res.length ? res.map(x => serviceCard(x.s,x.hit)).join('') : '<p class="empty">일치하는 검토 후보가 없습니다. 확인 필요 자료나 개인 서비스의 연결 항목도 확인하세요.</p>' : '<p class="empty">요구를 체크하면 검토할 서비스를 표시합니다.</p>')
       + (pending.length ? '<aside class="warnbox lk-pending-needs"><b>관련 자료 중 담당기관 확인 필요 ' + pending.length + '건</b><p>아래 자료는 추천·신청 가능 사업이 아닙니다. 현행 운영과 지원내용 확인이 필요합니다.</p>' + pending.map(s => '<button class="link" data-detail="' + esc(s._key) + '">' + esc(s.name) + ' — 확인 필요</button>').join('') + '</aside>' : '') + '</div></section></div>';
