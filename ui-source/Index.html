@@ -124,6 +124,7 @@ dialog::backdrop{background:rgba(20,28,45,.42)}
 label.f{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--sub)}
 label.f > input,label.f > select,label.f > textarea{color:var(--ink);font-size:14px}
 textarea{resize:vertical;min-height:70px}
+#eventForm textarea[name="memo"]{line-height:1.5;min-height:calc(7.5em + 16px)}
 .hint{font-size:12px;color:var(--faint)}
 .warnbox{background:#fff8e8;border:1px solid #efdcae;border-radius:8px;padding:8px 10px;font-size:12.5px;color:#5c3d00}
 .infobox{background:#f1f6ff;border:1px solid #cfdcf3;border-radius:8px;padding:8px 10px;font-size:12.5px;color:#203a66}
@@ -376,7 +377,7 @@ table.files select{padding:3px 6px;font-size:12px}
             <label class="row" style="gap:4px"><input type="checkbox" name="dueMail" style="width:auto"> 이메일로도</label>
             <button type="button" class="small" id="dueClear">기한 지우기</button>
           </div></div>
-        <label class="f full">메모 <span class="hint">(구글 캘린더 화면에는 보이지 않는 숨은 정보로 저장)</span><textarea name="memo" maxlength="500" placeholder="본인 확인용 짧은 메모 (상담 내용은 기관 전산시스템에)"></textarea></label>
+        <label class="f full">메모 <span class="hint">(구글 캘린더 화면에는 보이지 않는 숨은 정보로 저장)</span><textarea name="memo" maxlength="500" rows="5" placeholder="본인 확인용 짧은 메모 (상담 내용은 기관 전산시스템에)"></textarea></label>
       </div>
     </div>
     <div class="dlg-foot">
@@ -862,9 +863,10 @@ function syncPersonHint() {
   $('#personHint').innerHTML = parts.join(' · ');
 }
 
+const EVENT_MEMO_TEMPLATE = '특이사항:\n이름/생년월일:\n주소:\n전화번호:';
 function openEvent(ev, defaults = {}) {
   const f = $('#eventForm'); f.reset(); S.editing = ev || null;
-  const d = ev ? Object.assign({}, ev) : Object.assign({ kind:'work', date:S.selected, start:'', end:'', type:'방문', status:'예정', group:'미지정', prio:'normal', target:'', birth:'', sex:'', ptype:'일정', title:'', memo:'', reminder:S.settings.defaultReminder, parentId:'' }, defaults);
+  const d = ev ? Object.assign({}, ev) : Object.assign({ kind:'work', date:S.selected, start:'', end:'', type:'방문', status:'예정', group:'미지정', prio:'normal', target:'', birth:'', sex:'', ptype:'일정', title:'', memo:EVENT_MEMO_TEMPLATE, reminder:S.settings.defaultReminder, parentId:'' }, defaults);
   f.kind.value = d.kind; f.date.value = d.date; f.endDate.value = d.endDate || d.date; f.endDate.min = d.date; f.start.value = d.start || ''; f.end.value = d.end || ''; $$('#eventForm .tin').forEach(x => x.classList.remove('bad'));
   f.type.value = d.type || ''; f.status.value = d.status || '예정'; f.group.value = d.group || '미지정'; f.prio.value = d.prio || 'normal'; f.target.value = d.target || ''; f.birth.value = d.birth || ''; f.sex.value = d.sex || '';
   f.ptype.value = d.ptype || '일정'; f.done.checked = !!d.done; f.title.value = d.title || ''; f.memo.value = d.memo || ''; f.reminder.value = String(d.reminder ?? 30);
@@ -903,6 +905,8 @@ function readForm() {
   if (!multi && f.start.value && f.end.value && f.end.value < f.start.value) { alert('종료 시간이 시작 시간보다 빠릅니다.'); return null; }
   if (!f.start.value && f.end.value) { alert('시작 시간을 입력하세요.'); return null; }
   const e = { kind:f.kind.value, date:f.date.value, endDate: multi ? endD : '', start:f.start.value, end:f.end.value, memo:f.memo.value.trim(), reminder:+f.reminder.value, parentId:f.dataset.parentId || '' };
+  // 새 일정에서 안내 항목만 남겨 둔 경우 빈 메모로 저장합니다.
+  if (!S.editing && e.memo === EVENT_MEMO_TEMPLATE) e.memo = '';
   if (S.editing) { e.id = S.editing.id; e.updated = S.editing.updated; e.uid = S.editing.uid; e.dueId = S.editing.dueId || ''; e.movedFrom = S.editing.movedFrom || ''; }
   if (f.dueDate.value) {
     const dt = f.dueTime.value.trim() ? tidyTime(f.dueTime) : '09:00';

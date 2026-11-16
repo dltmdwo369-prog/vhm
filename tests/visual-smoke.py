@@ -55,6 +55,27 @@ with sync_playwright() as p:
         page.locator('[data-tab="note"]').click()
         assert page.locator('#tab-note').is_visible()
         page.locator('[data-tab="cal"]').click()
+        # New memo template is editable; existing/locked notes must never be replaced.
+        template = '특이사항:\n이름/생년월일:\n주소:\n전화번호:'
+        page.evaluate('openEvent(null)')
+        memo = page.locator('#eventForm textarea[name="memo"]')
+        assert memo.input_value() == template
+        assert page.evaluate('readForm().memo') == ''
+        assert memo.evaluate('el => { const s = getComputedStyle(el); return el.clientHeight - parseFloat(s.paddingTop) - parseFloat(s.paddingBottom) >= 5 * parseFloat(s.lineHeight); }')
+        assert page.evaluate('document.querySelector("#eventDlg").scrollWidth <= document.querySelector("#eventDlg").clientWidth'), f'memo dialog overflow at {width}px'
+        memo.fill(template.replace('특이사항:', '특이사항: 가상 테스트'))
+        assert page.evaluate('readForm().memo') == template.replace('특이사항:', '특이사항: 가상 테스트')
+        memo.fill('')
+        assert page.evaluate('readForm().memo') == ''
+        page.evaluate('document.querySelector("#eventDlg").close(); openEvent(null, {memo:"연계 일정 가상 메모"})')
+        assert memo.input_value() == '연계 일정 가상 메모'
+        for existing in [dict(EVENTS[0], memo='기존 가상 메모'), dict(EVENTS[0], memo='')]:
+            page.evaluate('ev => { document.querySelector("#eventDlg").close(); openEvent(ev); }', existing)
+            assert memo.input_value() == existing['memo']
+        page.evaluate('ev => { document.querySelector("#eventDlg").close(); openEvent(ev); }', dict(EVENTS[0], memo='', memoLock='locked', memoCipher='fake-cipher'))
+        assert memo.is_disabled() and memo.input_value() == ''
+        assert page.evaluate('readForm().memoCipher') == 'fake-cipher'
+        page.evaluate('document.querySelector("#eventDlg").close()')
         # Sign out must clear cached UI data as well as the aggregate cards.
         page.evaluate('(events) => { S.doneEvents = events; S.dues = [{id:"mock-due"}]; }', EVENTS)
         page.on('dialog', lambda dialog: dialog.accept())
@@ -65,6 +86,6 @@ with sync_playwright() as p:
             assert page.locator(selector).inner_text() == '—'
         assert not errors, f'JS errors {errors}'
         assert not requests, f'Unexpected network request: {requests}'
-        print(f'PASS {width}x{height}: overview, calendar, list, education, notes, responsiveness, no network/JS errors')
+        print(f'PASS {width}x{height}: editable five-line memo template, existing/locked memos, overview, calendar, list, education, notes, responsiveness, no network/JS errors')
         page.close()
     browser.close()

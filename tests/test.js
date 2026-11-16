@@ -322,6 +322,8 @@ const server = http.createServer((req, res) => {
   // 10d. 메모: Enter 줄바꿈, Ctrl+Enter·⌘+Enter 저장
   await page.click('#btnNew'); await page.selectOption('#eventForm select[name=type]', '전화'); await setT(page, 'start', '1530');
   await page.fill('#eventForm input[name=target]', '가-엔터1');
+  check('새 일정 메모 기본 항목은 편집 가능한 실제 입력값', await page.inputValue('#eventForm textarea[name=memo]') === '특이사항:\n이름/생년월일:\n주소:\n전화번호:');
+  await page.fill('#eventForm textarea[name=memo]', '');
   await page.click('#eventForm textarea[name=memo]'); await page.keyboard.type('첫 줄'); await page.keyboard.press('Enter'); await page.keyboard.type('둘째 줄');
   const stillOpen1 = await page.$eval('#eventDlg', d => d.open);
   await page.keyboard.press('Control+Enter'); await page.waitForSelector('#eventDlg:not([open])', { state: 'attached', timeout: 15000 }); await idle(page);
