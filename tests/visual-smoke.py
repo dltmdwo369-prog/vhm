@@ -76,6 +76,27 @@ with sync_playwright() as p:
         assert memo.is_disabled() and memo.input_value() == ''
         assert page.evaluate('readForm().memoCipher') == 'fake-cipher'
         page.evaluate('document.querySelector("#eventDlg").close()')
+        for ptype in ['일정', '메모']:
+            page.evaluate('ptype => openEvent(null, {kind:"personal", ptype})', ptype)
+            assert memo.input_value() == ''
+            assert not page.locator('#eventEndDate').is_visible()
+            page.locator('#eventForm input[name="title"]').fill('가상 개인 테스트')
+            assert page.evaluate('readForm().endDate') == ''
+            page.locator('#eventForm label:has(input[name="dateMode"][value="range"])').click()
+            assert page.locator('#eventEndDate').is_visible()
+            assert page.locator('#eventDateLabel').inner_text() == '시작하는 날'
+            page.locator('#eventForm input[name="endDate"]').fill('2026-11-15')
+            assert page.evaluate('readForm().endDate') == '2026-11-15'
+            assert page.evaluate('document.querySelector("#eventDlg").scrollWidth <= document.querySelector("#eventDlg").clientWidth'), f'personal range overflow at {width}px'
+            page.locator('#eventForm label:has(input[name="dateMode"][value="single"])').click()
+            assert page.evaluate('readForm().endDate') == ''
+            assert not page.locator('#eventEndDate').is_visible()
+            page.evaluate('document.querySelector("#eventDlg").close()')
+        page.evaluate('openEvent(null)')
+        memo.fill('가상 입력 중 메모')
+        page.locator('#eventForm label:has(input[name="kind"][value="personal"])').click()
+        assert memo.input_value() == '가상 입력 중 메모'
+        page.evaluate('document.querySelector("#eventDlg").close()')
         # Sign out must clear cached UI data as well as the aggregate cards.
         page.evaluate('(events) => { S.doneEvents = events; S.dues = [{id:"mock-due"}]; }', EVENTS)
         page.on('dialog', lambda dialog: dialog.accept())

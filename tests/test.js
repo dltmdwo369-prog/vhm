@@ -368,6 +368,8 @@ const server = http.createServer((req, res) => {
   await page.click(`.month .day[data-date="${RD}"]`).catch(() => {}); await page.evaluate(d => { S.selected = d; S.cursor = new Date(+d.slice(0, 4), +d.slice(5, 7) - 1, 1); }, RD); await page.click('#btnRefresh'); await idle(page);
   await page.click('#btnNew'); await page.click('#eventForm [name=kind][value=personal], #eventForm [data-kind=personal]').catch(() => {});
   await page.evaluate(() => { const f = document.querySelector('#eventForm'); f.kind.value = 'personal'; syncKindUI(); });
+  check('새 개인 일정은 메모가 비어 있고 당일 날짜 하나만 표시', await page.inputValue('#eventForm textarea[name=memo]') === '' && !(await page.isVisible('#eventForm input[name=endDate]')) && await page.evaluate(() => document.querySelector('#eventForm').dateMode.value === 'single'));
+  await page.click('#eventForm label:has(input[name=dateMode][value=range])');
   const endShown = await page.isVisible('#eventForm input[name=endDate]'), endDef = await page.inputValue('#eventForm input[name=endDate]');
   await page.fill('#eventForm input[name=title]', '가상 연수'); await page.fill('#eventForm input[name=endDate]', RD2);
   await page.click('#btnSave'); await idle(page);
@@ -386,6 +388,17 @@ const server = http.createServer((req, res) => {
   const rEv2 = G.events[G.pers].find(e => e.summary === '가상 연수');
   await page.click('#btnNew'); const endHiddenWork = !(await page.isVisible('#eventForm input[name=endDate]')); await page.click('#eventDlg [data-close]');
   check('기간 일정 다시 열면 끝나는 날 그대로, 시간 넣으면 첫날 09:00~끝날 17:00, 업무 일정엔 끝나는 날 칸 없음', endKept === RD2 && rEv2.start.dateTime === RD + 'T09:00:00+09:00' && rEv2.end.dateTime === RD2 + 'T17:00:00+09:00' && endHiddenWork, JSON.stringify([endKept, rEv2.start, rEv2.end, endHiddenWork]));
+  await page.evaluate(async () => {
+    await loadEvents();
+    const ev = S.events.find(e => e.title === '가상 연수');
+    if (!ev) throw new Error('Saved range event missing from fake server reload: ' + JSON.stringify(S.events.map(e => ({id:e.id,title:e.title,date:e.date,kind:e.kind}))));
+    openEvent(ev);
+  });
+  check('기존 기간 일정은 기간 선택으로 다시 열림', await page.evaluate(() => document.querySelector('#eventForm').dateMode.value === 'range') && await page.isVisible('#eventForm input[name=endDate]'));
+  await page.click('#eventForm label:has(input[name=dateMode][value=single])');
+  await page.click('#btnSave'); await idle(page);
+  const oneDay = G.events[G.pers].find(e => e.summary === '가상 연수');
+  check('기간에서 당일로 변경하면 숨긴 끝 날짜가 저장에 남지 않음', oneDay.start.dateTime === RD + 'T09:00:00+09:00' && oneDay.end.dateTime === RD + 'T17:00:00+09:00');
 
   // 10c. 한 날짜 일괄 삭제 + 되돌리기
   const BD = G.today; const bmk = (h, extra) => mkEv(G.work, Object.assign({ summary: '[전화]', start: { dateTime: BD + 'T' + h + ':00+09:00' }, end: { dateTime: BD + 'T' + h.replace(/:\d\d$/, ':30') + ':00+09:00' },
