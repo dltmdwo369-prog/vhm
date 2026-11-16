@@ -289,4 +289,5 @@ if not os.path.exists(cfg):
 # Root and site/ are both supported static deployment locations.
 import shutil
 shutil.copytree(H + 'education', H + 'site/education', dirs_exist_ok=True)
+shutil.copytree(H + 'forms', H + 'site/forms', dirs_exist_ok=True)
 print('ok', len(s))
