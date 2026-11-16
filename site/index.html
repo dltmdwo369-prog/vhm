@@ -925,6 +925,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
             <button type="button" class="small" id="dueClear">기한 지우기</button>
           </div></div>
         <div class="f full"><span>메모 <span class="hint">(잠금 암호로 잠가서 저장 — 구글·Claude도 읽을 수 없음, 200자까지 · Enter는 줄바꿈, <b>Ctrl+Enter</b>(맥은 ⌘+Enter)는 저장)</span> <button type="button" class="link" id="memoUnlock" hidden>🔓 잠금 풀기</button></span><textarea name="memo" maxlength="200" rows="5" placeholder="본인 확인용 짧은 메모 (상담 내용은 기관 전산시스템에)"></textarea></div>
+        <div class="f full" id="memoImages"><span>이미지 첨부</span><div class="row"><button type="button" id="memoImagePick">+ 이미지 선택</button><button type="button" id="memoImageDrive" hidden>Drive 연결 (작성 내용 초기화)</button><input type="file" id="memoImageInput" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden></div><span class="hint" id="memoImageHint">파일당 5MB · 최대 3개 · 일정 저장 시 암호화하여 개인 Drive에 저장합니다.</span><div id="memoImageList" aria-live="polite"></div></div>
       </div>
     </div>
     <div class="dlg-foot">
@@ -1040,6 +1041,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
       return res;
     },
     signOut() {
+      if (window.MEMO_IMAGES) MEMO_IMAGES.reset();
       if (window.NOTES) NOTES.resetSession();
       const t = this.token; this.token = null; this.exp = 0; this.hasDrive = false;
       if (window.FEEDBACK) FEEDBACK.signOut();
@@ -1126,7 +1128,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
     let endDate = allDay ? (ev.end && ev.end.date ? addDays(ev.end.date, -1) : '') : e.date;
     if (!endDate || endDate <= s.date) endDate = '';
     const o = { id: ev.id, ical: ev.iCalUID || '', kind, uid: tag('uid') || ev.iCalUID || ev.id, date: s.date, start: s.time, end: e.time, endDate,
-      memo: tag('memo'), parentId: tag('parent'), reminder, updated: ev.etag, fromApp: tag('kind') !== '', doneAt: tag('done_at'), movedFrom: tag('from'),
+      memo: tag('memo'), imageIds: parseImageIds(tag('images')), imageIdsRaw: tag('images'), parentId: tag('parent'), reminder, updated: ev.etag, fromApp: tag('kind') !== '', doneAt: tag('done_at'), movedFrom: tag('from'),
       due: tag('due'), dueRem: tag('duerem'), dueMail: tag('duemail') === '1', dueId: tag('dueid') };
     if (inDone) { o.inDone = true; if (tag('prevrem') !== '' && isFinite(+tag('prevrem'))) o.reminder = +tag('prevrem'); }   // 완료하면 알림을 끄고, 원래 알림은 기억
     const title = ev.summary || '';
@@ -1201,7 +1203,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
       e.sex = e.sex === '남' || e.sex === '여' ? e.sex : '';
     } else {
       e.kind = 'personal'; e.done = !!e.done; e.ptype = e.ptype === '메모' ? '메모' : '일정'; e.title = String(e.title || '').slice(0, 80);
-      if (!e.title && !e.memo && !e.memoCipher) throw new Error('제목이나 메모를 입력하세요.');
+      if (!e.title && !e.memo && !e.memoCipher && !(e.imageIds && e.imageIds.length)) throw new Error('제목이나 메모 또는 이미지를 입력하세요.');
     }
     e.memo = String(e.memo || ''); if (!e.memo.startsWith(LOCK_PREFIX)) e.memo = e.memo.slice(0, 500);
     e.reminder = Number(e.reminder); if (!isFinite(e.reminder)) e.reminder = -1;
@@ -1213,12 +1215,18 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
     return e;
   }
   const DUE_REMS = ['0', '60', '1440', '4320', '10080'];
+  function validImageIds(ids) { return Array.isArray(ids) && ids.length <= 3 && ids.every(id => typeof id === 'string' && /^[\w-]{1,150}$/.test(id)) && new Set(ids).size === ids.length; }
+  function parseImageIds(raw) { if (!raw) return []; try { const ids = JSON.parse(raw); return validImageIds(ids) ? ids : null; } catch (_) { return null; } }
   function newUid() { const a = new Uint8Array(16); crypto.getRandomValues(a); return Array.from(a, b => b.toString(16).padStart(2, '0')).join(''); }
   function bodyOf(e, settings) {
     const summary = e.kind === 'work'
       ? '[' + e.type + ']' + (e.status && e.status !== '예정' ? ' ' + e.status : '') + (settings.titleAlias && e.target ? ' ' + e.target : '')
       : (e.title || (e.ptype === '메모' ? '메모' : '개인 일정'));
     const priv = { vhm_kind: e.kind, vhm_memo: e.memo, vhm_parent: e.parentId || '', vhm_uid: e.uid || newUid() };
+    if (e.imageIds !== undefined) {
+      if (e.imageIds === null && e.imageIdsRaw) priv.vhm_images = e.imageIdsRaw;
+      else { if (!validImageIds(e.imageIds)) throw new Error('이미지 첨부 목록이 올바르지 않습니다.'); priv.vhm_images = JSON.stringify(e.imageIds); }
+    }
     if (e.kind === 'work') Object.assign(priv, { vhm_type: e.type, vhm_status: e.status, vhm_group: e.group, vhm_target: e.target, vhm_birth: e.birth || '', vhm_sex: e.sex || '', vhm_prio: e.prio || 'normal' });
     else { priv.vhm_ptype = e.ptype; priv.vhm_done = e.done ? '1' : ''; }
     const fin = isDone(e);
@@ -1239,7 +1247,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
   const LOCK_PREFIX = 'vhm1:', META_TAG = 'vhmlock1:', ITER = 310000, CHECK = 'vhm-lock-ok', MEMO_BYTES = 700;
   const Lock = { key: null, raw: null, meta: undefined };
   const te = new TextEncoder(), td = new TextDecoder();
-  const b64 = u8 => { let s = ''; u8.forEach(b => { s += String.fromCharCode(b); }); return btoa(s); };
+  const b64 = u8 => { const parts = []; for (let i = 0; i < u8.length; i += 32768) parts.push(String.fromCharCode(...u8.subarray(i, i + 32768))); return btoa(parts.join('')); };
   const ub64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
   async function deriveRaw(pass, salt, iter) {
     const base = await crypto.subtle.importKey('raw', te.encode(String(pass).normalize('NFC')), 'PBKDF2', false, ['deriveBits']);
@@ -1284,7 +1292,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
     if (!(await useRaw(await deriveRaw(pass, ub64(m.salt), m.iter)))) throw new Error('암호가 맞지 않습니다.');
     return true;
   }
-  function lockNow() { Lock.key = null; Lock.raw = null; }
+  function lockNow() { Lock.key = null; Lock.raw = null; if (window.MEMO_IMAGES) MEMO_IMAGES.lock(); }
   // 연결 유지로 페이지가 다시 열릴 때만 잠금 키를 잠깐 넘겨줌 (이 탭의 sessionStorage, 돌아오자마자 지움)
   function lockStash() { try { if (Lock.raw) sessionStorage.setItem('vhm-lk-tmp', b64(Lock.raw)); } catch (e) {} }
   async function lockResume() {
@@ -1439,6 +1447,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
       if (!f) return { ok: false, gone: true, message: '이 일정은 다른 기기에서 삭제되었습니다.' };
       if (!force && e.updated && f.ev.etag !== e.updated) return { ok: false, conflict: true, current: toObj(f.ev, f.kind, f.done) };
       const old = toObj(f.ev, f.kind, f.done);
+      if (e.imageIds === undefined) { e.imageIds = old.imageIds; e.imageIdsRaw = old.imageIdsRaw; }
       if (fin && !e.doneAt) e.doneAt = old.doneAt || '';
       e.dueId = old.dueId || e.dueId || '';   // 기한 알림 일정은 구글에 있는 값 기준
       await sealMemo(e, old.memo, opt && opt.allowPlain);
@@ -1691,6 +1700,45 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
     const r = await api('POST', UPLOAD + '/files', { query: { uploadType: 'multipart', fields: 'id,name,mimeType,webViewLink,size' }, rawBody: mp.body, contentType: mp.type });
     return { type: 'file', fileId: r.id, name: r.name || file.name, mime: r.mimeType || file.type, link: r.webViewLink || '' };
   }
+  // Image bytes and original filename are encrypted before leaving the browser.
+  function memoImageMime(bytes) {
+    if (bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71 && bytes[4] === 13 && bytes[5] === 10 && bytes[6] === 26 && bytes[7] === 10) return 'image/png';
+    if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return 'image/jpeg';
+    const head = td.decode(bytes.slice(0, 12));
+    if (/^GIF8[79]a/.test(head)) return 'image/gif';
+    if (head.startsWith('RIFF') && head.slice(8) === 'WEBP') return 'image/webp';
+    throw new Error('PNG, JPG, GIF, WEBP 이미지 파일을 선택하세요.');
+  }
+  async function uploadMemoImage(file) {
+    needDrive();
+    const key = Lock.key;
+    if (!key) throw new LockNeeded();
+    if (!file || !file.size || file.size > 5 * 1048576) throw new Error('이미지는 파일당 5MB까지 첨부할 수 있습니다.');
+    const bytes = new Uint8Array(await file.arrayBuffer()), mime = memoImageMime(bytes);
+    const encrypted = 'vhm-image1:' + await encWith(key, JSON.stringify({ name: String(file.name || 'image').slice(0, 200), mime, data: b64(bytes) }));
+    if (Lock.key !== key) throw new LockNeeded('메모가 다시 잠겼습니다. 잠금을 풀고 다시 저장하세요.');
+    const folder = await linkFolder();
+    if (Lock.key !== key) throw new LockNeeded();
+    const mp = multipart({ name: 'memo-image-' + newUid() + '.vhm', parents: [folder], mimeType: 'application/octet-stream' }, new Blob([encrypted]), 'application/octet-stream');
+    const r = await api('POST', UPLOAD + '/files', { query: { uploadType: 'multipart', fields: 'id' }, rawBody: mp.body, contentType: mp.type });
+    if (!r.id || !/^[\w-]{1,150}$/.test(r.id)) throw new Error('이미지 저장 결과를 확인하지 못했습니다. 다시 시도하세요.');
+    return r.id;
+  }
+  async function readMemoImage(id) {
+    needDrive();
+    const key = Lock.key;
+    if (!key) throw new LockNeeded();
+    if (!/^[\w-]{1,150}$/.test(id)) throw new Error('이미지 파일 ID가 올바르지 않습니다.');
+    const res = await api('GET', DRIVE + '/files/' + id, { query: { alt: 'media' }, raw: true });
+    const raw = await res.text();
+    if (raw.length > 10 * 1048576 || !raw.startsWith('vhm-image1:')) throw new Error('이 앱의 암호화된 이미지가 아닙니다.');
+    const image = JSON.parse(await decWith(key, raw.slice(11)));
+    if (Lock.key !== key) throw new LockNeeded();
+    if (typeof image.data !== 'string' || image.data.length > 7 * 1048576) throw new Error('이미지 크기가 올바르지 않습니다.');
+    const bytes = ub64(image.data), mime = memoImageMime(bytes);
+    if (bytes.length > 5 * 1048576 || mime !== image.mime) throw new Error('이미지 형식이 올바르지 않습니다.');
+    return { name: String(image.name || 'image').slice(0, 200), blob: new Blob([bytes], { type: mime }) };
+  }
   async function downloadForm(fileId, name) {
     needDrive();
     const res = await api('GET', DRIVE + '/files/' + fileId, { query: { alt: 'media' }, raw: true });
@@ -1725,7 +1773,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
     async deleteEvent(id, up) { const r = await deleteEvent(id, up); if (r.current) await decObj(r.current); return r; },
     getStats, exportBackup, restoreBackup, restoreEvents,
     lockState, lockSetup, lockUnlock, lockNow, lockAll, lockStash, lockResume, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
-    linksLoad, linksSave, uploadForm, downloadForm, trashForm, notesLoad, notesSave,
+    linksLoad, linksSave, uploadForm, downloadForm, trashForm, notesLoad, notesSave, uploadMemoImage, readMemoImage,
     hasDrive: () => Auth.hasDrive,
     _resetCache() { CAL = null; LINK = null; NOTE_ID = null; Lock.meta = undefined; lockNow(); }
   };
@@ -2163,7 +2211,7 @@ function itemHtml(e) {
     : (e.kind === 'personal' && !e.done) ? `<div class="quick"><button class="small" data-quick="완료" data-id="${esc(e.id)}" title="완료하면 완료함으로 옮겨집니다">완료</button><button class="small" data-move="${esc(e.id)}" title="다음날이나 다른 날짜로 미루기">미루기</button></div>` : '';
   const doneAt = e.inDone && /^\d{10,}$/.test(e.doneAt || '') ? (d => `<div class="memo">완료 ${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}</div>`)(new Date(+e.doneAt)) : '';
   return `<div class="item ${e.kind==='personal'?'personal':''} ${e.kind==='work'?statusCls[e.status]:''}${e.inDone?' in-done':''}" style="--c:${colorOf(e)}" data-id="${esc(e.id)}" role="button" tabindex="0">
-    <div class="time">${esc(timeOf(e))}</div><div class="main"><div class="title">${titleLine(e)}${b.join('')}${quick}</div>${e.memo ? `<div class="memo">${esc(e.memo)}</div>` : ''}${e.memoLock === 'locked' || e.memoLock === 'bad' ? '<div class="memo">🔒 잠긴 메모</div>' : ''}${doneAt}</div></div>`;
+    <div class="time">${esc(timeOf(e))}</div><div class="main"><div class="title">${titleLine(e)}${b.join('')}${quick}</div>${e.memo ? `<div class="memo">${esc(e.memo)}</div>` : ''}${e.memoLock === 'locked' || e.memoLock === 'bad' ? '<div class="memo">🔒 잠긴 메모</div>' : ''}${e.imageIds && e.imageIds.length ? '<div class="memo">📎 이미지 ' + e.imageIds.length + '개</div>' : ''}${doneAt}</div></div>`;
 }
 // 다가오는 기한: 지난 것 + 앞으로 14일 (기한 캘린더 기준, 완료하면 사라짐)
 function renderDues() {
@@ -2436,7 +2484,7 @@ function openEvent(ev, defaults = {}) {
     ? `휴대폰·구글 캘린더에서 만든 일정입니다 (제목: ${ev.rawTitle || '없음'}). 유형을 고르고 저장하면 실적에 들어갑니다.`
     : '휴대폰·구글 캘린더에서 만든 일정입니다. 저장하면 일정표 형식으로 정리됩니다.';
   $('#eventDlgTitle').textContent = ev ? '일정 수정' : (d.parentId ? '후속 일정 등록' : '새 일정');
-  $('#btnDelete').hidden = !ev; syncKindUI(); syncDoneHint(); syncPersonHint(); if (window.MEMOLOCK) MEMOLOCK.syncMemo(ev ? d : null); $('#eventDlg').showModal();
+  $('#btnDelete').hidden = !ev; syncKindUI(); syncDoneHint(); syncPersonHint(); if (window.MEMOLOCK) MEMOLOCK.syncMemo(ev ? d : null); if (window.MEMO_IMAGES) MEMO_IMAGES.open(d); $('#eventDlg').showModal();
 }
 function syncDoneHint() {
   const f = $('#eventForm'), work = f.kind.value === 'work', fin = work ? f.status.value === '완료' : f.done.checked, was = !!(S.editing && S.editing.inDone);
@@ -2470,6 +2518,7 @@ function readForm() {
   if (!multi && f.start.value && f.end.value && f.end.value < f.start.value) { alert('종료 시간이 시작 시간보다 빠릅니다.'); return null; }
   if (!f.start.value && f.end.value) { alert('시작 시간을 입력하세요.'); return null; }
   const e = { kind:f.kind.value, date:f.date.value, endDate: multi ? endD : '', start:f.start.value, end:f.end.value, memo:f.memo.value.trim(), reminder:+f.reminder.value, parentId:f.dataset.parentId || '' };
+  if (window.MEMO_IMAGES) Object.assign(e, MEMO_IMAGES.read());
   // 새 일정에서 안내 항목만 남겨 둔 경우 빈 메모로 저장합니다.
   if (!S.editing && e.memo === EVENT_MEMO_TEMPLATE) e.memo = '';
   if (S.editing) { e.id = S.editing.id; e.updated = S.editing.updated; e.uid = S.editing.uid; e.dueId = S.editing.dueId || ''; e.movedFrom = S.editing.movedFrom || ''; }
@@ -2485,7 +2534,7 @@ function readForm() {
     f.target.value = maskName(f.target.value);
     if (f.birth.value.trim() && !cleanBirth(f.birth.value)) { alert('출생연도는 1948처럼 네 자리로 적으세요.'); return null; }
     Object.assign(e, { type:f.type.value, status:f.status.value, group:f.group.value, prio:f.prio.value || 'normal', target:f.target.value, birth:cleanBirth(f.birth.value), sex:['남','여'].includes(f.sex.value) ? f.sex.value : '' });
-  } else { Object.assign(e, { ptype:f.ptype.value, title:f.title.value.trim(), done:f.done.checked }); if (!e.title && !e.memo && !e.memoCipher) { alert('제목이나 메모를 입력하세요.'); return null; } }
+  } else { Object.assign(e, { ptype:f.ptype.value, title:f.title.value.trim(), done:f.done.checked }); if (!e.title && !e.memo && !e.memoCipher && !(e.imageIds && e.imageIds.length) && !(window.MEMO_IMAGES && MEMO_IMAGES.hasPending())) { alert('제목이나 메모 또는 이미지를 입력하세요.'); return null; } }
   return e;
 }
 function describe(e) {
@@ -2493,6 +2542,9 @@ function describe(e) {
 }
 async function resolveConflict(mine, current) {
   const a = describe(mine), b = describe(current);
+  const imageSummary = e => e.imageIds === null ? '첨부 목록 확인 필요' : (e.imageIds || []).length + '개';
+  a.push(['첨부 이미지', imageSummary(mine)]); b.push(['첨부 이미지', imageSummary(current)]);
+  if (JSON.stringify(mine.imageIds || []) !== JSON.stringify(current.imageIds || [])) a[a.length - 1][1] += ' (연결 내용 다름)';
   const rows = a.map((r, i) => `<b>${r[0]}</b><span class="${r[1] !== b[i][1] ? 'diff' : ''}">${esc(r[1])}</span><span class="${r[1] !== b[i][1] ? 'diff' : ''}">${esc(b[i][1])}</span>`).join('');
   return choose('다른 기기에서 먼저 수정되었습니다',
     `<p>이 일정을 여는 사이 휴대폰 등 다른 곳에서 내용이 바뀌었습니다. 어느 쪽을 남길까요?</p><div class="cmp"><span></span><b>지금 입력한 내용</b><b>다른 기기의 내용</b>${rows}</div>`,
@@ -2510,17 +2562,20 @@ async function persist(e) {
   return r.event;
 }
 async function submitForm(thenFollow) {
-  const e = readForm(); if (!e) return;
-  if (window.MEMOLOCK && !(await MEMOLOCK.beforeSave(e))) return;
+  if (S.saving) return;
+  S.saving = true;
   $('#btnSave').disabled = true; $('#btnFollow').disabled = true;
   try {
+    const e = readForm(); if (!e) return;
+  if (window.MEMOLOCK && !(await MEMOLOCK.beforeSave(e))) return;
+    if (window.MEMO_IMAGES && !(await MEMO_IMAGES.prepare(e))) return;
     const saved = await persist(e); if (!saved) { $('#eventDlg').close(); return; }
     $('#eventDlg').close(); S.selected = saved.date; const d = parseYmd(saved.date); S.cursor = new Date(d.getFullYear(), d.getMonth(), 1);
     if (saved.inDone && !(S.editing && S.editing.inDone)) showDoneUndo(saved); else toast(saved.inDone ? '완료함에 저장했습니다.' : '구글 캘린더에 저장했습니다.');
     await loadEvents();
     if (thenFollow) openEvent(null, { kind:'work', date:addDays(saved.date, 7), start:saved.start, type:saved.type === '신규' ? '방문' : saved.type, status:'예정', group:saved.group, target:saved.target, birth:saved.birth, sex:saved.sex, parentId:saved.id });
   } catch (err) { /* run() 에서 안내함 */ }
-  finally { $('#btnSave').disabled = false; $('#btnFollow').disabled = false; }
+  finally { S.saving = false; $('#btnSave').disabled = false; $('#btnFollow').disabled = false; }
 }
 
 /* ---------- 교육자료 ---------- */
@@ -4952,6 +5007,111 @@ window.VHM_SUPPS = [
   window.FEATURES = {enabled, destination, setAccount};
   let email = ''; try { if (window.VHM_AUTH && VHM_AUTH.valid()) email = localStorage.getItem('vhm-email') || ''; } catch (_) {}
   setAccount(email);
+})();
+
+</script>
+<script>
+/* Schedule images: local selection, encrypted private Drive files, opaque Calendar references. */
+(function () {
+  'use strict';
+  const $ = s => document.querySelector(s);
+  const MAX = 3, LIMIT = 5 * 1048576;
+  let items = [], raw = '', generation = 0, busy = false, previewURL = '';
+  function clearPreview() {
+    const dlg = $('#memoImagePreview');
+    if (dlg && dlg.open) dlg.close();
+    if (dlg) { dlg.querySelector('img').removeAttribute('src'); dlg.querySelector('a').removeAttribute('href'); }
+    if (previewURL) URL.revokeObjectURL(previewURL);
+    previewURL = '';
+  }
+  function reset() { generation++; items = []; raw = ''; clearPreview(); if ($('#memoImageInput')) $('#memoImageInput').value = ''; paint(); }
+  function paint() {
+    const list = $('#memoImageList'); if (!list) return;
+    list.replaceChildren();
+    $('#memoImagePick').disabled = busy || !!raw || items.length >= MAX;
+    $('#memoImageDrive').hidden = !!(window.VHM_AUTH && VHM_AUTH.hasDrive);
+    $('#memoImageHint').textContent = raw ? '첨부 목록을 읽지 못했습니다. 기존 연결은 보존됩니다.' : '파일당 5MB · 최대 3개 · 저장할 때 암호화합니다. 첨부 해제·일정 삭제 시 Drive 원본은 지우지 않습니다.';
+    items.forEach((item, index) => {
+      const row = document.createElement('div'); row.className = 'row'; row.style.cssText = 'margin-top:6px;min-width:0';
+      const label = document.createElement('span'); label.textContent = item.file ? item.file.name : '🔒 첨부 이미지 ' + (index + 1); label.style.cssText = 'overflow-wrap:anywhere;min-width:0;flex:1';
+      row.append(label);
+      for (const [text, action] of [['보기', () => preview(item)], ['첨부 해제', async () => {
+        if (busy) return;
+        const session = generation;
+        if (item.id && !(await MEMOLOCK.openNow('이미지 첨부를 해제하려면 메모 잠금을 풀어 주세요.'))) return;
+        if (session !== generation) return;
+        clearPreview(); items = items.filter(x => x !== item); paint();
+      }]]) {
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'small'; button.textContent = text; button.disabled = busy;
+        button.onclick = () => Promise.resolve(action()).catch(e => toast(e.message || String(e), 6000)); row.append(button);
+      }
+      list.append(row);
+    });
+  }
+  async function preview(item) {
+    const session = generation;
+    let image;
+    if (item.file) image = {name:item.file.name, blob:item.file};
+    else {
+      if (!VHM_AUTH.hasDrive) return toast('이미지를 보려면 Drive 연결이 필요합니다. 작성 내용을 먼저 저장하세요.', 6000);
+      if (!(await MEMOLOCK.openNow('첨부 이미지를 보려면 메모 잠금을 풀어 주세요.'))) return;
+      image = await SERVER.readMemoImage(item.id);
+    }
+    if (session !== generation || !$('#eventDlg').open) return;
+    clearPreview();
+    let dlg = $('#memoImagePreview');
+    if (!dlg) {
+      dlg = document.createElement('dialog'); dlg.id = 'memoImagePreview'; dlg.setAttribute('aria-label', '첨부 이미지');
+      dlg.innerHTML = '<div class="dlg-head"><h3>첨부 이미지</h3><button type="button">닫기</button></div><div class="dlg-body"><p></p><img alt="첨부 이미지 미리보기" style="display:block;max-width:100%;max-height:60vh;object-fit:contain"><a class="btn" download>이미지 내려받기</a></div>';
+      document.body.append(dlg); dlg.querySelector('button').onclick = clearPreview; dlg.addEventListener('close', clearPreview);
+    }
+    previewURL = URL.createObjectURL(image.blob);
+    dlg.querySelector('p').textContent = image.name;
+    dlg.querySelector('img').src = previewURL;
+    const link = dlg.querySelector('a'); link.href = previewURL; link.download = image.name;
+    dlg.showModal();
+  }
+  async function select() {
+    const input = $('#memoImageInput'), files = Array.from(input.files || []); input.value = '';
+    if (busy || raw) return;
+    if (files.length + items.length > MAX) return toast('이미지는 일정마다 최대 3개까지 첨부할 수 있습니다.');
+    // Reject active image formats such as SVG before showing a local preview.
+    if (files.some(f => !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(f.type) || !f.size || f.size > LIMIT)) return toast('PNG, JPG, GIF, WEBP 이미지만 파일당 5MB까지 선택하세요.', 6000);
+    items.push(...files.map(file => ({file}))); paint();
+  }
+  window.MEMO_IMAGES = {
+    open(d) { reset(); raw = d.imageIds === null ? d.imageIdsRaw : ''; items = (d.imageIds || []).map(id => ({id})); paint(); },
+    read() { return raw ? {imageIds:null, imageIdsRaw:raw} : {imageIds:items.filter(x => x.id).map(x => x.id)}; },
+    hasPending() { return items.some(x => x.file); },
+    reset,
+    lock() { generation++; clearPreview(); items = items.filter(x => x.id).map(x => ({id:x.id})); $('#memoImageInput').value = ''; paint(); },
+    async prepare(e) {
+      if (!items.some(x => x.file && !x.id)) return true;
+      if (!VHM_AUTH.hasDrive) { toast('이미지 첨부에는 Drive 연결이 필요합니다. 작성 내용을 먼저 저장한 뒤 Drive를 연결하세요.', 7000); return false; }
+      const session = generation;
+      if (!(await MEMOLOCK.openNow('이미지를 암호화하여 저장하려면 메모 잠금을 풀어 주세요.'))) return false;
+      if (session !== generation) return false;
+      busy = true; paint();
+      try {
+        for (const item of items) {
+          if (!item.id) {
+            const id = await SERVER.uploadMemoImage(item.file);
+            if (session !== generation || !VHM_AUTH.valid()) return false;
+            item.id = id;
+          }
+        }
+        e.imageIds = items.map(x => x.id); return true;
+      } catch (err) { toast('이미지 저장 실패: ' + (err.message || err) + ' 선택한 파일을 유지했으니 다시 저장하세요.', 8000); return false; }
+      finally { busy = false; paint(); }
+    }
+  };
+  $('#memoImagePick').onclick = () => {
+    if (!VHM_AUTH.hasDrive) return toast('작성 내용을 먼저 저장한 뒤 ‘Drive 연결’을 눌러 주세요. 연결 시 이 창은 초기화됩니다.', 7000);
+    $('#memoImageInput').click();
+  };
+  $('#memoImageInput').onchange = select;
+  $('#memoImageDrive').onclick = () => VHM_AUTH.request('drive').catch(e => toast(e.message || e));
+  $('#eventDlg').addEventListener('close', () => { if (!$('#eventDlg').open) reset(); });
 })();
 
 </script>

@@ -71,6 +71,7 @@
       return res;
     },
     signOut() {
+      if (window.MEMO_IMAGES) MEMO_IMAGES.reset();
       if (window.NOTES) NOTES.resetSession();
       const t = this.token; this.token = null; this.exp = 0; this.hasDrive = false;
       if (window.FEEDBACK) FEEDBACK.signOut();
@@ -157,7 +158,7 @@
     let endDate = allDay ? (ev.end && ev.end.date ? addDays(ev.end.date, -1) : '') : e.date;
     if (!endDate || endDate <= s.date) endDate = '';
     const o = { id: ev.id, ical: ev.iCalUID || '', kind, uid: tag('uid') || ev.iCalUID || ev.id, date: s.date, start: s.time, end: e.time, endDate,
-      memo: tag('memo'), parentId: tag('parent'), reminder, updated: ev.etag, fromApp: tag('kind') !== '', doneAt: tag('done_at'), movedFrom: tag('from'),
+      memo: tag('memo'), imageIds: parseImageIds(tag('images')), imageIdsRaw: tag('images'), parentId: tag('parent'), reminder, updated: ev.etag, fromApp: tag('kind') !== '', doneAt: tag('done_at'), movedFrom: tag('from'),
       due: tag('due'), dueRem: tag('duerem'), dueMail: tag('duemail') === '1', dueId: tag('dueid') };
     if (inDone) { o.inDone = true; if (tag('prevrem') !== '' && isFinite(+tag('prevrem'))) o.reminder = +tag('prevrem'); }   // 완료하면 알림을 끄고, 원래 알림은 기억
     const title = ev.summary || '';
@@ -232,7 +233,7 @@
       e.sex = e.sex === '남' || e.sex === '여' ? e.sex : '';
     } else {
       e.kind = 'personal'; e.done = !!e.done; e.ptype = e.ptype === '메모' ? '메모' : '일정'; e.title = String(e.title || '').slice(0, 80);
-      if (!e.title && !e.memo && !e.memoCipher) throw new Error('제목이나 메모를 입력하세요.');
+      if (!e.title && !e.memo && !e.memoCipher && !(e.imageIds && e.imageIds.length)) throw new Error('제목이나 메모 또는 이미지를 입력하세요.');
     }
     e.memo = String(e.memo || ''); if (!e.memo.startsWith(LOCK_PREFIX)) e.memo = e.memo.slice(0, 500);
     e.reminder = Number(e.reminder); if (!isFinite(e.reminder)) e.reminder = -1;
@@ -244,12 +245,18 @@
     return e;
   }
   const DUE_REMS = ['0', '60', '1440', '4320', '10080'];
+  function validImageIds(ids) { return Array.isArray(ids) && ids.length <= 3 && ids.every(id => typeof id === 'string' && /^[\w-]{1,150}$/.test(id)) && new Set(ids).size === ids.length; }
+  function parseImageIds(raw) { if (!raw) return []; try { const ids = JSON.parse(raw); return validImageIds(ids) ? ids : null; } catch (_) { return null; } }
   function newUid() { const a = new Uint8Array(16); crypto.getRandomValues(a); return Array.from(a, b => b.toString(16).padStart(2, '0')).join(''); }
   function bodyOf(e, settings) {
     const summary = e.kind === 'work'
       ? '[' + e.type + ']' + (e.status && e.status !== '예정' ? ' ' + e.status : '') + (settings.titleAlias && e.target ? ' ' + e.target : '')
       : (e.title || (e.ptype === '메모' ? '메모' : '개인 일정'));
     const priv = { vhm_kind: e.kind, vhm_memo: e.memo, vhm_parent: e.parentId || '', vhm_uid: e.uid || newUid() };
+    if (e.imageIds !== undefined) {
+      if (e.imageIds === null && e.imageIdsRaw) priv.vhm_images = e.imageIdsRaw;
+      else { if (!validImageIds(e.imageIds)) throw new Error('이미지 첨부 목록이 올바르지 않습니다.'); priv.vhm_images = JSON.stringify(e.imageIds); }
+    }
     if (e.kind === 'work') Object.assign(priv, { vhm_type: e.type, vhm_status: e.status, vhm_group: e.group, vhm_target: e.target, vhm_birth: e.birth || '', vhm_sex: e.sex || '', vhm_prio: e.prio || 'normal' });
     else { priv.vhm_ptype = e.ptype; priv.vhm_done = e.done ? '1' : ''; }
     const fin = isDone(e);
@@ -270,7 +277,7 @@
   const LOCK_PREFIX = 'vhm1:', META_TAG = 'vhmlock1:', ITER = 310000, CHECK = 'vhm-lock-ok', MEMO_BYTES = 700;
   const Lock = { key: null, raw: null, meta: undefined };
   const te = new TextEncoder(), td = new TextDecoder();
-  const b64 = u8 => { let s = ''; u8.forEach(b => { s += String.fromCharCode(b); }); return btoa(s); };
+  const b64 = u8 => { const parts = []; for (let i = 0; i < u8.length; i += 32768) parts.push(String.fromCharCode(...u8.subarray(i, i + 32768))); return btoa(parts.join('')); };
   const ub64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
   async function deriveRaw(pass, salt, iter) {
     const base = await crypto.subtle.importKey('raw', te.encode(String(pass).normalize('NFC')), 'PBKDF2', false, ['deriveBits']);
@@ -315,7 +322,7 @@
     if (!(await useRaw(await deriveRaw(pass, ub64(m.salt), m.iter)))) throw new Error('암호가 맞지 않습니다.');
     return true;
   }
-  function lockNow() { Lock.key = null; Lock.raw = null; }
+  function lockNow() { Lock.key = null; Lock.raw = null; if (window.MEMO_IMAGES) MEMO_IMAGES.lock(); }
   // 연결 유지로 페이지가 다시 열릴 때만 잠금 키를 잠깐 넘겨줌 (이 탭의 sessionStorage, 돌아오자마자 지움)
   function lockStash() { try { if (Lock.raw) sessionStorage.setItem('vhm-lk-tmp', b64(Lock.raw)); } catch (e) {} }
   async function lockResume() {
@@ -470,6 +477,7 @@
       if (!f) return { ok: false, gone: true, message: '이 일정은 다른 기기에서 삭제되었습니다.' };
       if (!force && e.updated && f.ev.etag !== e.updated) return { ok: false, conflict: true, current: toObj(f.ev, f.kind, f.done) };
       const old = toObj(f.ev, f.kind, f.done);
+      if (e.imageIds === undefined) { e.imageIds = old.imageIds; e.imageIdsRaw = old.imageIdsRaw; }
       if (fin && !e.doneAt) e.doneAt = old.doneAt || '';
       e.dueId = old.dueId || e.dueId || '';   // 기한 알림 일정은 구글에 있는 값 기준
       await sealMemo(e, old.memo, opt && opt.allowPlain);
@@ -722,6 +730,45 @@
     const r = await api('POST', UPLOAD + '/files', { query: { uploadType: 'multipart', fields: 'id,name,mimeType,webViewLink,size' }, rawBody: mp.body, contentType: mp.type });
     return { type: 'file', fileId: r.id, name: r.name || file.name, mime: r.mimeType || file.type, link: r.webViewLink || '' };
   }
+  // Image bytes and original filename are encrypted before leaving the browser.
+  function memoImageMime(bytes) {
+    if (bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71 && bytes[4] === 13 && bytes[5] === 10 && bytes[6] === 26 && bytes[7] === 10) return 'image/png';
+    if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return 'image/jpeg';
+    const head = td.decode(bytes.slice(0, 12));
+    if (/^GIF8[79]a/.test(head)) return 'image/gif';
+    if (head.startsWith('RIFF') && head.slice(8) === 'WEBP') return 'image/webp';
+    throw new Error('PNG, JPG, GIF, WEBP 이미지 파일을 선택하세요.');
+  }
+  async function uploadMemoImage(file) {
+    needDrive();
+    const key = Lock.key;
+    if (!key) throw new LockNeeded();
+    if (!file || !file.size || file.size > 5 * 1048576) throw new Error('이미지는 파일당 5MB까지 첨부할 수 있습니다.');
+    const bytes = new Uint8Array(await file.arrayBuffer()), mime = memoImageMime(bytes);
+    const encrypted = 'vhm-image1:' + await encWith(key, JSON.stringify({ name: String(file.name || 'image').slice(0, 200), mime, data: b64(bytes) }));
+    if (Lock.key !== key) throw new LockNeeded('메모가 다시 잠겼습니다. 잠금을 풀고 다시 저장하세요.');
+    const folder = await linkFolder();
+    if (Lock.key !== key) throw new LockNeeded();
+    const mp = multipart({ name: 'memo-image-' + newUid() + '.vhm', parents: [folder], mimeType: 'application/octet-stream' }, new Blob([encrypted]), 'application/octet-stream');
+    const r = await api('POST', UPLOAD + '/files', { query: { uploadType: 'multipart', fields: 'id' }, rawBody: mp.body, contentType: mp.type });
+    if (!r.id || !/^[\w-]{1,150}$/.test(r.id)) throw new Error('이미지 저장 결과를 확인하지 못했습니다. 다시 시도하세요.');
+    return r.id;
+  }
+  async function readMemoImage(id) {
+    needDrive();
+    const key = Lock.key;
+    if (!key) throw new LockNeeded();
+    if (!/^[\w-]{1,150}$/.test(id)) throw new Error('이미지 파일 ID가 올바르지 않습니다.');
+    const res = await api('GET', DRIVE + '/files/' + id, { query: { alt: 'media' }, raw: true });
+    const raw = await res.text();
+    if (raw.length > 10 * 1048576 || !raw.startsWith('vhm-image1:')) throw new Error('이 앱의 암호화된 이미지가 아닙니다.');
+    const image = JSON.parse(await decWith(key, raw.slice(11)));
+    if (Lock.key !== key) throw new LockNeeded();
+    if (typeof image.data !== 'string' || image.data.length > 7 * 1048576) throw new Error('이미지 크기가 올바르지 않습니다.');
+    const bytes = ub64(image.data), mime = memoImageMime(bytes);
+    if (bytes.length > 5 * 1048576 || mime !== image.mime) throw new Error('이미지 형식이 올바르지 않습니다.');
+    return { name: String(image.name || 'image').slice(0, 200), blob: new Blob([bytes], { type: mime }) };
+  }
   async function downloadForm(fileId, name) {
     needDrive();
     const res = await api('GET', DRIVE + '/files/' + fileId, { query: { alt: 'media' }, raw: true });
@@ -756,7 +803,7 @@
     async deleteEvent(id, up) { const r = await deleteEvent(id, up); if (r.current) await decObj(r.current); return r; },
     getStats, exportBackup, restoreBackup, restoreEvents,
     lockState, lockSetup, lockUnlock, lockNow, lockAll, lockStash, lockResume, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
-    linksLoad, linksSave, uploadForm, downloadForm, trashForm, notesLoad, notesSave,
+    linksLoad, linksSave, uploadForm, downloadForm, trashForm, notesLoad, notesSave, uploadMemoImage, readMemoImage,
     hasDrive: () => Auth.hasDrive,
     _resetCache() { CAL = null; LINK = null; NOTE_ID = null; Lock.meta = undefined; lockNow(); }
   };

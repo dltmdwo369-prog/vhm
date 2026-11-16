@@ -382,6 +382,7 @@ table.files select{padding:3px 6px;font-size:12px}
             <button type="button" class="small" id="dueClear">기한 지우기</button>
           </div></div>
         <label class="f full">메모 <span class="hint">(구글 캘린더 화면에는 보이지 않는 숨은 정보로 저장)</span><textarea name="memo" maxlength="500" rows="5" placeholder="본인 확인용 짧은 메모 (상담 내용은 기관 전산시스템에)"></textarea></label>
+        <!-- MEMO_IMAGES_UI -->
       </div>
     </div>
     <div class="dlg-foot">
@@ -921,6 +922,7 @@ function readForm() {
   if (!multi && f.start.value && f.end.value && f.end.value < f.start.value) { alert('종료 시간이 시작 시간보다 빠릅니다.'); return null; }
   if (!f.start.value && f.end.value) { alert('시작 시간을 입력하세요.'); return null; }
   const e = { kind:f.kind.value, date:f.date.value, endDate: multi ? endD : '', start:f.start.value, end:f.end.value, memo:f.memo.value.trim(), reminder:+f.reminder.value, parentId:f.dataset.parentId || '' };
+  if (window.MEMO_IMAGES) Object.assign(e, MEMO_IMAGES.read());
   // 새 일정에서 안내 항목만 남겨 둔 경우 빈 메모로 저장합니다.
   if (!S.editing && e.memo === EVENT_MEMO_TEMPLATE) e.memo = '';
   if (S.editing) { e.id = S.editing.id; e.updated = S.editing.updated; e.uid = S.editing.uid; e.dueId = S.editing.dueId || ''; e.movedFrom = S.editing.movedFrom || ''; }
@@ -935,7 +937,7 @@ function readForm() {
     f.target.value = maskName(f.target.value);
     if (f.birth.value.trim() && !cleanBirth(f.birth.value)) { alert('출생연도는 1948처럼 네 자리로 적으세요.'); return null; }
     Object.assign(e, { type:f.type.value, status:f.status.value, group:f.group.value, prio:f.prio.value || 'normal', target:f.target.value, birth:cleanBirth(f.birth.value), sex:['남','여'].includes(f.sex.value) ? f.sex.value : '' });
-  } else { Object.assign(e, { ptype:f.ptype.value, title:f.title.value.trim(), done:f.done.checked }); if (!e.title && !e.memo) { alert('제목이나 메모를 입력하세요.'); return null; } }
+  } else { Object.assign(e, { ptype:f.ptype.value, title:f.title.value.trim(), done:f.done.checked }); if (!e.title && !e.memo && !(e.imageIds && e.imageIds.length) && !(window.MEMO_IMAGES && MEMO_IMAGES.hasPending())) { alert('제목이나 메모 또는 이미지를 입력하세요.'); return null; } }
   return e;
 }
 function describe(e) {
@@ -943,6 +945,9 @@ function describe(e) {
 }
 async function resolveConflict(mine, current) {
   const a = describe(mine), b = describe(current);
+  const imageSummary = e => e.imageIds === null ? '첨부 목록 확인 필요' : (e.imageIds || []).length + '개';
+  a.push(['첨부 이미지', imageSummary(mine)]); b.push(['첨부 이미지', imageSummary(current)]);
+  if (JSON.stringify(mine.imageIds || []) !== JSON.stringify(current.imageIds || [])) a[a.length - 1][1] += ' (연결 내용 다름)';
   const rows = a.map((r, i) => `<b>${r[0]}</b><span class="${r[1] !== b[i][1] ? 'diff' : ''}">${esc(r[1])}</span><span class="${r[1] !== b[i][1] ? 'diff' : ''}">${esc(b[i][1])}</span>`).join('');
   return choose('다른 기기에서 먼저 수정되었습니다',
     `<p>이 일정을 여는 사이 휴대폰 등 다른 곳에서 내용이 바뀌었습니다. 어느 쪽을 남길까요?</p><div class="cmp"><span></span><b>지금 입력한 내용</b><b>다른 기기의 내용</b>${rows}</div>`,
@@ -960,16 +965,19 @@ async function persist(e) {
   return r.event;
 }
 async function submitForm(thenFollow) {
-  const e = readForm(); if (!e) return;
+  if (S.saving) return;
+  S.saving = true;
   $('#btnSave').disabled = true; $('#btnFollow').disabled = true;
   try {
+    const e = readForm(); if (!e) return;
+    if (window.MEMO_IMAGES && !(await MEMO_IMAGES.prepare(e))) return;
     const saved = await persist(e); if (!saved) { $('#eventDlg').close(); return; }
     $('#eventDlg').close(); S.selected = saved.date; const d = parseYmd(saved.date); S.cursor = new Date(d.getFullYear(), d.getMonth(), 1);
     if (saved.inDone && !(S.editing && S.editing.inDone)) showDoneUndo(saved); else toast(saved.inDone ? '완료함에 저장했습니다.' : '구글 캘린더에 저장했습니다.');
     await loadEvents();
     if (thenFollow) openEvent(null, { kind:'work', date:addDays(saved.date, 7), start:saved.start, type:saved.type === '신규' ? '방문' : saved.type, status:'예정', group:saved.group, target:saved.target, birth:saved.birth, sex:saved.sex, parentId:saved.id });
   } catch (err) { /* run() 에서 안내함 */ }
-  finally { $('#btnSave').disabled = false; $('#btnFollow').disabled = false; }
+  finally { S.saving = false; $('#btnSave').disabled = false; $('#btnFollow').disabled = false; }
 }
 
 /* ---------- 교육자료 ---------- */

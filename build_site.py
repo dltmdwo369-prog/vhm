@@ -229,18 +229,19 @@ rep("    VHM_AUTH.signOut(); SERVER._resetCache(); S.events = []; render();", " 
 
 # ===== 메모 잠금 =====
 memolock = open(H + 'src/memolock.js', encoding='utf-8').read()
+rep('<!-- MEMO_IMAGES_UI -->', '<div class="f full" id="memoImages"><span>이미지 첨부</span><div class="row"><button type="button" id="memoImagePick">+ 이미지 선택</button><button type="button" id="memoImageDrive" hidden>Drive 연결 (작성 내용 초기화)</button><input type="file" id="memoImageInput" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden></div><span class="hint" id="memoImageHint">파일당 5MB · 최대 3개 · 일정 저장 시 암호화하여 개인 Drive에 저장합니다.</span><div id="memoImageList" aria-live="polite"></div></div>')
 rep('<button id="btnNew" class="primary">+ 새 일정</button>',
     '<button id="btnNew" class="primary">+ 새 일정</button>\n      <button id="btnLock" title="잠긴 메모 열기·잠그기">🔒 메모 잠김</button>')
 rep('.toolbar{display:flex;', '.toolbar button{white-space:nowrap}.toolbar .nav{flex-wrap:wrap}\n.toolbar{display:flex;')
 rep('<label class="f full">메모 <span class="hint">(구글 캘린더 화면에는 보이지 않는 숨은 정보로 저장)</span><textarea name="memo" maxlength="500"',
     '<div class="f full"><span>메모 <span class="hint">(잠금 암호로 잠가서 저장 — 구글·Claude도 읽을 수 없음, 200자까지 · Enter는 줄바꿈, <b>Ctrl+Enter</b>(맥은 ⌘+Enter)는 저장)</span> <button type="button" class="link" id="memoUnlock" hidden>🔓 잠금 풀기</button></span><textarea name="memo" maxlength="200"')
 rep('placeholder="본인 확인용 짧은 메모 (상담 내용은 기관 전산시스템에)"></textarea></label>', 'placeholder="본인 확인용 짧은 메모 (상담 내용은 기관 전산시스템에)"></textarea></div>')
-rep("syncPersonHint(); $('#eventDlg').showModal();", "syncPersonHint(); if (window.MEMOLOCK) MEMOLOCK.syncMemo(ev ? d : null); $('#eventDlg').showModal();")
+rep("syncPersonHint(); $('#eventDlg').showModal();", "syncPersonHint(); if (window.MEMOLOCK) MEMOLOCK.syncMemo(ev ? d : null); if (window.MEMO_IMAGES) MEMO_IMAGES.open(d); $('#eventDlg').showModal();")
 rep("  if (S.editing) { e.id = S.editing.id; e.updated = S.editing.updated; e.uid = S.editing.uid; e.dueId = S.editing.dueId || ''; e.movedFrom = S.editing.movedFrom || ''; }",
     "  if (S.editing) { e.id = S.editing.id; e.updated = S.editing.updated; e.uid = S.editing.uid; e.dueId = S.editing.dueId || ''; e.movedFrom = S.editing.movedFrom || ''; }\n  if (f.memo.dataset.cipher === '1' && S.editing) { e.memo = ''; e.memoCipher = S.editing.memoCipher; }")
-rep("if (!e.title && !e.memo) { alert('제목이나 메모를 입력하세요.'); return null; }", "if (!e.title && !e.memo && !e.memoCipher) { alert('제목이나 메모를 입력하세요.'); return null; }")
+rep("if (!e.title && !e.memo && !(e.imageIds && e.imageIds.length) && !(window.MEMO_IMAGES && MEMO_IMAGES.hasPending())) { alert('제목이나 메모 또는 이미지를 입력하세요.'); return null; }", "if (!e.title && !e.memo && !e.memoCipher && !(e.imageIds && e.imageIds.length) && !(window.MEMO_IMAGES && MEMO_IMAGES.hasPending())) { alert('제목이나 메모 또는 이미지를 입력하세요.'); return null; }")
 rep("  const e = readForm(); if (!e) return;", "  const e = readForm(); if (!e) return;\n  if (window.MEMOLOCK && !(await MEMOLOCK.beforeSave(e))) return;")
-rep("${e.memo ? `<div class=\"memo\">${esc(e.memo)}</div>` : ''}", "${e.memo ? `<div class=\"memo\">${esc(e.memo)}</div>` : ''}${e.memoLock === 'locked' || e.memoLock === 'bad' ? '<div class=\"memo\">🔒 잠긴 메모</div>' : ''}")
+rep("${e.memo ? `<div class=\"memo\">${esc(e.memo)}</div>` : ''}", "${e.memo ? `<div class=\"memo\">${esc(e.memo)}</div>` : ''}${e.memoLock === 'locked' || e.memoLock === 'bad' ? '<div class=\"memo\">🔒 잠긴 메모</div>' : ''}${e.imageIds && e.imageIds.length ? '<div class=\"memo\">📎 이미지 ' + e.imageIds.length + '개</div>' : ''}")
 rep('    <h3 style="margin:18px 0 8px">백업</h3>', '    <h3 style="margin:18px 0 8px">메모 잠금</h3>\n    <div class="infobox" id="lockSet"></div>\n    <h3 style="margin:18px 0 8px">백업</h3>')
 rep('<!-- 선택 상자 -->', """<!-- 메모 잠금 -->
 <dialog id="lockDlg">
@@ -276,6 +277,7 @@ s = s.replace('</body>', '<script>\n' + open(H + 'src/feedback-images.js', encod
 notes = open(H + 'src/drugs.js', encoding='utf-8').read() + '\n' + open(H + 'src/supps.js', encoding='utf-8').read() + '\n' + open(H + 'src/notes.js', encoding='utf-8').read()
 s = s.replace('</script>\n</body>', '</script>\n<script>\n' + links + '\n</script>\n<script>\n' + notes + '\n</script>\n<script>\n' + open(H + 'src/archive.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 s = s.replace('</body>', '<script>\n' + open(H + 'src/features.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
+s = s.replace('</body>', '<script>\n' + open(H + 'src/memo-images.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 assert 'google.script' not in s, 'google.script 남음'
 assert '<?' not in s, '템플릿 태그 남음'
 os.makedirs(H + 'site', exist_ok=True)

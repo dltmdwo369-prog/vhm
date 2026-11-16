@@ -20,6 +20,7 @@
 | `ui-source/Handouts.html`, `src/education.js`, `data/education.json` | 첨부 PDF 기반 10개 질환 교육자료(검색·대상 전환·큰 글씨·인쇄) |
 | `src/gcal-api.js` | 구글 연결 계층: 로그인(`VHM_AUTH`), 캘린더 읽기·쓰기, 메모 잠금 암호화, 완료·기한·미루기·실적 집계·수기 실적 (`window.SERVER`) |
 | `src/memolock.js` | 메모 잠금 화면(AES-GCM + PBKDF2, 기기별 생체인증 WebAuthn PRF) |
+| `src/memo-images.js` | 일정 메모 이미지 선택·암호화 업로드·잠금 해제 미리보기·첨부 해제. [사용 및 백업 안내](docs/MEMO_IMAGES.md) |
 | `src/keepalive.js` | 업무시간 연결 유지(만료 전 `prompt=none` 조용한 재로그인) |
 | `src/notes.js` | 상담 메모 탭(체크 → 메모 문장 자동 작성, 항목 편집기) |
 | `src/drugs.js`, `src/supps.js` | 처방약 111종·성분 66종, 영양제 26종 검색 목록 |
