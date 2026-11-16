@@ -265,6 +265,28 @@ const server = http.createServer((req, res) => {
     check('영양제(처방약 아래): 기능으로 검색(눈→루테인)·초성, 의약품안전나라 링크 없음, 메모 *영양제 묶음', ordS[ordS.indexOf('투약 중단') + 1] === '영양제' && /루테인/.test(sFirst) && /눈 건강/.test(sFirst) && sLink.length === 0 && sCho === '오메가3' && out.includes('*복약\n-복용약: 노바스크정(혈압약), 크레스토정(고지혈증약), 가상약정(가상 메모약)\n-영양제: 루테인(눈 건강), 오메가3(혈중 중성지방·혈행), 가상영양제(가상 기능)'), JSON.stringify([sFirst, sCho, out]));
     check('직접 추가한 영양제는 ‘내 영양제 목록’에만 (약 목록과 따로)', JSON.stringify(tplS.supps) === '[{"name":"가상영양제","note":"가상 기능"}]' && !tplS.drugs.some(d => d.name === '가상영양제'), JSON.stringify([tplS.supps, tplS.drugs]));
     await page.click('#ntClear');
+    // 문장 틀이 있어도 보기별 문장을 우선 사용 (별도 브라우저로 기존 테스트와 분리)
+    {
+      const customCtx = await b.newContext();
+      const customPage = await customCtx.newPage();
+      const customTpl = JSON.parse(JSON.stringify(tplS));
+      const education = customTpl.items.find(i => i.label === '교육 내용');
+      education.options = [
+        { label: '예방접종 안내', text: '2026-2027절기 인플루엔자 무료예방접종 안내함.' },
+        { label: '저염식', text: '' }, { label: '낙상 예방', text: '   ' }
+      ];
+      await customPage.addInitScript(tpl => localStorage.setItem('vhm-notes-tpl', JSON.stringify(tpl)), customTpl);
+      await customPage.goto(BASE); await customPage.click('[data-tab="note"]');
+      const customChip = label => customPage.click(`.nt-row:has(.nt-label:has-text("교육 내용")) .nt-chip:text-is("${label}")`);
+      await customChip('예방접종 안내');
+      check('문장 틀보다 보기별 코멘트 우선, 교육함 중복 없음', (await customPage.inputValue('#ntOut')) === '*건강상담\n-2026-2027절기 인플루엔자 무료예방접종 안내함.');
+      await customChip('저염식'); await customChip('낙상 예방');
+      const mixed = await customPage.inputValue('#ntOut');
+      check('코멘트 있는 보기와 없는 보기 함께 선택: 기본 보기만 문장 틀 적용', mixed.includes('-2026-2027절기 인플루엔자 무료예방접종 안내함.') && mixed.includes('저염식, 낙상 예방 교육함.') && !mixed.includes('예방접종 안내,') && !mixed.includes('안내함. 교육함.'));
+      await customChip('예방접종 안내');
+      check('코멘트 보기 해제 시 기본 문장 유지', (await customPage.inputValue('#ntOut')) === '*건강상담\n-저염식, 낙상 예방 교육함.');
+      await customCtx.close();
+    }
     // 편집
     await page.click('[data-ntview="edit"]'); await page.click('.lk-row:has-text("수면")'); await page.waitForSelector('#ntDlg[open]');
     await page.fill('#ntDlgBody input[data-o="0"][data-f="text"]', '잠은 잘 주무신다고 하심.'); await page.click('#ntSave');

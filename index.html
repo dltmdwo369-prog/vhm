@@ -3995,7 +3995,18 @@ window.VHM_SUPPS = [
       const sel = (p || []).map(k => it.options[k]).filter(Boolean);
       const extra = acuteHost() === it ? N.tpl.items.filter(i => i.kind === 'acute').flatMap(acuteList) : [];
       if (!sel.length && !extra.length) return '';
-      if (it.template.includes('{선택}')) return it.template.replace('{선택}', (p || []).filter(k => it.options[k]).map(k => { const m = noteOf(it, k); return it.options[k].label + (m ? `(${m})` : ''); }).concat(extra).join(', ')).trim();
+      if (it.template.includes('{선택}')) {
+        const sentences = [], labels = [];
+        const flush = () => { if (labels.length) { sentences.push(it.template.replace('{선택}', labels.join(', ')).trim()); labels.length = 0; } };
+        (p || []).filter(k => it.options[k]).forEach(k => {
+          const o = it.options[k], text = (o.text || '').trim(), m = noteOf(it, k);
+          // 보기별 문장을 적었다면 문장 틀보다 우선하며, 틀의 접미사를 덧붙이지 않음.
+          if (text) { flush(); sentences.push(text + (m ? `(${m})` : '')); }
+          else labels.push(o.label + (m ? `(${m})` : ''));
+        });
+        labels.push(...extra); flush();
+        return sentences.filter(Boolean).join(N.tpl.joiner);
+      }
       return sel.map(o => (o.text || o.label).trim()).filter(Boolean).join(N.tpl.joiner);
     }
     return numText(it, p || []);
@@ -4412,8 +4423,8 @@ window.VHM_SUPPS = [
         <p class="hint">${isSupp(e) ? `검색 목록은 자주 드시는 영양제 ${(window.VHM_SUPPS || []).length}종(괄호는 식약처 건강기능식품 기능성을 줄인 참고용) + ‘내 영양제 목록’입니다.` : `검색 목록은 의약품안전나라에서 확인한 자주 쓰는 처방약 ${(window.VHM_DRUGS || []).length}개 + 성분명 + ‘내 약 목록’입니다.`}</p>` : e.kind === 'num' ? `<h4 style="margin:14px 0 6px">입력 칸</h4>${fld}<button type="button" class="small" id="neFAdd">+ 칸 추가</button>
         <label class="f" style="margin-top:10px">문장 틀 <span class="hint">({1}, {2}… 자리에 입력한 값이 들어감. 줄을 바꾸면 메모도 줄이 바뀜. ‘, ’로 나눈 조각은 숫자를 안 적으면 빠짐. 고르기 칸을 안 고르면 ‘({5})’ 부분만 빠짐)</span><textarea id="neTpl" rows="3" placeholder="예: -BP: {1}/{2}mmHg, PR: {3}회/분">${esc(e.template)}</textarea></label>
         <p class="hint" style="margin:6px 0 0">정상 범위: 최소보다 낮으면 ‘낮음’, 최대보다 높으면 ‘주의’(주의 상한까지) 또는 ‘높음’. 비워 두면 판정하지 않습니다.</p>`
-      : `<h4 style="margin:14px 0 6px">보기와 문장</h4><p class="hint" style="margin-top:0">문장을 비우면 그 보기를 골라도 메모에 아무것도 안 들어갑니다(예: 흡연 ‘안 함’).</p>${opt}<button type="button" class="small" id="neOAdd">+ 보기 추가</button>
-        ${e.kind === 'many' ? `<label class="f" style="margin-top:10px">문장 틀 (선택) <span class="hint">({선택} 자리에 고른 보기 이름이 쉼표로 이어져 들어감. 줄을 바꾸면 메모도 줄이 바뀜)</span><textarea id="neTpl" rows="2" placeholder="예: {선택} 교육함.">${esc(e.template)}</textarea></label>` : ''}`}`;
+      : `<h4 style="margin:14px 0 6px">보기와 문장</h4><p class="hint" style="margin-top:0">${e.kind === 'many' ? '보기별 문장을 적으면 상담메모에 그대로 들어갑니다. 비우면 문장 틀을 사용하고, 틀이 없으면 보기 이름을 사용합니다.' : '문장을 비우면 그 보기를 골라도 메모에 아무것도 안 들어갑니다(예: 흡연 ‘안 함’).'}</p>${opt}<button type="button" class="small" id="neOAdd">+ 보기 추가</button>
+        ${e.kind === 'many' ? `<label class="f" style="margin-top:10px">문장 틀 (선택) <span class="hint">(보기별 문장을 적으면 그 문장을 우선 사용함. 비워 둔 보기는 {선택} 자리에 이름이 쉼표로 이어져 들어감. 줄을 바꾸면 메모도 줄이 바뀜)</span><textarea id="neTpl" rows="2" placeholder="예: {선택} 교육함.">${esc(e.template)}</textarea></label>` : ''}`}`;
     $('#ntDel').hidden = !!e.isNew;
   }
   function readEdit() {
