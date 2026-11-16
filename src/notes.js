@@ -1,6 +1,6 @@
 /* =====================================================================
  * 상담 메모: 체크리스트를 고르면 메모 문장이 자동으로 만들어지고, 복사해서 기관 전용앱에 붙여 넣음
- * - 체크·입력한 내용과 만들어진 문장은 저장·전송하지 않음 (화면에서만 만들고, 탭을 닫으면 사라짐)
+ * - 체크·입력한 내용과 문장은 자동 저장·전송하지 않음. 사용자가 저장할 때만 별도 암호화 보관.
  * - 질문 항목·문장 틀만 이 기기에 저장 + 드라이브가 연결되어 있으면 드라이브에도 저장(기기 간 공유)
  * ===================================================================== */
 (function () {
@@ -173,6 +173,7 @@
   }
 
   const N = { tpl: null, view: 'write', pick: {}, lead: {}, referralQuick: {}, extra: '', edited: false, synced: false, editing: null };
+  let savedTemplate = null;
   const box = () => $('#tab-note');
 
   function localLoad() { try { const d = JSON.parse(localStorage.getItem(LS) || 'null'); return d ? clean(d) : null; } catch (e) { return null; } }
@@ -187,6 +188,7 @@
     } catch (e) { N.synced = false; }
   }
   async function saveTpl(msg) {
+    if (savedTemplate) { toast('저장 메모의 질문 틀은 보존합니다. 다음 대상자로 전환한 뒤 편집하세요.'); return; }
     N.tpl.updatedAt = new Date().toISOString(); localSave();
     if (window.SERVER && SERVER.hasDrive && SERVER.hasDrive()) { try { await SERVER.notesSave(N.tpl); N.synced = true; } catch (e) { N.synced = false; toast('이 기기에는 저장했지만 드라이브 저장은 실패했습니다: ' + (e.message || e), 5000); } }
     if (msg) toast(msg);
@@ -532,10 +534,11 @@
       + `<span class="nt-forms"><a class="nt-form" href="forms/survey-all-p1-4.pdf" download="방문건강관리_설문지_전체_1-4쪽.pdf" title="간이 설문지(1·2쪽) + 기초조사표(3·4쪽) — A4 양면 2장, 4쪽">📄 전체 내려받기 (1~4쪽)</a><a class="nt-form" href="forms/simple-survey-p12.pdf" download="방문건강관리_간이설문지_1-2쪽.pdf" title="방문 상담용 빈 설문지 — A4 양면 1장(1·2쪽): 기본정보·Vital·주질환·복약·신체계측/신체사정·건강상담·생활습관·서비스제공·PHQ-9">📄 간이 설문지 내려받기 (1·2쪽)</a><a class="nt-form" href="forms/base-survey-p34.pdf" download="방문건강관리_기초조사표_3-4쪽.pdf" title="기초조사표 — A4 양면 1장(3·4쪽): 허약노인 기초측정표, 재가암·재가장애인(간이) 기초조사표, 변형 바델 지수">📄 기초조사표 내려받기 (3·4쪽)</a><a class="nt-form" href="forms/sgds-k-short-form.pdf" download="SGDS-K 단축형 노인우울척도 검사.pdf" title="단축형 노인우울척도 검사(SGDS-K) — 첨부 원본 PDF, 1쪽">📄 노인우울척도 내려받기 (SGDS-K)</a></span>`
       + `<span class="hint">${N.synced ? '질문 틀: 구글 드라이브와 이 기기에 저장' : '질문 틀: 이 기기에 저장 (연계 안내 탭에서 드라이브를 연결하면 다른 기기와 같이 씀)'}</span></div>`;
     if (N.tpl.defaultsPending) h += '<div class="warnbox" style="margin-bottom:10px">질문 항목과 문장은 아직 <b>임시 기본값</b>입니다. ‘항목 편집’에서 평소 쓰시는 말투로 고친 뒤 ‘확인 완료’를 눌러 주세요.</div>';
-    if (N.view === 'write') h += '<div class="nt-referral-action"><button class="primary" id="ntReferrals">체크 항목으로 연계 보기</button><span class="hint">연계 안내로 이동하면 관련 요구를 자동 체크합니다. 직접 적은 문장·수치·이름은 가져오지 않습니다.</span></div>';
+    if (N.view === 'write') h += '<div id="consultationTools"></div><div class="nt-referral-action"><button class="primary" id="ntReferrals">체크 항목으로 연계 보기</button><span class="hint">연계 안내로 이동하면 관련 요구를 자동 체크합니다. 직접 적은 문장·수치·이름은 가져오지 않습니다.</span></div>';
     h += N.view === 'write' ? writeHtml() : editHtml();
     box().innerHTML = h;
     if (N.view === 'write') { refreshOut(); if (N.age && typeof calcAge === 'function') calcAge('ntAge'); }
+    if (window.CONSULTATIONS) CONSULTATIONS.mount();
   }
   // 고른 보기마다 메모 칸 (예: 백내장 → 2025년도 op+, 연세솔안과의원)
   function notesHtml(it) {
@@ -590,7 +593,7 @@
           <button class="primary" id="ntCopy" style="flex:1">복사하기</button>
           <button id="ntClear">다음 대상자 (모두 지우기)</button>
         </div>
-        <p class="hint" style="margin:8px 0 0">체크한 내용과 문장은 <b>저장하지도, 어디로 보내지도 않습니다.</b> 복사한 문장은 기관 전용앱(전산시스템)의 메모란에만 붙여 넣으세요.</p>
+        <p class="hint" style="margin:8px 0 0">체크한 내용과 문장은 자동 저장·전송하지 않습니다. ‘새로 저장’을 누르면 이 기기에 암호화하여 보관하며, Drive 복사는 별도로 선택합니다. 잠금·로그아웃 전 필요한 내용을 저장하세요.</p>
       </div></div></div>`;
   }
   function editHtml() {
@@ -696,7 +699,7 @@
         toast('복사했습니다. 전용앱 메모란에 붙여 넣으세요.'); return;
       }
       if (t.id === 'ntCaretOff') { N.caret = null; paintCaret(); return; }
-      if (t.id === 'ntClear') { N.pick = {}; N.lead = {}; N.referralQuick = {}; if (window.LINKS) LINKS.clearNoteNeeds(); N.extra = ''; N.age = ''; N.edited = false; N.gen = null; N.out = ''; N.caret = null; render(); toast('모두 지웠습니다.'); return; }
+      if (t.id === 'ntClear') { clearContent(); if (window.CONSULTATIONS) CONSULTATIONS.clearDraft(); toast('현재 내용만 지웠습니다. 저장 메모는 유지됩니다.'); return; }
       if (t.id === 'ntAdd') { openEdit(null); return; }
       if (t.id === 'ntConfirm') { N.tpl.defaultsPending = false; await saveTpl('확인 완료로 표시했습니다.'); render(); return; }
       if (t.id === 'ntReset') { if (!confirm('지금 항목을 모두 지우고 기본 틀로 되돌릴까요?')) return; N.tpl = defaults(); N.pick = {}; N.referralQuick = {}; if (window.LINKS) LINKS.clearNoteNeeds(); await saveTpl('기본 틀로 되돌렸습니다.'); render(); return; }
@@ -771,10 +774,44 @@
   }
 
   function resetSession() {
+    savedTemplate = null;
     N.pick = {}; N.lead = {}; N.referralQuick = {}; N.extra = ''; N.age = ''; N.out = ''; N.gen = null; N.caret = null; N.edited = false; N.tpl = null; N.synced = false; N.editing = null; N.view = 'write';
     if (box()) box().replaceChildren(); if (window.LINKS) LINKS.clearNoteNeeds();
     if ($('#ntDlg')?.open) $('#ntDlg').close();
   }
-  window.NOTES = { open, bind, resetSession, referralNeeds() { return window.VHM_NOTE_REFERRALS ? VHM_NOTE_REFERRALS.fromState(N.tpl?.items,N.pick,N.referralQuick) : []; }, _state: N, _compose: compose, _defaults: defaults };
+  function clearContent() {
+    if (savedTemplate) { N.tpl = savedTemplate.tpl; N.synced = savedTemplate.synced; savedTemplate = null; }
+    N.pick = {}; N.lead = {}; N.referralQuick = {}; N.extra = ''; N.age = ''; N.out = ''; N.gen = null; N.caret = null; N.edited = false;
+    if (window.LINKS) LINKS.clearNoteNeeds(); if (N.tpl) render();
+  }
+  function snapshot() {
+    return JSON.parse(JSON.stringify({tpl:N.tpl,pick:N.pick,lead:N.lead,referralQuick:N.referralQuick,extra:N.extra,age:N.age || '',out:$('#ntOut')?.value ?? N.out ?? ''}));
+  }
+  function validateSaved(d) {
+    if (!d || !d.tpl || !Array.isArray(d.tpl.items) || d.tpl.items.length > 300 || typeof d.out !== 'string' || d.out.length > 100000) throw new Error('저장된 상담메모 형식이 올바르지 않습니다.');
+    const safeId = id => typeof id === 'string' && /^[a-zA-Z0-9_-]+$/.test(id) && !['__proto__','constructor','prototype'].includes(id);
+    if (!d.tpl.items.every(i => i && safeId(i.id) && Array.isArray(i.options) && Array.isArray(i.fields))) throw new Error('질문 항목 ID 또는 형식이 올바르지 않습니다.');
+    const tpl = clean(d.tpl), pick = d.pick || {};
+    for (const it of tpl.items) {
+      const v = pick[it.id]; if (v == null) continue;
+      const option = k => Number.isInteger(k) && k >= 0 && k < it.options.length;
+      if (['one','lead'].includes(it.kind) && !option(v)) throw new Error('선택 항목이 올바르지 않습니다.');
+      if (it.kind === 'many' && (!Array.isArray(v) || !v.every(option))) throw new Error('선택 목록이 올바르지 않습니다.');
+      if (it.kind === 'num' && (!Array.isArray(v) || !v.every(x => typeof x === 'string' || x === null))) throw new Error('측정값이 올바르지 않습니다.');
+      if (it.kind === 'drugs' && (!Array.isArray(v) || !v.every(x => x && typeof x.name === 'string' && typeof x.note === 'string'))) throw new Error('약 목록이 올바르지 않습니다.');
+      if (it.kind === 'acute' && (typeof v !== 'object' || Array.isArray(v) || !Object.entries(v).every(([k,x]) => option(+k) && ACUTE_ST.includes(x)))) throw new Error('질환 선택이 올바르지 않습니다.');
+    }
+    if (d.lead && (typeof d.lead !== 'object' || Object.values(d.lead).some(v => typeof v !== 'string'))) throw new Error('입력 내용이 올바르지 않습니다.');
+    if (d.referralQuick && (typeof d.referralQuick !== 'object' || Object.values(d.referralQuick).some(v => !Array.isArray(v) || v.some(x => typeof x !== 'string')))) throw new Error('빠른 입력 내용이 올바르지 않습니다.');
+    return tpl;
+  }
+  function restoreSaved(d) {
+    const tpl = validateSaved(d);
+    if (!savedTemplate) savedTemplate = {tpl:N.tpl,synced:N.synced};
+    N.tpl = tpl; N.synced = true; N.pick = structuredClone(d.pick || {}); N.lead = structuredClone(d.lead || {}); N.referralQuick = structuredClone(d.referralQuick || {});
+    N.extra = String(d.extra || ''); N.age = String(d.age || ''); N.out = d.out; N.gen = compose(); N.edited = true; N.caret = null; N.view = 'write';
+    if (window.LINKS) LINKS.clearNoteNeeds(); render();
+  }
+  window.NOTES = { open, bind, resetSession, clearContent, snapshot, validateSaved, restoreSaved, referralNeeds() { return window.VHM_NOTE_REFERRALS ? VHM_NOTE_REFERRALS.fromState(N.tpl?.items,N.pick,N.referralQuick) : []; }, _state: N, _compose: compose, _defaults: defaults };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind); else bind();
 })();

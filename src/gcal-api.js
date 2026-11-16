@@ -71,6 +71,7 @@
       return res;
     },
     signOut() {
+      if (window.CONSULTATIONS) CONSULTATIONS.lock();
       if (window.MEMO_IMAGES) MEMO_IMAGES.reset();
       if (window.NOTES) NOTES.resetSession();
       const t = this.token; this.token = null; this.exp = 0; this.hasDrive = false;
@@ -322,7 +323,7 @@
     if (!(await useRaw(await deriveRaw(pass, ub64(m.salt), m.iter)))) throw new Error('암호가 맞지 않습니다.');
     return true;
   }
-  function lockNow() { Lock.key = null; Lock.raw = null; if (window.MEMO_IMAGES) MEMO_IMAGES.lock(); }
+  function lockNow() { Lock.key = null; Lock.raw = null; if (window.MEMO_IMAGES) MEMO_IMAGES.lock(); if (window.CONSULTATIONS) CONSULTATIONS.lock(); }
   // 연결 유지로 페이지가 다시 열릴 때만 잠금 키를 잠깐 넘겨줌 (이 탭의 sessionStorage, 돌아오자마자 지움)
   function lockStash() { try { if (Lock.raw) sessionStorage.setItem('vhm-lk-tmp', b64(Lock.raw)); } catch (e) {} }
   async function lockResume() {
@@ -769,6 +770,63 @@
     if (bytes.length > 5 * 1048576 || mime !== image.mime) throw new Error('이미지 형식이 올바르지 않습니다.');
     return { name: String(image.name || 'image').slice(0, 200), blob: new Blob([bytes], { type: mime }) };
   }
+  const CONSULT_PREFIX = 'vhm-consult1:';
+  async function consultationScope() {
+    if (!Lock.raw) throw new LockNeeded();
+    const digest = await crypto.subtle.digest('SHA-256', new Uint8Array([...te.encode('vhm-consultation-scope-v1'), ...Lock.raw]));
+    return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+  }
+  async function sealConsultation(record) {
+    const key = Lock.key;
+    if (!key) throw new LockNeeded();
+    const json = JSON.stringify(record);
+    if (te.encode(json).length > 2 * 1048576) throw new Error('상담메모와 필기는 합계 2MB까지 저장할 수 있습니다.');
+    const encrypted = CONSULT_PREFIX + await encWith(key, json);
+    if (Lock.key !== key) throw new LockNeeded();
+    return { scope: await consultationScope(), encrypted };
+  }
+  async function openConsultation(encrypted) {
+    const key = Lock.key;
+    if (!key) throw new LockNeeded();
+    if (typeof encrypted !== 'string' || encrypted.length > 3 * 1048576 || !encrypted.startsWith(CONSULT_PREFIX)) throw new Error('상담메모 저장 파일이 아닙니다.');
+    let record;
+    try { record = JSON.parse(await decWith(key, encrypted.slice(CONSULT_PREFIX.length))); }
+    catch (_) { throw new Error('메모를 열지 못했습니다. 원래 계정의 잠금 암호와 파일 상태를 확인하세요.'); }
+    if (Lock.key !== key) throw new LockNeeded();
+    return record;
+  }
+  async function copyConsultation(id, encrypted) {
+    needDrive();
+    if (!/^[a-f0-9-]{36}$/.test(id) || typeof encrypted !== 'string' || encrypted.length > 3 * 1048576 || !encrypted.startsWith(CONSULT_PREFIX)) throw new Error('저장 메모가 올바르지 않습니다.');
+    const folder = await linkFolder(), name = 'vhm-consult-' + id + '.vhm';
+    const prior = await driveFind(name, null, folder);
+    if (prior) {
+      const res = await api('GET', DRIVE + '/files/' + prior.id, { query: { alt:'media' }, raw:true });
+      if (await res.text() !== encrypted) throw new Error('같은 ID의 다른 파일이 있습니다. 기존 파일을 덮어쓰지 않았습니다.');
+      return prior.id;
+    }
+    const mp = multipart({name, parents:[folder], mimeType:'application/octet-stream', appProperties:{vhmType:'consultation-v1'}}, new Blob([encrypted]), 'application/octet-stream');
+    return (await api('POST', UPLOAD + '/files', {query:{uploadType:'multipart',fields:'id'},rawBody:mp.body,contentType:mp.type})).id;
+  }
+  async function listConsultations() {
+    needDrive();
+    const folder = await linkFolder(false); if (!folder) return [];
+    let token, out = [];
+    do {
+      const result = await api('GET', DRIVE + '/files', {query:{q:"'" + qEsc(folder) + "' in parents and trashed = false and appProperties has { key='vhmType' and value='consultation-v1' }",fields:'nextPageToken,files(id,name)',pageSize:100,...(token ? {pageToken:token} : {})}});
+      out.push(...(result.files || [])); token = result.nextPageToken;
+      if (out.length > 1000) throw new Error('Drive 저장 메모가 1,000개를 초과합니다. 일부만 가져오지 않았습니다.');
+    } while (token);
+    return out;
+  }
+  async function fetchConsultation(id) {
+    needDrive(); if (!/^[\w-]{1,150}$/.test(id)) throw new Error('파일 ID가 올바르지 않습니다.');
+    const res = await api('GET', DRIVE + '/files/' + id, {query:{alt:'media'},raw:true});
+    if (+res.headers.get('content-length') > 3 * 1048576) throw new Error('파일 크기가 너무 큽니다.');
+    const encrypted = await res.text();
+    if (encrypted.length > 3 * 1048576 || !encrypted.startsWith(CONSULT_PREFIX)) throw new Error('상담메모 저장 파일이 아닙니다.');
+    return encrypted;
+  }
   async function downloadForm(fileId, name) {
     needDrive();
     const res = await api('GET', DRIVE + '/files/' + fileId, { query: { alt: 'media' }, raw: true });
@@ -804,6 +862,7 @@
     getStats, exportBackup, restoreBackup, restoreEvents,
     lockState, lockSetup, lockUnlock, lockNow, lockAll, lockStash, lockResume, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
     linksLoad, linksSave, uploadForm, downloadForm, trashForm, notesLoad, notesSave, uploadMemoImage, readMemoImage,
+    consultationScope, sealConsultation, openConsultation, copyConsultation, listConsultations, fetchConsultation,
     hasDrive: () => Auth.hasDrive,
     _resetCache() { CAL = null; LINK = null; NOTE_ID = null; Lock.meta = undefined; lockNow(); }
   };

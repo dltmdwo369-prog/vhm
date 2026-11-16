@@ -23,6 +23,7 @@
 | `src/memo-images.js` | 일정 메모 이미지 선택·암호화 업로드·잠금 해제 미리보기·첨부 해제. [사용 및 백업 안내](docs/MEMO_IMAGES.md) |
 | `src/keepalive.js` | 업무시간 연결 유지(만료 전 `prompt=none` 조용한 재로그인) |
 | `src/notes.js` | 상담 메모 탭(체크 → 메모 문장 자동 작성, 항목 편집기) |
+| `src/consultations.js` | 상담메모의 저장1·저장2… 암호화 기기 저장, 선택적 Drive 복사·불러오기, 손글씨 필기판. [사용 안내](docs/CONSULTATION_SAVES.md) |
 | `src/drugs.js`, `src/supps.js` | 처방약 111종·성분 66종, 영양제 26종 검색 목록 |
 | `src/links.js` | 연계 안내 탭(드라이브 `vhm-links.json`) |
 | `src/archive.js` | 보관함 탭(드라이브 임시 보관, 7일 후 자동 삭제) |

@@ -278,6 +278,7 @@ notes = open(H + 'src/drugs.js', encoding='utf-8').read() + '\n' + open(H + 'src
 s = s.replace('</script>\n</body>', '</script>\n<script>\n' + links + '\n</script>\n<script>\n' + notes + '\n</script>\n<script>\n' + open(H + 'src/archive.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 s = s.replace('</body>', '<script>\n' + open(H + 'src/features.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 s = s.replace('</body>', '<script>\n' + open(H + 'src/memo-images.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
+s = s.replace('</body>', '<script>\n' + open(H + 'src/consultations.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 assert 'google.script' not in s, 'google.script 남음'
 assert '<?' not in s, '템플릿 태그 남음'
 os.makedirs(H + 'site', exist_ok=True)

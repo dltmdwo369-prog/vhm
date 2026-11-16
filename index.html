@@ -1041,6 +1041,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
       return res;
     },
     signOut() {
+      if (window.CONSULTATIONS) CONSULTATIONS.lock();
       if (window.MEMO_IMAGES) MEMO_IMAGES.reset();
       if (window.NOTES) NOTES.resetSession();
       const t = this.token; this.token = null; this.exp = 0; this.hasDrive = false;
@@ -1292,7 +1293,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
     if (!(await useRaw(await deriveRaw(pass, ub64(m.salt), m.iter)))) throw new Error('암호가 맞지 않습니다.');
     return true;
   }
-  function lockNow() { Lock.key = null; Lock.raw = null; if (window.MEMO_IMAGES) MEMO_IMAGES.lock(); }
+  function lockNow() { Lock.key = null; Lock.raw = null; if (window.MEMO_IMAGES) MEMO_IMAGES.lock(); if (window.CONSULTATIONS) CONSULTATIONS.lock(); }
   // 연결 유지로 페이지가 다시 열릴 때만 잠금 키를 잠깐 넘겨줌 (이 탭의 sessionStorage, 돌아오자마자 지움)
   function lockStash() { try { if (Lock.raw) sessionStorage.setItem('vhm-lk-tmp', b64(Lock.raw)); } catch (e) {} }
   async function lockResume() {
@@ -1739,6 +1740,63 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
     if (bytes.length > 5 * 1048576 || mime !== image.mime) throw new Error('이미지 형식이 올바르지 않습니다.');
     return { name: String(image.name || 'image').slice(0, 200), blob: new Blob([bytes], { type: mime }) };
   }
+  const CONSULT_PREFIX = 'vhm-consult1:';
+  async function consultationScope() {
+    if (!Lock.raw) throw new LockNeeded();
+    const digest = await crypto.subtle.digest('SHA-256', new Uint8Array([...te.encode('vhm-consultation-scope-v1'), ...Lock.raw]));
+    return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+  }
+  async function sealConsultation(record) {
+    const key = Lock.key;
+    if (!key) throw new LockNeeded();
+    const json = JSON.stringify(record);
+    if (te.encode(json).length > 2 * 1048576) throw new Error('상담메모와 필기는 합계 2MB까지 저장할 수 있습니다.');
+    const encrypted = CONSULT_PREFIX + await encWith(key, json);
+    if (Lock.key !== key) throw new LockNeeded();
+    return { scope: await consultationScope(), encrypted };
+  }
+  async function openConsultation(encrypted) {
+    const key = Lock.key;
+    if (!key) throw new LockNeeded();
+    if (typeof encrypted !== 'string' || encrypted.length > 3 * 1048576 || !encrypted.startsWith(CONSULT_PREFIX)) throw new Error('상담메모 저장 파일이 아닙니다.');
+    let record;
+    try { record = JSON.parse(await decWith(key, encrypted.slice(CONSULT_PREFIX.length))); }
+    catch (_) { throw new Error('메모를 열지 못했습니다. 원래 계정의 잠금 암호와 파일 상태를 확인하세요.'); }
+    if (Lock.key !== key) throw new LockNeeded();
+    return record;
+  }
+  async function copyConsultation(id, encrypted) {
+    needDrive();
+    if (!/^[a-f0-9-]{36}$/.test(id) || typeof encrypted !== 'string' || encrypted.length > 3 * 1048576 || !encrypted.startsWith(CONSULT_PREFIX)) throw new Error('저장 메모가 올바르지 않습니다.');
+    const folder = await linkFolder(), name = 'vhm-consult-' + id + '.vhm';
+    const prior = await driveFind(name, null, folder);
+    if (prior) {
+      const res = await api('GET', DRIVE + '/files/' + prior.id, { query: { alt:'media' }, raw:true });
+      if (await res.text() !== encrypted) throw new Error('같은 ID의 다른 파일이 있습니다. 기존 파일을 덮어쓰지 않았습니다.');
+      return prior.id;
+    }
+    const mp = multipart({name, parents:[folder], mimeType:'application/octet-stream', appProperties:{vhmType:'consultation-v1'}}, new Blob([encrypted]), 'application/octet-stream');
+    return (await api('POST', UPLOAD + '/files', {query:{uploadType:'multipart',fields:'id'},rawBody:mp.body,contentType:mp.type})).id;
+  }
+  async function listConsultations() {
+    needDrive();
+    const folder = await linkFolder(false); if (!folder) return [];
+    let token, out = [];
+    do {
+      const result = await api('GET', DRIVE + '/files', {query:{q:"'" + qEsc(folder) + "' in parents and trashed = false and appProperties has { key='vhmType' and value='consultation-v1' }",fields:'nextPageToken,files(id,name)',pageSize:100,...(token ? {pageToken:token} : {})}});
+      out.push(...(result.files || [])); token = result.nextPageToken;
+      if (out.length > 1000) throw new Error('Drive 저장 메모가 1,000개를 초과합니다. 일부만 가져오지 않았습니다.');
+    } while (token);
+    return out;
+  }
+  async function fetchConsultation(id) {
+    needDrive(); if (!/^[\w-]{1,150}$/.test(id)) throw new Error('파일 ID가 올바르지 않습니다.');
+    const res = await api('GET', DRIVE + '/files/' + id, {query:{alt:'media'},raw:true});
+    if (+res.headers.get('content-length') > 3 * 1048576) throw new Error('파일 크기가 너무 큽니다.');
+    const encrypted = await res.text();
+    if (encrypted.length > 3 * 1048576 || !encrypted.startsWith(CONSULT_PREFIX)) throw new Error('상담메모 저장 파일이 아닙니다.');
+    return encrypted;
+  }
   async function downloadForm(fileId, name) {
     needDrive();
     const res = await api('GET', DRIVE + '/files/' + fileId, { query: { alt: 'media' }, raw: true });
@@ -1774,6 +1832,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
     getStats, exportBackup, restoreBackup, restoreEvents,
     lockState, lockSetup, lockUnlock, lockNow, lockAll, lockStash, lockResume, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
     linksLoad, linksSave, uploadForm, downloadForm, trashForm, notesLoad, notesSave, uploadMemoImage, readMemoImage,
+    consultationScope, sealConsultation, openConsultation, copyConsultation, listConsultations, fetchConsultation,
     hasDrive: () => Auth.hasDrive,
     _resetCache() { CAL = null; LINK = null; NOTE_ID = null; Lock.meta = undefined; lockNow(); }
   };
@@ -3946,7 +4005,7 @@ window.VHM_SUPPS = [
 
 /* =====================================================================
  * 상담 메모: 체크리스트를 고르면 메모 문장이 자동으로 만들어지고, 복사해서 기관 전용앱에 붙여 넣음
- * - 체크·입력한 내용과 만들어진 문장은 저장·전송하지 않음 (화면에서만 만들고, 탭을 닫으면 사라짐)
+ * - 체크·입력한 내용과 문장은 자동 저장·전송하지 않음. 사용자가 저장할 때만 별도 암호화 보관.
  * - 질문 항목·문장 틀만 이 기기에 저장 + 드라이브가 연결되어 있으면 드라이브에도 저장(기기 간 공유)
  * ===================================================================== */
 (function () {
@@ -4119,6 +4178,7 @@ window.VHM_SUPPS = [
   }
 
   const N = { tpl: null, view: 'write', pick: {}, lead: {}, referralQuick: {}, extra: '', edited: false, synced: false, editing: null };
+  let savedTemplate = null;
   const box = () => $('#tab-note');
 
   function localLoad() { try { const d = JSON.parse(localStorage.getItem(LS) || 'null'); return d ? clean(d) : null; } catch (e) { return null; } }
@@ -4133,6 +4193,7 @@ window.VHM_SUPPS = [
     } catch (e) { N.synced = false; }
   }
   async function saveTpl(msg) {
+    if (savedTemplate) { toast('저장 메모의 질문 틀은 보존합니다. 다음 대상자로 전환한 뒤 편집하세요.'); return; }
     N.tpl.updatedAt = new Date().toISOString(); localSave();
     if (window.SERVER && SERVER.hasDrive && SERVER.hasDrive()) { try { await SERVER.notesSave(N.tpl); N.synced = true; } catch (e) { N.synced = false; toast('이 기기에는 저장했지만 드라이브 저장은 실패했습니다: ' + (e.message || e), 5000); } }
     if (msg) toast(msg);
@@ -4478,10 +4539,11 @@ window.VHM_SUPPS = [
       + `<span class="nt-forms"><a class="nt-form" href="forms/survey-all-p1-4.pdf" download="방문건강관리_설문지_전체_1-4쪽.pdf" title="간이 설문지(1·2쪽) + 기초조사표(3·4쪽) — A4 양면 2장, 4쪽">📄 전체 내려받기 (1~4쪽)</a><a class="nt-form" href="forms/simple-survey-p12.pdf" download="방문건강관리_간이설문지_1-2쪽.pdf" title="방문 상담용 빈 설문지 — A4 양면 1장(1·2쪽): 기본정보·Vital·주질환·복약·신체계측/신체사정·건강상담·생활습관·서비스제공·PHQ-9">📄 간이 설문지 내려받기 (1·2쪽)</a><a class="nt-form" href="forms/base-survey-p34.pdf" download="방문건강관리_기초조사표_3-4쪽.pdf" title="기초조사표 — A4 양면 1장(3·4쪽): 허약노인 기초측정표, 재가암·재가장애인(간이) 기초조사표, 변형 바델 지수">📄 기초조사표 내려받기 (3·4쪽)</a><a class="nt-form" href="forms/sgds-k-short-form.pdf" download="SGDS-K 단축형 노인우울척도 검사.pdf" title="단축형 노인우울척도 검사(SGDS-K) — 첨부 원본 PDF, 1쪽">📄 노인우울척도 내려받기 (SGDS-K)</a></span>`
       + `<span class="hint">${N.synced ? '질문 틀: 구글 드라이브와 이 기기에 저장' : '질문 틀: 이 기기에 저장 (연계 안내 탭에서 드라이브를 연결하면 다른 기기와 같이 씀)'}</span></div>`;
     if (N.tpl.defaultsPending) h += '<div class="warnbox" style="margin-bottom:10px">질문 항목과 문장은 아직 <b>임시 기본값</b>입니다. ‘항목 편집’에서 평소 쓰시는 말투로 고친 뒤 ‘확인 완료’를 눌러 주세요.</div>';
-    if (N.view === 'write') h += '<div class="nt-referral-action"><button class="primary" id="ntReferrals">체크 항목으로 연계 보기</button><span class="hint">연계 안내로 이동하면 관련 요구를 자동 체크합니다. 직접 적은 문장·수치·이름은 가져오지 않습니다.</span></div>';
+    if (N.view === 'write') h += '<div id="consultationTools"></div><div class="nt-referral-action"><button class="primary" id="ntReferrals">체크 항목으로 연계 보기</button><span class="hint">연계 안내로 이동하면 관련 요구를 자동 체크합니다. 직접 적은 문장·수치·이름은 가져오지 않습니다.</span></div>';
     h += N.view === 'write' ? writeHtml() : editHtml();
     box().innerHTML = h;
     if (N.view === 'write') { refreshOut(); if (N.age && typeof calcAge === 'function') calcAge('ntAge'); }
+    if (window.CONSULTATIONS) CONSULTATIONS.mount();
   }
   // 고른 보기마다 메모 칸 (예: 백내장 → 2025년도 op+, 연세솔안과의원)
   function notesHtml(it) {
@@ -4536,7 +4598,7 @@ window.VHM_SUPPS = [
           <button class="primary" id="ntCopy" style="flex:1">복사하기</button>
           <button id="ntClear">다음 대상자 (모두 지우기)</button>
         </div>
-        <p class="hint" style="margin:8px 0 0">체크한 내용과 문장은 <b>저장하지도, 어디로 보내지도 않습니다.</b> 복사한 문장은 기관 전용앱(전산시스템)의 메모란에만 붙여 넣으세요.</p>
+        <p class="hint" style="margin:8px 0 0">체크한 내용과 문장은 자동 저장·전송하지 않습니다. ‘새로 저장’을 누르면 이 기기에 암호화하여 보관하며, Drive 복사는 별도로 선택합니다. 잠금·로그아웃 전 필요한 내용을 저장하세요.</p>
       </div></div></div>`;
   }
   function editHtml() {
@@ -4642,7 +4704,7 @@ window.VHM_SUPPS = [
         toast('복사했습니다. 전용앱 메모란에 붙여 넣으세요.'); return;
       }
       if (t.id === 'ntCaretOff') { N.caret = null; paintCaret(); return; }
-      if (t.id === 'ntClear') { N.pick = {}; N.lead = {}; N.referralQuick = {}; if (window.LINKS) LINKS.clearNoteNeeds(); N.extra = ''; N.age = ''; N.edited = false; N.gen = null; N.out = ''; N.caret = null; render(); toast('모두 지웠습니다.'); return; }
+      if (t.id === 'ntClear') { clearContent(); if (window.CONSULTATIONS) CONSULTATIONS.clearDraft(); toast('현재 내용만 지웠습니다. 저장 메모는 유지됩니다.'); return; }
       if (t.id === 'ntAdd') { openEdit(null); return; }
       if (t.id === 'ntConfirm') { N.tpl.defaultsPending = false; await saveTpl('확인 완료로 표시했습니다.'); render(); return; }
       if (t.id === 'ntReset') { if (!confirm('지금 항목을 모두 지우고 기본 틀로 되돌릴까요?')) return; N.tpl = defaults(); N.pick = {}; N.referralQuick = {}; if (window.LINKS) LINKS.clearNoteNeeds(); await saveTpl('기본 틀로 되돌렸습니다.'); render(); return; }
@@ -4717,11 +4779,45 @@ window.VHM_SUPPS = [
   }
 
   function resetSession() {
+    savedTemplate = null;
     N.pick = {}; N.lead = {}; N.referralQuick = {}; N.extra = ''; N.age = ''; N.out = ''; N.gen = null; N.caret = null; N.edited = false; N.tpl = null; N.synced = false; N.editing = null; N.view = 'write';
     if (box()) box().replaceChildren(); if (window.LINKS) LINKS.clearNoteNeeds();
     if ($('#ntDlg')?.open) $('#ntDlg').close();
   }
-  window.NOTES = { open, bind, resetSession, referralNeeds() { return window.VHM_NOTE_REFERRALS ? VHM_NOTE_REFERRALS.fromState(N.tpl?.items,N.pick,N.referralQuick) : []; }, _state: N, _compose: compose, _defaults: defaults };
+  function clearContent() {
+    if (savedTemplate) { N.tpl = savedTemplate.tpl; N.synced = savedTemplate.synced; savedTemplate = null; }
+    N.pick = {}; N.lead = {}; N.referralQuick = {}; N.extra = ''; N.age = ''; N.out = ''; N.gen = null; N.caret = null; N.edited = false;
+    if (window.LINKS) LINKS.clearNoteNeeds(); if (N.tpl) render();
+  }
+  function snapshot() {
+    return JSON.parse(JSON.stringify({tpl:N.tpl,pick:N.pick,lead:N.lead,referralQuick:N.referralQuick,extra:N.extra,age:N.age || '',out:$('#ntOut')?.value ?? N.out ?? ''}));
+  }
+  function validateSaved(d) {
+    if (!d || !d.tpl || !Array.isArray(d.tpl.items) || d.tpl.items.length > 300 || typeof d.out !== 'string' || d.out.length > 100000) throw new Error('저장된 상담메모 형식이 올바르지 않습니다.');
+    const safeId = id => typeof id === 'string' && /^[a-zA-Z0-9_-]+$/.test(id) && !['__proto__','constructor','prototype'].includes(id);
+    if (!d.tpl.items.every(i => i && safeId(i.id) && Array.isArray(i.options) && Array.isArray(i.fields))) throw new Error('질문 항목 ID 또는 형식이 올바르지 않습니다.');
+    const tpl = clean(d.tpl), pick = d.pick || {};
+    for (const it of tpl.items) {
+      const v = pick[it.id]; if (v == null) continue;
+      const option = k => Number.isInteger(k) && k >= 0 && k < it.options.length;
+      if (['one','lead'].includes(it.kind) && !option(v)) throw new Error('선택 항목이 올바르지 않습니다.');
+      if (it.kind === 'many' && (!Array.isArray(v) || !v.every(option))) throw new Error('선택 목록이 올바르지 않습니다.');
+      if (it.kind === 'num' && (!Array.isArray(v) || !v.every(x => typeof x === 'string' || x === null))) throw new Error('측정값이 올바르지 않습니다.');
+      if (it.kind === 'drugs' && (!Array.isArray(v) || !v.every(x => x && typeof x.name === 'string' && typeof x.note === 'string'))) throw new Error('약 목록이 올바르지 않습니다.');
+      if (it.kind === 'acute' && (typeof v !== 'object' || Array.isArray(v) || !Object.entries(v).every(([k,x]) => option(+k) && ACUTE_ST.includes(x)))) throw new Error('질환 선택이 올바르지 않습니다.');
+    }
+    if (d.lead && (typeof d.lead !== 'object' || Object.values(d.lead).some(v => typeof v !== 'string'))) throw new Error('입력 내용이 올바르지 않습니다.');
+    if (d.referralQuick && (typeof d.referralQuick !== 'object' || Object.values(d.referralQuick).some(v => !Array.isArray(v) || v.some(x => typeof x !== 'string')))) throw new Error('빠른 입력 내용이 올바르지 않습니다.');
+    return tpl;
+  }
+  function restoreSaved(d) {
+    const tpl = validateSaved(d);
+    if (!savedTemplate) savedTemplate = {tpl:N.tpl,synced:N.synced};
+    N.tpl = tpl; N.synced = true; N.pick = structuredClone(d.pick || {}); N.lead = structuredClone(d.lead || {}); N.referralQuick = structuredClone(d.referralQuick || {});
+    N.extra = String(d.extra || ''); N.age = String(d.age || ''); N.out = d.out; N.gen = compose(); N.edited = true; N.caret = null; N.view = 'write';
+    if (window.LINKS) LINKS.clearNoteNeeds(); render();
+  }
+  window.NOTES = { open, bind, resetSession, clearContent, snapshot, validateSaved, restoreSaved, referralNeeds() { return window.VHM_NOTE_REFERRALS ? VHM_NOTE_REFERRALS.fromState(N.tpl?.items,N.pick,N.referralQuick) : []; }, _state: N, _compose: compose, _defaults: defaults };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind); else bind();
 })();
 
@@ -5112,6 +5208,212 @@ window.VHM_SUPPS = [
   $('#memoImageInput').onchange = select;
   $('#memoImageDrive').onclick = () => VHM_AUTH.request('drive').catch(e => toast(e.message || e));
   $('#eventDlg').addEventListener('close', () => { if (!$('#eventDlg').open) reset(); });
+})();
+
+</script>
+<script>
+/* Explicit encrypted consultation saves. No plaintext persistence or automatic upload. */
+(function () {
+  'use strict';
+  const $ = s => document.querySelector(s), clone = x => structuredClone(x);
+  let strokes = [], active = null, tool = 'pen', color = '#183f35', width = 3;
+  let records = [], scope = '', selected = '', epoch = 0, busy = false, listOpen = false, boardOpen = false;
+  let database;
+  const UUID = /^[a-f0-9-]{36}$/;
+  function db() {
+    if (!database) database = new Promise((resolve, reject) => {
+      const req = indexedDB.open('vhm-consultations-v1', 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore('records', {keyPath:'id'}); req.result.createObjectStore('counters'); };
+      req.onsuccess = () => { req.result.onversionchange = () => req.result.close(); resolve(req.result); };
+      req.onerror = () => { database = null; reject(new Error('기기 저장소를 열지 못했습니다. 브라우저 저장 권한을 확인하세요.')); };
+      req.onblocked = () => reject(new Error('다른 창이 저장소를 사용 중입니다. 다른 창을 닫고 다시 시도하세요.'));
+    }).catch(error => { database = null; throw error; });
+    return database;
+  }
+  async function listLocal(owner) {
+    const connection = await db();
+    return new Promise((resolve, reject) => {
+      const tx = connection.transaction('records'), req = tx.objectStore('records').getAll();
+      tx.oncomplete = () => resolve(req.result.filter(r => r.scope === owner).sort((a,b) => a.slot-b.slot));
+      tx.onabort = tx.onerror = () => reject(tx.error || new Error('저장 목록을 읽지 못했습니다.'));
+    });
+  }
+  async function insert(entry) {
+    const connection = await db();
+    return new Promise((resolve, reject) => {
+      const tx = connection.transaction(['records','counters'],'readwrite'), store = tx.objectStore('records'), counters = tx.objectStore('counters');
+      let result;
+      const prior = store.get(entry.id);
+      prior.onsuccess = () => {
+        if (prior.result) {
+          if (prior.result.scope !== entry.scope || prior.result.encrypted !== entry.encrypted) { tx.abort(); return; }
+          result = prior.result; return;
+        }
+        const count = counters.get(entry.scope);
+        count.onsuccess = () => { const slot = (+count.result || 0) + 1; result = {...entry,slot}; store.add(result); counters.put(slot,entry.scope); };
+      };
+      tx.oncomplete = () => resolve(result);
+      tx.onabort = tx.onerror = () => reject(tx.error || new Error('기기 저장에 실패했습니다. 공간 부족 또는 동일 ID의 다른 자료를 확인하세요. 기존 저장은 유지됩니다.'));
+    });
+  }
+  async function removeLocal(id, owner) {
+    const connection = await db();
+    return new Promise((resolve,reject) => {
+      const tx = connection.transaction('records','readwrite'), store = tx.objectStore('records'), req = store.get(id);
+      req.onsuccess = () => { if (req.result?.scope === owner) store.delete(id); };
+      tx.oncomplete = resolve; tx.onabort = tx.onerror = () => reject(tx.error || new Error('기기 저장 삭제에 실패했습니다.'));
+    });
+  }
+  function validate(record) {
+    if (!record || record.schema !== 1 || !UUID.test(record.id) || !Number.isFinite(Date.parse(record.created)) || !Array.isArray(record.strokes) || record.strokes.length > 2000) throw new Error('저장 메모 형식이 올바르지 않습니다.');
+    NOTES.validateSaved(record.note);
+    let count = 0;
+    for (const s of record.strokes) {
+      if (!['pen','erase'].includes(s.tool) || !['#183f35','#b42318','#1d4ed8'].includes(s.color) || !Number.isFinite(s.width) || s.width < 1 || s.width > 24 || !Array.isArray(s.points) || !s.points.length) throw new Error('손글씨 형식이 올바르지 않습니다.');
+      for (const p of s.points) { if (!Array.isArray(p) || p.length !== 2 || !p.every(x => Number.isFinite(x) && x >= 0 && x <= 1)) throw new Error('필기 좌표가 올바르지 않습니다.'); }
+      count += s.points.length;
+    }
+    if (count > 30000) throw new Error('필기 점이 너무 많습니다. 30,000점까지 저장할 수 있습니다.');
+    return record;
+  }
+  function paintBoard() {
+    const canvas = $('#consultCanvas'); if (!canvas) return;
+    const c = canvas.getContext('2d'); c.clearRect(0,0,canvas.width,canvas.height);
+    for (const s of strokes) {
+      c.globalCompositeOperation = s.tool === 'erase' ? 'destination-out' : 'source-over'; c.strokeStyle = s.color; c.fillStyle = s.color;
+      c.lineWidth = s.width; c.lineCap = 'round'; c.lineJoin = 'round';
+      const points = s.points.map(([x,y]) => [x*1000,y*600]);
+      c.beginPath(); c.moveTo(...points[0]); for (const p of points.slice(1)) c.lineTo(...p); c.stroke();
+      if (points.length === 1) { c.beginPath(); c.arc(...points[0],s.width/2,0,Math.PI*2); c.fill(); }
+    }
+    c.globalCompositeOperation = 'source-over';
+  }
+  function bindBoard() {
+    const canvas = $('#consultCanvas'); if (!canvas) return;
+    const point = e => { const r = canvas.getBoundingClientRect(); return [Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))]; };
+    canvas.onpointerdown = e => {
+      if (busy || active || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      if (strokes.length >= 2000 || strokes.reduce((n,s)=>n+s.points.length,0) >= 30000) return toast('필기 한도에 도달했습니다. 저장하거나 지운 뒤 계속하세요.');
+      e.preventDefault(); canvas.setPointerCapture(e.pointerId); active = {id:e.pointerId,stroke:{tool,color,width:tool==='erase'?18:width,points:[point(e)]}}; strokes.push(active.stroke); paintBoard();
+    };
+    canvas.onpointermove = e => {
+      if (!active || active.id !== e.pointerId) return; e.preventDefault();
+      if (strokes.reduce((n,s)=>n+s.points.length,0) >= 30000) return;
+      active.stroke.points.push(point(e)); paintBoard();
+    };
+    canvas.onpointerup = canvas.onpointercancel = e => { if (active?.id === e.pointerId) active = null; };
+    canvas.onlostpointercapture = () => { active = null; };
+    paintBoard();
+  }
+  function paintList() {
+    const container = $('#consultList'); if (!container) return;
+    container.replaceChildren(); container.hidden = !listOpen;
+    if (!listOpen) return;
+    if (!scope) { container.textContent = '잠금을 풀고 저장 목록을 열어 주세요.'; return; }
+    if (!records.length) { container.textContent = '이 기기에 저장한 메모가 없습니다.'; return; }
+    for (const record of records) {
+      const row = document.createElement('div'); row.className = 'row'; row.style.cssText = 'gap:6px;margin:8px 0;flex-wrap:wrap';
+      const label = document.createElement('b'); label.textContent = '저장'+record.slot; row.append(label);
+      const date = document.createElement('span'); date.className = 'hint'; date.textContent = new Date(record.created).toLocaleString('ko-KR'); row.append(date);
+      for (const [label,action] of [['열기',()=>load(record)],['Drive에 복사',()=>copy(record)],['이 기기에서 삭제',()=>drop(record)]]) {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'small'; b.textContent = label; b.disabled = busy; b.onclick = () => runAction(action); row.append(b);
+      }
+      container.append(row);
+    }
+  }
+  function mount() {
+    const box = $('#consultationTools'); if (!box) return;
+    active = null;
+    box.innerHTML = '<div class="card" style="padding:12px;margin:10px 0"><div class="row" style="flex-wrap:wrap;gap:8px"><b>상담메모 저장·손글씨</b><button type="button" class="primary" id="consultSave">새로 저장</button><button type="button" id="consultShow">저장 목록</button><button type="button" id="consultImport">Drive에서 불러오기</button><button type="button" id="consultConnect" hidden>Drive 연결 (작성 내용 초기화)</button></div><p class="hint" id="consultStatus" role="status" style="margin:8px 0"></p><p class="hint">저장1, 저장2…로 이 기기에 암호화 보관합니다. 다른 기기에서 쓰려면 저장 목록에서 Drive에 복사하세요. 자동 저장·업로드는 하지 않습니다. 잠금·로그아웃 전 저장하세요.</p><div id="consultList"></div><details id="consultBoard"><summary>손글씨 필기판 열기</summary><div class="row" style="margin:8px 0;flex-wrap:wrap"><button type="button" id="consultPen">펜</button><button type="button" id="consultEraser">지우개</button><label>색상 <select id="consultColor" aria-label="펜 색상"><option value="#183f35">검정</option><option value="#b42318">빨강</option><option value="#1d4ed8">파랑</option></select></label><label>굵기 <select id="consultWidth" aria-label="펜 굵기"><option value="3">가는 펜</option><option value="6">굵은 펜</option></select></label><button type="button" id="consultUndo">한 획 취소</button><button type="button" id="consultEraseAll">필기 지우기</button></div><canvas id="consultCanvas" width="1000" height="600" aria-label="손글씨 필기판: 마우스·펜·터치로 작성" style="display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff;touch-action:none"></canvas><p class="hint">메모와 필기를 함께 저장합니다. 손글씨는 필기 모양대로 보관합니다.</p></details></div>';
+    $('#consultBoard').open = boardOpen; $('#consultBoard').ontoggle = e => { boardOpen = e.target.open; };
+    $('#consultColor').value = color; $('#consultWidth').value = String(width);
+    $('#consultColor').onchange = e => { color = e.target.value; };
+    $('#consultWidth').onchange = e => { width = +e.target.value; };
+    const paintTool = () => { for (const [id,value] of [['#consultPen','pen'],['#consultEraser','erase']]) { $(id).setAttribute('aria-pressed',String(tool === value)); $(id).classList.toggle('primary',tool === value); } };
+    $('#consultPen').onclick = () => { tool = 'pen'; paintTool(); status('펜을 선택했습니다.'); };
+    $('#consultEraser').onclick = () => { tool = 'erase'; paintTool(); status('지우개를 선택했습니다.'); };
+    paintTool();
+    $('#consultUndo').onclick = () => { if (!busy) { active = null; strokes.pop(); paintBoard(); } };
+    $('#consultEraseAll').onclick = () => { if (!busy && confirm('현재 손글씨를 모두 지울까요? 저장된 메모는 유지됩니다.')) { strokes = []; active = null; paintBoard(); } };
+    $('#consultSave').onclick = () => runAction(save);
+    $('#consultShow').onclick = () => runAction(show);
+    $('#consultImport').onclick = () => runAction(importDrive);
+    $('#consultConnect').hidden = !!(window.VHM_AUTH && VHM_AUTH.hasDrive);
+    $('#consultConnect').onclick = () => VHM_AUTH.request('drive').catch(e=>toast(e.message||e));
+    status(selected ? selected+'을 열었습니다. 수정 후 새로 저장하면 원본을 보존합니다.' : '직접 저장한 내용만 보관합니다.');
+    setBusy(busy); paintList(); bindBoard();
+  }
+  function status(text) { if ($('#consultStatus')) $('#consultStatus').textContent = text; }
+  function setBusy(value) { busy = value; for (const s of ['#consultSave','#consultShow','#consultImport','#consultUndo','#consultEraseAll']) if ($(s)) $(s).disabled = value; paintList(); }
+  async function runAction(action) {
+    if (busy) return; setBusy(true);
+    try { await action(); } catch (e) { status(e.message || String(e)); toast(e.message || String(e),7000); }
+    finally { setBusy(false); }
+  }
+  async function unlocked() {
+    if (!SERVER.isOpen() && !(await MEMOLOCK.openNow('상담메모와 필기는 메모 잠금 암호로 암호화하여 저장합니다.'))) return false;
+    scope = await SERVER.consultationScope(); return true;
+  }
+  async function show() {
+    const version = epoch; if (!(await unlocked()) || version !== epoch) return;
+    records = await listLocal(scope); if (version !== epoch) return;
+    listOpen = true; paintList(); status('이 기기에 저장된 메모 '+records.length+'개');
+  }
+  async function save() {
+    const version = epoch;
+    const record = validate({schema:1,id:crypto.randomUUID(),created:new Date().toISOString(),note:NOTES.snapshot(),strokes:clone(strokes)});
+    if (!record.note.out.trim() && !record.strokes.length && !Object.keys(record.note.pick || {}).length && !Object.values(record.note.lead || {}).some(Boolean)) throw new Error('상담 내용이나 손글씨를 작성하세요.');
+    if (!(await unlocked()) || version !== epoch) return;
+    const sealed = await SERVER.sealConsultation(record); if (version !== epoch || !SERVER.isOpen()) return;
+    const entry = await insert({id:record.id,created:record.created,...sealed});
+    if (version !== epoch) return;
+    records = await listLocal(scope); listOpen = true; selected = '저장'+entry.slot; paintList(); status(selected+' 기기 저장 완료. 다른 기기에서 쓰려면 Drive에 복사하세요.');
+  }
+  async function load(entry) {
+    const version = epoch; if (!(await unlocked()) || version !== epoch || entry.scope !== scope) return;
+    const record = validate(await SERVER.openConsultation(entry.encrypted)); if (version !== epoch) return;
+    if (!confirm('현재 작성 중인 내용 대신 저장'+entry.slot+'을 열까요? 필요한 내용은 먼저 저장하세요.')) return;
+    strokes = clone(record.strokes); selected = '저장'+entry.slot; boardOpen = strokes.length > 0;
+    NOTES.restoreSaved(record.note); status(selected+'을 열었습니다. 수정 후 새로 저장하면 원본은 보존됩니다.');
+  }
+  async function copy(entry) {
+    const version = epoch; if (!(await unlocked()) || version !== epoch || entry.scope !== scope) return;
+    if (!VHM_AUTH.hasDrive) throw new Error('Drive 연결이 필요합니다. 기기 저장 후 Drive 연결 버튼을 눌러 주세요.');
+    await SERVER.copyConsultation(entry.id,entry.encrypted);
+    if (version === epoch) status('저장'+entry.slot+' Drive 복사 완료. 다른 기기에서 같은 계정으로 불러올 수 있습니다.');
+  }
+  async function drop(entry) {
+    const version = epoch; if (!(await unlocked()) || version !== epoch || entry.scope !== scope) return;
+    if (!confirm('저장'+entry.slot+'을 이 기기에서 삭제할까요? Drive 복사본은 유지됩니다.')) return;
+    await removeLocal(entry.id,scope); if (version !== epoch) return;
+    records = await listLocal(scope); paintList(); status('이 기기에서 삭제했습니다. Drive 복사본은 유지됩니다.');
+  }
+  async function importDrive() {
+    const version = epoch; if (!(await unlocked()) || version !== epoch) return;
+    if (!VHM_AUTH.hasDrive) throw new Error('Drive 연결 후 다시 누르세요. 연결 전 현재 내용을 먼저 저장하세요.');
+    const files = await SERVER.listConsultations(); let added = 0, failed = 0;
+    const imported = [];
+    const have = new Set((await listLocal(scope)).map(x=>x.id));
+    for (const file of files) {
+      if (version !== epoch || !SERVER.isOpen()) return;
+      try {
+        const encrypted = await SERVER.fetchConsultation(file.id), record = validate(await SERVER.openConsultation(encrypted));
+        if (version !== epoch) return;
+        imported.push({id:record.id,scope,created:record.created,encrypted});
+      } catch (_) { failed++; }
+    }
+    imported.sort((a,b) => a.created.localeCompare(b.created) || a.id.localeCompare(b.id));
+    for (const entry of imported) {
+      if (version !== epoch || !SERVER.isOpen()) return;
+      try { await insert(entry); if (!have.has(entry.id)) { added++; have.add(entry.id); } } catch (_) { failed++; }
+    }
+    if (version !== epoch) return;
+    records = await listLocal(scope); listOpen = true; paintList(); status('Drive에서 '+added+'개 추가 · 중복은 유지'+(failed ? ' · '+failed+'개 읽기 실패(기존 저장 보존)' : ''));
+  }
+  function clearDraft() { epoch++; strokes = []; active = null; selected = ''; paintBoard(); status('현재 내용만 지웠습니다. 저장 목록은 유지됩니다.'); }
+  function lock() { epoch++; strokes = []; active = null; records = []; scope = ''; selected = ''; listOpen = false; boardOpen = false; if (window.NOTES) NOTES.clearContent(); paintBoard(); paintList(); status('잠겼습니다. 저장 메모는 잠금을 푼 뒤 열 수 있습니다.'); }
+  window.CONSULTATIONS = {mount,clearDraft,lock,validate,_listLocal:listLocal};
+  if ($('#consultationTools')) mount();
 })();
 
 </script>
