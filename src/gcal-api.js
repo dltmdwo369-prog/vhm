@@ -71,6 +71,7 @@
       return res;
     },
     signOut() {
+      if (window.NOTES) NOTES.resetSession();
       const t = this.token; this.token = null; this.exp = 0; this.hasDrive = false;
       if (window.FEEDBACK) FEEDBACK.signOut();
       if (window.FEATURES) FEATURES.setAccount('');

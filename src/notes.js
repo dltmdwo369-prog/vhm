@@ -172,7 +172,7 @@
     return nb;
   }
 
-  const N = { tpl: null, view: 'write', pick: {}, lead: {}, extra: '', edited: false, synced: false, editing: null };
+  const N = { tpl: null, view: 'write', pick: {}, lead: {}, referralQuick: {}, extra: '', edited: false, synced: false, editing: null };
   const box = () => $('#tab-note');
 
   function localLoad() { try { const d = JSON.parse(localStorage.getItem(LS) || 'null'); return d ? clean(d) : null; } catch (e) { return null; } }
@@ -532,6 +532,7 @@
       + `<span class="nt-forms"><a class="nt-form" href="forms/survey-all-p1-4.pdf" download="방문건강관리_설문지_전체_1-4쪽.pdf" title="간이 설문지(1·2쪽) + 기초조사표(3·4쪽) — A4 양면 2장, 4쪽">📄 전체 내려받기 (1~4쪽)</a><a class="nt-form" href="forms/simple-survey-p12.pdf" download="방문건강관리_간이설문지_1-2쪽.pdf" title="방문 상담용 빈 설문지 — A4 양면 1장(1·2쪽): 기본정보·Vital·주질환·복약·신체계측/신체사정·건강상담·생활습관·서비스제공·PHQ-9">📄 간이 설문지 내려받기 (1·2쪽)</a><a class="nt-form" href="forms/base-survey-p34.pdf" download="방문건강관리_기초조사표_3-4쪽.pdf" title="기초조사표 — A4 양면 1장(3·4쪽): 허약노인 기초측정표, 재가암·재가장애인(간이) 기초조사표, 변형 바델 지수">📄 기초조사표 내려받기 (3·4쪽)</a></span>`
       + `<span class="hint">${N.synced ? '질문 틀: 구글 드라이브와 이 기기에 저장' : '질문 틀: 이 기기에 저장 (연계 안내 탭에서 드라이브를 연결하면 다른 기기와 같이 씀)'}</span></div>`;
     if (N.tpl.defaultsPending) h += '<div class="warnbox" style="margin-bottom:10px">질문 항목과 문장은 아직 <b>임시 기본값</b>입니다. ‘항목 편집’에서 평소 쓰시는 말투로 고친 뒤 ‘확인 완료’를 눌러 주세요.</div>';
+    if (N.view === 'write') h += '<div class="nt-referral-action"><button class="primary" id="ntReferrals">체크 항목으로 연계 보기</button><span class="hint">연계 안내로 이동하면 관련 요구를 자동 체크합니다. 직접 적은 문장·수치·이름은 가져오지 않습니다.</span></div>';
     h += N.view === 'write' ? writeHtml() : editHtml();
     box().innerHTML = h;
     if (N.view === 'write') { refreshOut(); if (N.age && typeof calcAge === 'function') calcAge('ntAge'); }
@@ -658,6 +659,7 @@
     const b = box();
     b.addEventListener('click', async ev => {
       const t = ev.target.closest('button,[data-edit]'); if (!t) return;
+      if (t.id === 'ntReferrals') { if (window.FEATURES && !FEATURES.enabled('link')) { toast('설정에서 연계 안내 기능을 켜주세요.'); return; } showTab('link'); return; }
       if (t.dataset.ntview) { N.view = t.dataset.ntview; render(); return; }
       if (t.dataset.it) {   // 보기 고르기 (다시 누르면 해제)
         const it = N.tpl.items.find(i => i.id === t.dataset.it), k = +t.dataset.k;
@@ -679,6 +681,7 @@
       if (t.dataset.tadd) {   // 직접 적기 칸의 빠른 입력: 누르면 쉼표로 이어 넣고, 다시 누르면 뺌
         const id = t.dataset.tadd, cur = String(N.lead[id] || '').split(/,\s*/).map(x => x.trim()).filter(Boolean), v = t.dataset.v, k = cur.indexOf(v);
         if (k >= 0) cur.splice(k, 1); else cur.push(v);
+        const quick = new Set(N.referralQuick[id] || []); if (k >= 0) quick.delete(v); else quick.add(v); N.referralQuick[id] = Array.from(quick);
         N.lead[id] = cur.join(', '); const inp = $(`[data-lead="${id}"]`); if (inp) inp.value = N.lead[id];
         t.classList.toggle('on', k < 0); t.setAttribute('aria-pressed', k < 0); refreshOut(); return;
       }
@@ -693,24 +696,24 @@
         toast('복사했습니다. 전용앱 메모란에 붙여 넣으세요.'); return;
       }
       if (t.id === 'ntCaretOff') { N.caret = null; paintCaret(); return; }
-      if (t.id === 'ntClear') { N.pick = {}; N.lead = {}; N.extra = ''; N.age = ''; N.edited = false; N.gen = null; N.out = ''; N.caret = null; render(); toast('모두 지웠습니다.'); return; }
+      if (t.id === 'ntClear') { N.pick = {}; N.lead = {}; N.referralQuick = {}; if (window.LINKS) LINKS.clearNoteNeeds(); N.extra = ''; N.age = ''; N.edited = false; N.gen = null; N.out = ''; N.caret = null; render(); toast('모두 지웠습니다.'); return; }
       if (t.id === 'ntAdd') { openEdit(null); return; }
       if (t.id === 'ntConfirm') { N.tpl.defaultsPending = false; await saveTpl('확인 완료로 표시했습니다.'); render(); return; }
-      if (t.id === 'ntReset') { if (!confirm('지금 항목을 모두 지우고 기본 틀로 되돌릴까요?')) return; N.tpl = defaults(); N.pick = {}; await saveTpl('기본 틀로 되돌렸습니다.'); render(); return; }
+      if (t.id === 'ntReset') { if (!confirm('지금 항목을 모두 지우고 기본 틀로 되돌릴까요?')) return; N.tpl = defaults(); N.pick = {}; N.referralQuick = {}; if (window.LINKS) LINKS.clearNoteNeeds(); await saveTpl('기본 틀로 되돌렸습니다.'); render(); return; }
       if (t.dataset.move != null) { const k = +t.dataset.move, j = k + +t.dataset.dir, a = N.tpl.items; if (j < 0 || j >= a.length) return; [a[k], a[j]] = [a[j], a[k]]; await saveTpl(); render(); return; }
       if (t.dataset.edit) { openEdit(N.tpl.items.find(i => i.id === t.dataset.edit)); return; }
     });
     b.addEventListener('input', ev => {
       if (ev.target.id === 'ntAgeIn') { N.age = ev.target.value; if (typeof AGE === 'object') AGE.ntAge = null; if (typeof calcAge === 'function') calcAge('ntAge'); return; }
       const t = ev.target;
-      if (t.dataset.lead) { N.lead[t.dataset.lead] = t.value; if (!ev.isComposing) refreshOut(); return; }   // 한글 조합 중에는 메모를 건드리지 않음
+      if (t.dataset.lead) { delete N.referralQuick[t.dataset.lead]; N.lead[t.dataset.lead] = t.value; if (!ev.isComposing) refreshOut(); return; }   // 한글 조합 중에는 메모를 건드리지 않음
       if (t.dataset.dq) { showDrugList(t.dataset.dq, t.value); return; }
       if (t.dataset.dname || t.dataset.dnote) { const id = t.dataset.dname || t.dataset.dnote, a = N.pick[id] || []; const x = a[+t.dataset.k]; if (x) { x[t.dataset.dname ? 'name' : 'note'] = t.value; if (!ev.isComposing) refreshOut(); } return; }
       if (t.dataset.num) { const a = (N.pick[t.dataset.num] || []).slice(); a[+t.dataset.k] = t.value.replace(/[^\d.]/g, ''); if (a[+t.dataset.k] !== t.value) t.value = a[+t.dataset.k]; N.pick[t.dataset.num] = a; refreshOut(); }
       else if (t.id === 'ntExtra') { N.extra = t.value; if (!ev.isComposing) refreshOut(); }
       else if (t.id === 'ntOut') { N.out = t.value; N.edited = t.value !== N.gen; $('#ntCount').textContent = t.value.length + '자'; }
     });
-    b.addEventListener('compositionend', ev => { const t = ev.target; if (t.dataset.lead) { N.lead[t.dataset.lead] = t.value; refreshOut(); } else if (t.id === 'ntExtra') { N.extra = t.value; refreshOut(); } else if (t.dataset.dname || t.dataset.dnote) refreshOut(); });
+    b.addEventListener('compositionend', ev => { const t = ev.target; if (t.dataset.lead) { delete N.referralQuick[t.dataset.lead]; N.lead[t.dataset.lead] = t.value; refreshOut(); } else if (t.id === 'ntExtra') { N.extra = t.value; refreshOut(); } else if (t.dataset.dname || t.dataset.dnote) refreshOut(); });
     // 메모 칸의 커서 위치 기억 (누르기·방향키·글 고르기)
     const rememberCaret = ev => { const t = ev.target; if (t.id !== 'ntOut') return; N.caret = { pos: t.selectionEnd, val: t.value }; paintCaret(); };
     ['click', 'keyup', 'select', 'input'].forEach(k => b.addEventListener(k, rememberCaret));
@@ -757,7 +760,7 @@
       const isNew = e.isNew; delete e.isNew; const it = clean({ schema: SCHEMA, items: [e] }).items[0]; it.id = e.id;
       const k = N.tpl.items.findIndex(i => i.id === it.id);
       if (k >= 0) N.tpl.items[k] = it; else N.tpl.items.push(it);
-      delete N.pick[it.id];
+      delete N.pick[it.id]; delete N.referralQuick[it.id];
       $('#ntDlg').close(); await saveTpl(isNew ? '항목을 추가했습니다.' : '항목을 고쳤습니다.'); render();
     };
     $('#ntDel').onclick = async () => {
@@ -767,6 +770,11 @@
     };
   }
 
-  window.NOTES = { open, bind, _state: N, _compose: compose, _defaults: defaults };
+  function resetSession() {
+    N.pick = {}; N.lead = {}; N.referralQuick = {}; N.extra = ''; N.age = ''; N.out = ''; N.gen = null; N.caret = null; N.edited = false; N.tpl = null; N.synced = false; N.editing = null; N.view = 'write';
+    if (box()) box().replaceChildren(); if (window.LINKS) LINKS.clearNoteNeeds();
+    if ($('#ntDlg')?.open) $('#ntDlg').close();
+  }
+  window.NOTES = { open, bind, resetSession, referralNeeds() { return window.VHM_NOTE_REFERRALS ? VHM_NOTE_REFERRALS.fromState(N.tpl?.items,N.pick,N.referralQuick) : []; }, _state: N, _compose: compose, _defaults: defaults };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind); else bind();
 })();

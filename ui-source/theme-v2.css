@@ -413,3 +413,6 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
 #svcForms .lk-form,#referralDlg .lk-form{display:flex;flex-wrap:wrap;max-width:100%;margin-right:0;overflow-wrap:anywhere}
 #svcForms .lk-form-name,#referralDlg .lk-form-name{min-width:0;flex:1;overflow-wrap:anywhere}
 #svcUploadStatus{overflow-wrap:anywhere}
+
+.nt-referral-action{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0 14px}.nt-referral-action .hint{flex:1 1 240px}
+#tab-link .lk-note-transfer{padding:10px;border:1px solid var(--line);border-radius:10px;margin-bottom:12px;background:#f4faf6}#tab-link .lk-note-transfer p{margin-bottom:0}

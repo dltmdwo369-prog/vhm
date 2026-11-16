@@ -27,7 +27,7 @@
   function emptyData() { return {schema:2, updatedAt:null, defaultsPending:true, categories:defaultCategories(), services:[], catalogReviews:{}}; }
   function normalize(d) { return M.migrate(d, emptyData()); }
 
-  const L = { data: null, modified: null, loaded: false, checks: new Set(), view: 'match', q: '', editing: null, pendingForms: [], personalLoaded:false, loading:false, busy:false, epoch:0, notice:'', filters:{field:'',group:'',route:'',intake:'',source:''}, selected:new Set(), importSnapshot:null, reviewId:null, listLimit:12, needOpen:new Set(['cost','oral']) };
+  const L = { data: null, modified: null, loaded: false, checks: new Set(), view: 'match', q: '', editing: null, pendingForms: [], personalLoaded:false, loading:false, busy:false, epoch:0, notice:'', filters:{field:'',group:'',route:'',intake:'',source:''}, selected:new Set(), importSnapshot:null, reviewId:null, listLimit:12, noteAutoIds:new Set(), noteSourceIds:[], noteImported:false, needOpen:new Set(['cost','oral']) };
   const box = () => $('#tab-link');
   const itemById = () => { const m = {}; L.data.categories.forEach(c => c.items.forEach(i => { m[i.id] = Object.assign({ cat: c.name }, i); })); return m; };
 
@@ -114,16 +114,36 @@
     const checked = (i.sourceIds || [i.id]).some(id => L.checks.has(id));
     return '<label class="lk-chip' + (checked ? ' on' : '') + '"><input type="checkbox" data-need="' + esc(i.id) + '"' + (checked ? ' checked' : '') + '> ' + esc(i.label) + '</label>';
   }
+  function clearNoteNeeds() {
+    L.noteAutoIds.forEach(id => L.checks.delete(id)); L.noteAutoIds.clear(); L.noteSourceIds = []; L.noteImported = false;
+  }
+  function applyNoteNeeds() {
+    clearNoteNeeds();
+    const allowed = new Set(M.refinedGroups.flatMap(g => g.items.map(i => i.id)));
+    const ids = (window.NOTES ? NOTES.referralNeeds() : []).filter(id => allowed.has(id));
+    L.noteSourceIds = ids; L.noteImported = true;
+    ids.forEach(id => { if (!L.checks.has(id)) { L.checks.add(id); L.noteAutoIds.add(id); } });
+    checkGroups().forEach(g => { if (g.items.some(i => i.sourceIds.some(id => L.checks.has(id)))) L.needOpen.add(g.id); });
+    L.view = 'match'; L.q = ''; Object.keys(L.filters).forEach(k => L.filters[k] = '');
+  }
+  function showCandidates() {
+    requestAnimationFrame(() => {
+      const result = document.getElementById('lkMatchResults');
+      if (!result || box().hidden || L.view !== 'match') return;
+      result.scrollIntoView({block:'start'}); result.focus({preventScroll:true});
+    });
+  }
   function matchHtml() {
     const res = scored(), refined = checkGroups(), count = refined.reduce((n,g) => n + g.items.length,0);
     const selected = selectedNeedIds();
     const pending = allServices().filter(s => s.verificationStatus === 'needs_contact' && M.refinedHits(s,needLabels(s),selected).length);
     return '<div class="lk-layout"><section class="card"><div class="card-head"><h3>대상자 요구 체크</h3><button class="small" id="lkClear">체크 초기화</button></div><div class="card-body">'
       + refined.filter(g => g.standalone && g.items.length).map(g => '<div class="lk-urgent" id="refined-' + esc(g.id) + '">' + g.items.map(needChip).join('') + '</div>').join('')
+      + '<div class="lk-note-transfer"><button class="small" id="lkFromNotes">상담 메모 체크 다시 적용</button> <button class="small" id="lkShowCandidates">검토 후보 보기</button><p class="hint" role="status">' + (L.noteImported ? '상담 메모에서 연결한 요구 ' + L.noteSourceIds.filter(id => selected.has(id)).length + '개. 자동 체크는 참고용이며 직접 수정할 수 있습니다. 다음 대상자 상담 전 메모의 모두 지우기를 눌러주세요.' : '상담 메모에서 연계 안내로 이동하면 관련 요구를 자동 선택합니다.') + '</p></div>'
       + '<p class="hint">체크는 저장·전송하지 않습니다. 탭을 떠나거나 연결을 해제하면 초기화됩니다. 이름은 입력하지 않습니다.</p>'
       + '<p><b>대상자 요구 ' + refined.filter(g => !g.standalone).length + '개 분야 · ' + count + '개 항목</b><br><span class="hint">분야를 펼쳐 필요한 항목을 골라주세요. 자격 판정·진단이 아닌 상담 연결용입니다.</span></p>'
       + refined.filter(g => !g.standalone).map(g => '<details class="lk-refined" id="refined-' + esc(g.id) + '" data-need-group="' + esc(g.id) + '"' + (L.needOpen.has(g.id) ? ' open' : '') + '><summary>' + esc(g.name) + '<span>' + g.items.filter(i => i.sourceIds.some(id => L.checks.has(id))).length + ' / ' + g.items.length + ' 선택</span></summary><div class="lk-chips">' + g.items.map(needChip).join('') + '</div></details>').join('')
-      + '</div></section><section class="card"><div class="card-head"><h3>검토 후보 ' + (L.checks.size ? res.length + '건' : '') + '</h3></div><div class="card-body"><div class="infobox">요구 일치 순서이며 수급 자격 판정이 아닙니다. 연령·지역·소득·보험·중복 제한을 상세에서 확인하세요. 개인정보 제3자 제공 동의와 기관 기록 절차를 지켜주세요. 개인 서비스는 기존의 포괄 요구로 연결될 수 있어 세부 지원내용을 확인해야 합니다.</div>'
+      + '</div></section><section class="card" id="lkMatchResults" tabindex="-1" aria-labelledby="lkMatchTitle"><div class="card-head"><h3 id="lkMatchTitle">검토 후보 ' + (L.checks.size ? res.length + '건' : '') + '</h3></div><div class="card-body"><div class="infobox">요구 일치 순서이며 수급 자격 판정이 아닙니다. 연령·지역·소득·보험·중복 제한을 상세에서 확인하세요. 개인정보 제3자 제공 동의와 기관 기록 절차를 지켜주세요. 개인 서비스는 기존의 포괄 요구로 연결될 수 있어 세부 지원내용을 확인해야 합니다.</div>'
       + (L.checks.size ? res.length ? res.map(x => serviceCard(x.s,x.hit)).join('') : '<p class="empty">일치하는 검토 후보가 없습니다. 확인 필요 자료나 개인 서비스의 연결 항목도 확인하세요.</p>' : '<p class="empty">요구를 체크하면 검토할 서비스를 표시합니다.</p>')
       + (pending.length ? '<aside class="warnbox lk-pending-needs"><b>관련 자료 중 담당기관 확인 필요 ' + pending.length + '건</b><p>아래 자료는 추천·신청 가능 사업이 아닙니다. 현행 운영과 지원내용 확인이 필요합니다.</p>' + pending.map(s => '<button class="link" data-detail="' + esc(s._key) + '">' + esc(s.name) + ' — 확인 필요</button>').join('') + '</aside>' : '') + '</div></section></div>';
   }
@@ -394,7 +414,9 @@
       if (t.id === 'lkShowMore') { L.listLimit += 12; render(); return; }
       if (t.id === 'lkRetry' || t.id === 'lkReload') { load(); return; }
       if (t.id === 'lkDrive') { t.disabled = true; try { if (!VHM_AUTH.valid()) { L.notice = '먼저 일정 탭에서 구글 계정으로 연결하세요. 공개자료는 계속 이용할 수 있습니다.'; render(); return; } if (!VHM_AUTH.hasDrive) await VHM_AUTH.request('drive'); await load(); } catch (e) { toast(e.message || String(e), 5000); t.disabled = false; } return; }
-      if (t.id === 'lkClear') { L.checks.clear(); render(); return; }
+      if (t.id === 'lkShowCandidates') { showCandidates(); return; }
+      if (t.id === 'lkFromNotes') { applyNoteNeeds(); render(); showCandidates(); return; }
+      if (t.id === 'lkClear') { clearNoteNeeds(); L.checks.clear(); render(); return; }
       if (t.closest('[data-detail]') || ['lkFilterClear','lkCatalogPreview','lkCatalogCommit','lkCatalogCancel','lkCatalogBackup'].includes(t.id)) { await catalogClick(t); return; }
       const attach = t.closest('[data-attach]'); if (attach) { openAttachments(attach.dataset.attach); return; }
       if (t.id === 'lkAdd') { if (!L.personalLoaded) { alert('먼저 개인 목록·드라이브 연결을 눌러주세요.'); return; } openSvc(null); return; }
@@ -428,7 +450,7 @@
       const t = ev.target;
       if (t.dataset.lkfilter) { L.filters[t.dataset.lkfilter] = t.value; L.listLimit = 12; render(); return; }
       if (t.dataset.catalogSelect) { t.checked ? L.selected.add(t.dataset.catalogSelect) : L.selected.delete(t.dataset.catalogSelect); L.importSnapshot = null; return; }
-      if (t.dataset.need) { const item = checkGroups().flatMap(g => g.items).find(i => i.id === t.dataset.need); for (const id of item ? item.sourceIds : [t.dataset.need]) { if (t.checked) L.checks.add(id); else L.checks.delete(id); } render(); return; }
+      if (t.dataset.need) { const item = checkGroups().flatMap(g => g.items).find(i => i.id === t.dataset.need); for (const id of item ? item.sourceIds : [t.dataset.need]) { L.noteAutoIds.delete(id); if (t.checked) L.checks.add(id); else L.checks.delete(id); } render(); return; }
       if (t.id === 'lkFile') { if (!L.personalLoaded) { alert('먼저 개인 목록을 불러오세요.'); return; } const file = t.files[0]; t.value = ''; if (!file) return;
         let d; try { d = JSON.parse(await file.text()); } catch (e) { alert('백업 파일을 읽지 못했습니다.'); return; }
         if (!d || !Array.isArray(d.services) || !Array.isArray(d.categories)) { alert('연계 목록 백업 파일이 아닙니다.'); return; }
@@ -483,13 +505,14 @@
 
   let bound = false;
   window.LINKS = {
-    open() {
+    open({fromNotes = false} = {}) {
       if (!bound) { bindOnce(); bindCatalogDialogs(); bound = true; }
       if (!L.data) L.data = emptyData();
-      L.loaded = true; render();
+      L.loaded = true; if (fromNotes) applyNoteNeeds(); render(); if (fromNotes) showCandidates();
       if (!L.personalLoaded && window.VHM_AUTH && VHM_AUTH.valid() && VHM_AUTH.hasDrive) load();
     },
-    leave() { L.checks.clear(); L.q = ''; Object.keys(L.filters).forEach(k => L.filters[k] = ''); },
+    clearNoteNeeds,
+    leave() { clearNoteNeeds(); L.checks.clear(); L.q = ''; Object.keys(L.filters).forEach(k => L.filters[k] = ''); },
     reset() { L.epoch++; L.data = emptyData(); L.loaded = false; L.personalLoaded = false; L.loading = false; L.notice = ''; L.busy = false; L.selected.clear(); L.importSnapshot = null; this.leave(); ['referralDlg','referralReviewDlg'].forEach(id => { const d = document.getElementById(id); if (d && d.open) d.close(); }); if (box()) box().replaceChildren(); },
     _state:L
   };
