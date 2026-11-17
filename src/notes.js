@@ -6,6 +6,7 @@
 (function () {
   'use strict';
   const LS = 'vhm-notes-tpl';
+  const HIRA_MEDICATION_URL = 'https://www.hira.or.kr/rb/dur/form.do?pgmid=HIRAA050300000100';
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3);
   const KINDS = { one: '하나 고르기', many: '여러 개 고르기', num: '숫자 입력', drugs: '약 검색', lead: '입력칸 + 하나 고르기', acute: '여러 개 + 치료중·완치', text: '직접 적기 (+ 빠른 입력)' };
   const SCHEMA = 16;
@@ -534,7 +535,7 @@
       + `<span class="nt-forms"><a class="nt-form" href="forms/survey-all-p1-4.pdf" download="방문건강관리_설문지_전체_1-4쪽.pdf" title="간이 설문지(1·2쪽) + 기초조사표(3·4쪽) — A4 양면 2장, 4쪽">📄 전체 내려받기 (1~4쪽)</a><a class="nt-form" href="forms/simple-survey-p12.pdf" download="방문건강관리_간이설문지_1-2쪽.pdf" title="방문 상담용 빈 설문지 — A4 양면 1장(1·2쪽): 기본정보·Vital·주질환·복약·신체계측/신체사정·건강상담·생활습관·서비스제공·PHQ-9">📄 간이 설문지 내려받기 (1·2쪽)</a><a class="nt-form" href="forms/base-survey-p34.pdf" download="방문건강관리_기초조사표_3-4쪽.pdf" title="기초조사표 — A4 양면 1장(3·4쪽): 허약노인 기초측정표, 재가암·재가장애인(간이) 기초조사표, 변형 바델 지수">📄 기초조사표 내려받기 (3·4쪽)</a><a class="nt-form" href="forms/sgds-k-short-form.pdf" download="SGDS-K 단축형 노인우울척도 검사.pdf" title="단축형 노인우울척도 검사(SGDS-K) — 첨부 원본 PDF, 1쪽">📄 노인우울척도 내려받기 (SGDS-K)</a></span>`
       + `<span class="hint">${N.synced ? '질문 틀: 구글 드라이브와 이 기기에 저장' : '질문 틀: 이 기기에 저장 (연계 안내 탭에서 드라이브를 연결하면 다른 기기와 같이 씀)'}</span></div>`;
     if (N.tpl.defaultsPending) h += '<div class="warnbox" style="margin-bottom:10px">질문 항목과 문장은 아직 <b>임시 기본값</b>입니다. ‘항목 편집’에서 평소 쓰시는 말투로 고친 뒤 ‘확인 완료’를 눌러 주세요.</div>';
-    if (N.view === 'write') h += '<div id="consultationTools"></div><div class="nt-referral-action"><button class="primary" id="ntReferrals">체크 항목으로 연계 보기</button><span class="hint">연계 안내로 이동하면 관련 요구를 자동 체크합니다. 직접 적은 문장·수치·이름은 가져오지 않습니다.</span></div>';
+    if (N.view === 'write') h += hiraMedicationHtml() + '<div id="consultationTools"></div><div class="nt-referral-action"><button class="primary" id="ntReferrals">체크 항목으로 연계 보기</button><span class="hint">연계 안내로 이동하면 관련 요구를 자동 체크합니다. 직접 적은 문장·수치·이름은 가져오지 않습니다.</span></div>';
     h += N.view === 'write' ? writeHtml() : editHtml();
     box().innerHTML = h;
     if (N.view === 'write') { refreshOut(); if (N.age && typeof calcAge === 'function') calcAge('ntAge'); }
@@ -550,6 +551,17 @@
     return list.map(([k, lab]) => `<label class="nt-note"><span>${esc(lab)}</span><input data-lead="${it.id}#${k}" value="${esc(N.lead[it.id + '#' + k] || '')}" placeholder="${esc(ph)}" maxlength="80" autocomplete="off"></label>`).join('');
   }
   function paintNotes(id) { const el = $(`[data-notes="${id}"]`), it = N.tpl.items.find(i => i.id === id); if (el && it) el.innerHTML = notesHtml(it); }
+  function hiraMedicationHtml() {
+    return `<section class="card nt-hira" aria-labelledby="ntHiraTitle">
+      <div class="row" style="flex-wrap:wrap;gap:8px"><b id="ntHiraTitle">내가 먹는 약 한눈에 · 심평원</b><a class="nt-form" id="ntHiraOpen" href="${HIRA_MEDICATION_URL}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">심평원에서 본인인증·조회 ↗</a></div>
+      <p class="hint">대상자 본인이 심평원 공식 화면에서 인증하고 복약정보를 확인합니다. 본인확인정보·인증번호는 심평원 화면에서만 입력하며, 이 연결 기능은 조회 결과를 가져오거나 저장하지 않습니다.</p>
+      <details id="ntHiraPhone"><summary>대상자 휴대폰으로 열기 · QR/이용 순서</summary>
+        <div class="nt-hira-phone"><img src="assets/hira-medication-qr.svg" width="240" height="240" alt="대상자 휴대폰에서 심평원 내가 먹는 약 한눈에 공식 페이지를 여는 QR 코드" loading="lazy">
+        <div><ol><li>대상자에게 QR을 보여드리거나 공식 주소를 전달하세요.</li><li>대상자가 본인 휴대폰에서 공식 사이트의 본인인증을 직접 진행합니다. 문자 인증 제공 여부와 절차는 심평원 화면에서 확인하세요.</li><li>대상자가 조회 결과를 보여주면 함께 확인하며 상담하세요. 조회 후에는 심평원에서 로그아웃하고 화면을 종료하세요.</li></ol>
+        <p class="hint">공식 주소: <span style="overflow-wrap:anywhere">www.hira.or.kr</span></p><button type="button" id="ntHiraCopy">공식 주소 복사</button><span class="hint" id="ntHiraCopyStatus" role="status"></span>
+        <p class="hint">조회 내역과 실제 현재 복용약은 다를 수 있으므로 약봉투·처방전과 대상자의 설명을 함께 확인하세요.</p></div></div>
+      </details></section>`;
+  }
   function writeHtml() {
     const items = g => N.tpl.items.filter(i => i.group === g).map(it => {
       let ctl = '';
@@ -565,7 +577,7 @@
         + it.options.map((o, k) => `<button type="button" class="nt-chip${N.pick[it.id] === k ? ' on' : ''}" data-it="${it.id}" data-k="${k}" aria-pressed="${N.pick[it.id] === k}">${esc(o.label)}</button>`).join('');
       else if (it.kind === 'drugs') { const a = N.pick[it.id] || [];
         ctl = `<div class="nt-drugs">${a.map((x, k) => `<div class="nt-drug"><input data-dname="${it.id}" data-k="${k}" value="${esc(x.name)}" aria-label="약 이름">(<input data-dnote="${it.id}" data-k="${k}" value="${esc(x.note)}" placeholder="무슨 약" aria-label="무슨 약인지 메모">)<button type="button" class="small" data-ddel="${it.id}" data-k="${k}" title="빼기">✕</button></div>`).join('')}
-          <div class="nt-dsearch"><input data-dq="${it.id}" placeholder="${isSupp(it) ? '영양제 이름·기능·초성으로 검색 (예: 루테인, 눈, ㄹㅌㅇ)' : '약 이름·성분·초성으로 검색 (예: 노바스크, 암로디핀, ㄴㅂㅅㅋ)'}" autocomplete="off"><div class="nt-dlist" data-dlist="${it.id}" hidden></div></div></div>`; }
+          <div class="nt-dsearch"><input data-dq="${it.id}" placeholder="${isSupp(it) ? '영양제 이름·기능·초성으로 검색 (예: 루테인, 눈, ㄹㅌㅇ)' : '약 이름·성분·초성으로 검색 (예: 노바스크, 암로디핀, ㄴㅂㅅㅋ)'}" autocomplete="off"><div class="nt-dlist" data-dlist="${it.id}" hidden></div></div>${isSupp(it) ? '' : `<a class="nt-form" href="${HIRA_MEDICATION_URL}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">심평원 복약정보 확인 ↗</a>`}</div>`; }
       else if (it.kind === 'acute') { const st = N.pick[it.id] || {};
         ctl = it.options.map((o, k) => `<button type="button" class="nt-chip${st[k] ? ' on' + (st[k] === '완치' ? ' done' : '') : ''}" data-it="${it.id}" data-k="${k}" aria-pressed="${!!st[k]}">${esc(o.label)}${st[k] ? `<small> · ${st[k]}</small>` : ''}</button>`).join('') + '<span class="hint" style="flex-basis:100%">한 번 누르면 치료중, 두 번 누르면 완치, 세 번 누르면 해제</span>'; }
       else ctl = it.options.map((o, k) => { const on = it.kind === 'one' ? N.pick[it.id] === k : (N.pick[it.id] || []).includes(k);
@@ -662,6 +674,7 @@
     const b = box();
     b.addEventListener('click', async ev => {
       const t = ev.target.closest('button,[data-edit]'); if (!t) return;
+      if (t.id === 'ntHiraCopy') { const ok = await copyText(HIRA_MEDICATION_URL); $('#ntHiraCopyStatus').textContent = ok ? ' 공식 주소를 복사했습니다.' : ' 복사하지 못했습니다. 위 바로가기를 이용하세요.'; return; }
       if (t.id === 'ntReferrals') { if (window.FEATURES && !FEATURES.enabled('link')) { toast('설정에서 연계 안내 기능을 켜주세요.'); return; } showTab('link'); return; }
       if (t.dataset.ntview) { N.view = t.dataset.ntview; render(); return; }
       if (t.dataset.it) {   // 보기 고르기 (다시 누르면 해제)

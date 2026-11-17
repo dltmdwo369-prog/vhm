@@ -293,4 +293,5 @@ if not os.path.exists(cfg):
 import shutil
 shutil.copytree(H + 'education', H + 'site/education', dirs_exist_ok=True)
 shutil.copytree(H + 'forms', H + 'site/forms', dirs_exist_ok=True)
+shutil.copytree(H + 'assets', H + 'site/assets', dirs_exist_ok=True)
 print('ok', len(s))

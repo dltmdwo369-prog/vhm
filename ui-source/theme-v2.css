@@ -27,6 +27,12 @@
   --radius: 18px;
   --shadow: 0 3px 14px rgba(20, 58, 43, .045), 0 15px 36px rgba(20, 58, 43, .025);
 }
+.nt-hira { padding: 12px; margin: 10px 0; }
+.nt-hira-phone { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; margin-top: 10px; }
+.nt-hira-phone img { max-width: 100%; height: auto; background: white; flex-shrink: 0; }
+.nt-hira-phone > div { flex: 1 1 240px; min-width: 0; }
+.nt-hira-phone ol { padding-left: 20px; margin: 0 0 10px; }
+.nt-hira-phone li { margin-bottom: 8px; }
 html, body {
   font-family: "Pretendard", "SUIT", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   color: var(--ink);
