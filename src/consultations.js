@@ -93,6 +93,16 @@
   }
   function paintList() {
     const container = $('#consultList'); if (!container) return;
+    const memoList = $('#consultMemoList');
+    if (memoList) {
+      memoList.replaceChildren(); memoList.hidden = !listOpen;
+      if (listOpen && !records.length) memoList.textContent = scope ? '이 기기에 저장한 메모가 없습니다.' : '잠금을 풀고 저장 목록을 열어 주세요.';
+      if (listOpen && scope) for (const record of records) {
+        const button = document.createElement('button'); button.type = 'button'; button.textContent = '저장'+record.slot;
+        button.setAttribute('aria-label','저장'+record.slot+' 상담메모 열기'); button.disabled = busy;
+        button.onclick = () => runAction(()=>load(record)); memoList.append(button);
+      }
+    }
     container.replaceChildren(); container.hidden = !listOpen;
     if (!listOpen) return;
     if (!scope) { container.textContent = '잠금을 풀고 저장 목록을 열어 주세요.'; return; }
@@ -124,13 +134,19 @@
     $('#consultSave').onclick = () => runAction(save);
     $('#consultShow').onclick = () => runAction(show);
     $('#consultImport').onclick = () => runAction(importDrive);
+    const memoTools = $('#consultationMemoTools');
+    if (memoTools) {
+      memoTools.innerHTML = '<div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap"><button type="button" class="primary" id="consultMemoSave">상담메모 새로 저장</button><button type="button" id="consultMemoShow">저장한 메모 열기</button></div><p class="hint" style="margin:6px 0">이 입력란의 문장·체크 항목·손글씨를 저장1, 저장2…로 함께 보관합니다. 직접 고친 문장도 그대로 저장합니다.</p><p class="hint" id="consultMemoStatus" role="status" style="margin:6px 0"></p><div id="consultMemoList" class="row" style="gap:6px;flex-wrap:wrap" aria-label="저장된 상담메모 선택" hidden></div>';
+      $('#consultMemoSave').onclick = () => runAction(save);
+      $('#consultMemoShow').onclick = () => runAction(show);
+    }
     $('#consultConnect').hidden = !!(window.VHM_AUTH && VHM_AUTH.hasDrive);
     $('#consultConnect').onclick = () => VHM_AUTH.request('drive').catch(e=>toast(e.message||e));
     status(selected ? selected+'을 열었습니다. 수정 후 새로 저장하면 원본을 보존합니다.' : '직접 저장한 내용만 보관합니다.');
     setBusy(busy); paintList(); bindBoard();
   }
-  function status(text) { if ($('#consultStatus')) $('#consultStatus').textContent = text; }
-  function setBusy(value) { busy = value; for (const s of ['#consultSave','#consultShow','#consultImport','#consultUndo','#consultEraseAll']) if ($(s)) $(s).disabled = value; paintList(); }
+  function status(text) { for (const id of ['#consultStatus','#consultMemoStatus']) if ($(id)) $(id).textContent = text; }
+  function setBusy(value) { busy = value; for (const s of ['#consultSave','#consultShow','#consultMemoSave','#consultMemoShow','#consultImport','#consultUndo','#consultEraseAll']) if ($(s)) $(s).disabled = value; paintList(); }
   async function runAction(action) {
     if (busy) return; setBusy(true);
     try { await action(); } catch (e) { status(e.message || String(e)); toast(e.message || String(e),7000); }

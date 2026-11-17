@@ -598,8 +598,9 @@
         <label class="f" style="margin-top:8px">기타사항 (직접 적기) <span class="hint">— 메모의 *기타사항 아래에 한 줄씩 들어갑니다</span><textarea id="ntExtra" rows="2" maxlength="300" placeholder="체크 항목에 없는 기타 메모사항을 직접 적으세요">${esc(N.extra)}</textarea></label>
       </div></div>
       <div class="card nt-outcard"><div class="card-body">
-        <div class="row" style="justify-content:space-between;margin-bottom:6px"><b>만들어진 메모</b><span class="hint" id="ntCount"></span></div>
-        <textarea id="ntOut" rows="12" aria-label="만들어진 메모 (직접 고칠 수 있음)">${esc(N.out || '')}</textarea>
+        <div class="row" style="justify-content:space-between;margin-bottom:6px"><b>상담메모</b><span class="hint" id="ntCount"></span></div>
+        <textarea id="ntOut" rows="12" aria-label="상담메모 (직접 입력·수정 가능)" placeholder="체크 항목으로 만든 문장이나 직접 작성한 상담메모를 저장할 수 있습니다.">${esc(N.out || '')}</textarea>
+        <div id="consultationMemoTools"></div>
         <div class="hint nt-caret" id="ntCaret">메모 안을 눌러 커서를 두면, 그다음 누르는 항목은 그 자리에 들어갑니다.</div>
         <div class="row" style="margin-top:8px;gap:8px">
           <button class="primary" id="ntCopy" style="flex:1">복사하기</button>

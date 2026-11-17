@@ -69,7 +69,7 @@ const PNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
  await page.locator('#consultBoard summary').click();
  async function draw(p){const box=await p.locator('#consultCanvas').boundingBox();await p.mouse.move(box.x+30,box.y+30);await p.mouse.down();await p.mouse.move(box.x+100,box.y+80,{steps:8});await p.mouse.up();}
  await draw(page);
- await page.locator('#consultSave').click();await page.waitForFunction(()=>document.querySelector('#consultStatus').textContent.includes('기기 저장 완료'));
+ await page.locator('#consultMemoSave').click();await page.waitForFunction(()=>document.querySelector('#consultStatus').textContent.includes('기기 저장 완료'));
  let list=await page.evaluate(scope=>CONSULTATIONS._listLocal(scope),scope);
  check('first explicit save is numbered 저장1',list.length===1&&list[0].slot===1);
  check('local storage contains ciphertext, not typed content',list[0].encrypted.startsWith('vhm-consult1:')&&!JSON.stringify(list).includes('가상 상담'));
@@ -78,16 +78,16 @@ const PNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
  check('text and handwriting are saved together',first.note.out.includes('가상 상담')&&first.strokes.length===1&&first.strokes[0].points.length>1);
  check('save does not upload to Drive automatically',uploads===0);
  await ctx.setOffline(true);
- await page.locator('#ntOut').fill('가상 오프라인 상담');await page.locator('#consultSave').click();
+ await page.locator('#ntOut').fill('가상 오프라인 상담');await page.locator('#consultMemoSave').click();
  await page.waitForFunction(()=>document.querySelector('#consultStatus').textContent.includes('저장2 기기 저장 완료'));
  list=await page.evaluate(scope=>CONSULTATIONS._listLocal(scope),scope);
  check('already-unlocked page can save offline',list.length===2&&list[1].slot===2);
  await ctx.setOffline(false);
  await page.locator('#ntClear').click();
  check('next target clears draft without deleting saved records',await page.locator('#ntOut').inputValue()===''&&(await page.evaluate(scope=>CONSULTATIONS._listLocal(scope),scope)).length===2);
- await page.locator('#consultShow').click();await page.waitForFunction(()=>document.querySelector('#consultList').children.length===2);
+ await page.locator('#consultMemoShow').click();await page.waitForFunction(()=>document.querySelector('#consultList').children.length===2);
  await page.evaluate(()=>{NOTES._state.tpl.items[0].label='가상 사용자 질문';localStorage.setItem('vhm-notes-tpl',JSON.stringify(NOTES._state.tpl));});
- await page.locator('#consultList > div').first().getByRole('button',{name:'열기',exact:true}).click();
+ await page.getByRole('button',{name:'저장1 상담메모 열기',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('#ntOut').value.includes('가상 상담 원문'));
  check('load restores exact edited text without executing markup',await page.locator('#ntOut').inputValue()===first.note.out&&await page.locator('#tab-note img[src=x]').count()===0);
  const loaded=await page.evaluate(()=>NOTES.snapshot());
