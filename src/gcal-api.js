@@ -161,6 +161,8 @@
     const o = { id: ev.id, ical: ev.iCalUID || '', kind, uid: tag('uid') || ev.iCalUID || ev.id, date: s.date, start: s.time, end: e.time, endDate,
       memo: tag('memo'), imageIds: parseImageIds(tag('images')), imageIdsRaw: tag('images'), parentId: tag('parent'), reminder, updated: ev.etag, fromApp: tag('kind') !== '', doneAt: tag('done_at'), movedFrom: tag('from'),
       due: tag('due'), dueRem: tag('duerem'), dueMail: tag('duemail') === '1', dueId: tag('dueid') };
+    o.metadataMissing = !!inDone && !['work','personal'].includes(tag('kind'));
+    try { const ids = JSON.parse(tag('previousids') || '[]'); o.previousIds = Array.isArray(ids) && ids.every(id=>typeof id === 'string') ? ids : []; } catch (_) { o.previousIds = []; }
     if (inDone) { o.inDone = true; if (tag('prevrem') !== '' && isFinite(+tag('prevrem'))) o.reminder = +tag('prevrem'); }   // 완료하면 알림을 끄고, 원래 알림은 기억
     const title = ev.summary || '';
     if (kind === 'work') {
@@ -170,6 +172,7 @@
       else if (!o.fromApp) o.target = o.target || title.slice(0, 40);
       if (TYPES.indexOf(o.type) < 0) o.type = '';
       if (STATUSES.indexOf(o.status) < 0) o.status = '예정';
+      if (o.metadataMissing) o.status = '완료'; // Archive membership is known; origin/device and personal/work details are not.
       if (GROUPS.indexOf(o.group) < 0) o.group = '미지정';
       o.rawTitle = title;
     } else {
@@ -254,6 +257,7 @@
       ? '[' + e.type + ']' + (e.status && e.status !== '예정' ? ' ' + e.status : '') + (settings.titleAlias && e.target ? ' ' + e.target : '')
       : (e.title || (e.ptype === '메모' ? '메모' : '개인 일정'));
     const priv = { vhm_kind: e.kind, vhm_memo: e.memo, vhm_parent: e.parentId || '', vhm_uid: e.uid || newUid() };
+    if (e.previousIds?.length) { const ids = JSON.stringify(e.previousIds); if (ids.length > 1024 || !e.previousIds.every(id=>typeof id === 'string' && /^[\w-]+$/.test(id))) throw new Error('이전 일정 연결 정보가 올바르지 않습니다.'); priv.vhm_previousids = ids; }
     if (e.imageIds !== undefined) {
       if (e.imageIds === null && e.imageIdsRaw) priv.vhm_images = e.imageIdsRaw;
       else { if (!validImageIds(e.imageIds)) throw new Error('이미지 첨부 목록이 올바르지 않습니다.'); priv.vhm_images = JSON.stringify(e.imageIds); }
@@ -416,16 +420,129 @@
     }
     return null;
   }
-  // 다른 캘린더로 옮기기 (같은 일정 그대로). 반복 일정의 한 회차처럼 옮길 수 없으면 복사 후 원본 삭제
+  // Private properties belong to a calendar copy. Never rely on events.move to carry them.
+  // Verify a complete destination copy before conditionally deleting the source.
   async function moveEv(fromCal, ev, toCal) {
-    try { return await api('POST', '/calendars/' + encodeURIComponent(fromCal) + '/events/' + encodeURIComponent(ev.id) + '/move', { query: { destination: toCal } }); }
-    catch (err) {
-      if (err.authNeeded) throw err;
-      const copy = {}; ['summary', 'start', 'end', 'reminders', 'extendedProperties', 'description', 'location', 'colorId', 'transparency'].forEach(k => { if (ev[k] != null) copy[k] = ev[k]; });
-      const created = await api('POST', '/calendars/' + encodeURIComponent(toCal) + '/events', { body: copy });
-      await api('DELETE', '/calendars/' + encodeURIComponent(fromCal) + '/events/' + encodeURIComponent(ev.id));
-      return created;
+    if (!ev.etag) throw new Error('원본 버전 정보를 확인하지 못해 이동을 중단했습니다. 원본은 보존했습니다.');
+    const copy = {};
+    ['summary','start','end','reminders','extendedProperties','description','location','colorId','transparency','visibility'].forEach(k => { if (ev[k] != null) copy[k] = JSON.parse(JSON.stringify(ev[k])); });
+    const root = '/calendars/' + encodeURIComponent(toCal) + '/events';
+    const matches = target => {
+      const expected = copy.extendedProperties?.private || {}, actual = target.extendedProperties?.private || {};
+      const sameTime = (a,b) => !!a && !!b && (a.dateTime && b.dateTime ? Date.parse(a.dateTime) === Date.parse(b.dateTime) : !!a.date && a.date === b.date);
+      const reminders = r => JSON.stringify(r?.useDefault === false ? {useDefault:false,overrides:(r.overrides || []).map(x=>[x.method,x.minutes]).sort()} : {useDefault:true});
+      return target.status !== 'cancelled' && target.summary === copy.summary &&
+        sameTime(target.start,copy.start) && sameTime(target.end,copy.end) &&
+        reminders(target.reminders) === reminders(copy.reminders) &&
+        ['description','location'].every(key => copy[key] == null || target[key] === copy[key]) &&
+        Object.keys(expected).every(key => actual[key] === expected[key]);
+    };
+    const digest = await crypto.subtle.digest('SHA-256', te.encode(fromCal+'\0'+ev.id+'\0'+toCal+'\0'+ev.etag));
+    const alternate = 'vhmt' + Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2,'0')).join('');
+    copy.id = fromCal !== toCal && /^[0-9a-v]{5,1024}$/.test(ev.id) ? ev.id : alternate;
+    let createdHere = false, target;
+    for (let attempt=0;attempt<2;attempt++) {
+      if (copy.id !== ev.id && copy.extendedProperties?.private) {
+        let ids; try { ids = JSON.parse(copy.extendedProperties.private.vhm_previousids || '[]'); } catch (_) { throw new Error('이전 일정 연결 정보를 확인하지 못했습니다. 원본을 보존했습니다.'); }
+        if (!Array.isArray(ids) || !ids.every(id=>typeof id === 'string' && /^[\w-]+$/.test(id))) throw new Error('이전 일정 연결 정보를 확인하지 못했습니다.');
+        ids = [...new Set([...ids,ev.id])]; const history = JSON.stringify(ids);
+        if (history.length > 1024) throw new Error('이전 일정 연결 정보가 너무 커 이동을 중단했습니다. 원본을 보존했습니다.');
+        copy.extendedProperties.private.vhm_previousids = history;
+      }
+      try { target = await api('POST', root, {body:copy,query:{sendUpdates:'none'}}); createdHere = true; }
+      catch (err) {
+        if (err.status !== 409) throw err;
+        try { target = await api('GET', root+'/'+encodeURIComponent(copy.id)); }
+        catch (readError) { if (![404,410].includes(readError.status)) throw readError; target = null; }
+        if ((!target || target.status === 'cancelled') && copy.id !== alternate) { copy.id = alternate; continue; }
+        if (!target || !matches(target)) throw new Error('목적지에 다른 내용의 일정이 있어 원본을 보존했습니다. 완료함과 원래 일정을 확인하세요.');
+      }
+      const insertedEtag = target.etag;
+      target = await api('GET', root+'/'+encodeURIComponent(target.id));
+      if (!target.etag || !matches(target)) {
+        if (createdHere && insertedEtag && target.etag === insertedEtag) { try { await api('DELETE',root+'/'+encodeURIComponent(target.id),{ifMatch:target.etag}); } catch (_) {} }
+        throw new Error('완료함의 세부정보 보존을 확인하지 못했습니다. 원본은 삭제하지 않았습니다.');
+      }
+      try {
+        await api('DELETE', '/calendars/'+encodeURIComponent(fromCal)+'/events/'+encodeURIComponent(ev.id), {ifMatch:ev.etag,query:{sendUpdates:'none'}});
+      } catch (err) {
+        // Roll back only our untouched new copy. Never delete a pre-existing or concurrently edited record.
+        if (createdHere) { try { await api('DELETE', root+'/'+encodeURIComponent(target.id), {ifMatch:target.etag}); } catch (_) {} }
+        throw err;
+      }
+      return target;
     }
+    throw new Error('일정 이동을 확인하지 못했습니다. 원본은 보존했습니다.');
+  }
+  // Repair only existing archive records using exact IDs (or UID + exact occurrence time).
+  // No title/name guesses, no replacement appointments, no plaintext local recovery cache.
+  async function repairCompleted(from,to,backupJson) {
+    const c = await ensureCalendars(), result = {checked:0,repaired:0,skipped:0,intact:0,missing:0,ambiguous:0,conflicts:0,failed:0};
+    let backups = [];
+    if (backupJson) {
+      const data = JSON.parse(backupJson);
+      if (data.app !== 'vhm-calendar-web' || !Array.isArray(data.events) || data.events.length > 10000) throw new Error('이 사이트에서 내려받은 일정 백업 JSON을 선택하세요.');
+      backups = data.events;
+    }
+    if (!c.done) return result;
+    const datesMatch = (entry,ev) => {
+      if (!ev.start || !ev.end) return false;
+      const start = ev.start.dateTime ? kst(ev.start.dateTime) : {date:ev.start.date,time:''};
+      const last = ev.end.dateTime ? kst(ev.end.dateTime) : {date:addDays(ev.end.date,-1),time:''};
+      return entry.date === start.date && (entry.start || '') === start.time && (entry.end || '') === last.time && (entry.endDate || entry.date) === last.date;
+    };
+    for (const target of await listCal(c.done,from,to)) {
+      if (['work','personal'].includes(target.extendedProperties?.private?.vhm_kind)) { result.skipped++; result.intact++; continue; }
+      result.checked++;
+      try {
+        const candidates = [];
+        for (const [kind,cal] of [['work',c.work],['personal',c.personal]]) {
+          let original;
+          try { original = await api('GET','/calendars/'+encodeURIComponent(cal)+'/events/'+encodeURIComponent(target.id)); }
+          catch (err) { if ([404,410].includes(err.status)) continue; throw err; }
+          const p = original.extendedProperties?.private;
+          if (!p || p.vhm_kind !== kind) continue;
+          if (target.iCalUID && original.iCalUID && target.iCalUID !== original.iCalUID) continue;
+          const uid = p.vhm_uid || (target.iCalUID && target.iCalUID === original.iCalUID ? original.iCalUID : '');
+          if (!uid) continue;
+          candidates.push({...p,vhm_uid:uid});
+        }
+        for (const entry of backups) {
+          if (!entry || !entry.fromApp || !['work','personal'].includes(entry.kind)) continue;
+          const exactId = entry.id === target.id && !(entry.ical && target.iCalUID && entry.ical !== target.iCalUID);
+          const sameOccurrence = entry.ical && target.iCalUID === entry.ical && datesMatch(entry,target);
+          if (!exactId && !sameOccurrence) continue;
+          const e = validate({...entry,memo:entry.memoRaw || entry.memoCipher || entry.memo || '',status:'완료',done:true});
+          if (!entry.uid && !(entry.ical && entry.ical === target.iCalUID)) continue;
+          e.uid = entry.uid || entry.ical;
+          const p = bodyOf(e,getSettings()).extendedProperties.private; p.vhm_dueid = '';
+          candidates.push(p);
+        }
+        if (!candidates.length) { result.skipped++; result.missing++; continue; }
+        const keys = [...new Set(candidates.flatMap(p=>Object.keys(p)))].filter(k=>k.startsWith('vhm_') && !['vhm_status','vhm_done','vhm_done_at','vhm_prevrem','vhm_dueid'].includes(k)).sort();
+        const defaults = {vhm_prio:'normal',vhm_group:'미지정',vhm_images:'[]'};
+        const signature = p => JSON.stringify(keys.map(k=>[k,p[k] || defaults[k] || '']));
+        if (new Set(candidates.map(signature)).size !== 1) { result.ambiguous++; continue; }
+        const source = candidates[0], existing = target.extendedProperties?.private || {};
+        if (existing.vhm_uid && existing.vhm_uid !== source.vhm_uid) { result.ambiguous++; continue; }
+        const restored = {...existing};
+        for (const [key,value] of Object.entries(source)) {
+          if (!key.startsWith('vhm_') || key === 'vhm_dueid') continue;
+          if (typeof value !== 'string' || key.length > 44 || value.length > 1024) throw new Error('복구 자료 형식이 올바르지 않습니다.');
+          if (restored[key] == null || restored[key] === '') restored[key] = value;
+        }
+        if (restored.vhm_kind === 'personal') { if (!existing.vhm_done) restored.vhm_done = '1'; }
+        else if (!existing.vhm_status) restored.vhm_status = '완료';
+        if (!target.etag) throw new Error('복구 대상 버전 정보가 없습니다.');
+        const saved = await api('PATCH','/calendars/'+encodeURIComponent(c.done)+'/events/'+encodeURIComponent(target.id),{body:{extendedProperties:{private:restored}},ifMatch:target.etag});
+        if (!Object.entries(restored).every(([k,v])=>saved.extendedProperties?.private?.[k] === v)) throw new Error('복구 결과 확인 실패');
+        result.repaired++;
+      } catch (err) {
+        if (err.authNeeded) throw err;
+        if (err.status === 412) result.conflicts++; else result.failed++;
+      }
+    }
+    return result;
   }
   /* ---------- 기한 알림 일정 ('방문건강관리(기한)') ---------- */
   function dueBody(o) {
@@ -483,10 +600,12 @@
       e.dueId = old.dueId || e.dueId || '';   // 기한 알림 일정은 구글에 있는 값 기준
       await sealMemo(e, old.memo, opt && opt.allowPlain);
       e.uid = e.uid || old.uid;
+      const body = bodyOf(e, settings);
+      body.extendedProperties.private = {...f.ev.extendedProperties?.private,...body.extendedProperties.private};
       const sameKind = f.kind === e.kind, sameShape = !!old.start === !!e.start;
       if (sameKind && sameShape) {
         try {
-          let ev = await api('PATCH', '/calendars/' + encodeURIComponent(f.calId) + '/events/' + encodeURIComponent(e.id), { body: bodyOf(e, settings), ifMatch: force ? undefined : f.ev.etag });
+          let ev = await api('PATCH', '/calendars/' + encodeURIComponent(f.calId) + '/events/' + encodeURIComponent(e.id), { body, ifMatch: force ? undefined : f.ev.etag });
           if (f.calId !== calId) ev = await moveEv(f.calId, ev, calId);   // 완료하면 완료 캘린더로, 되돌리면 원래 캘린더로
           return { ok: true, event: toObj(ev, e.kind, fin), moved: f.calId !== calId };
         } catch (err) {
@@ -495,8 +614,7 @@
         }
       }
       // 업무↔개인 또는 종일↔시간 전환: 새로 만들고 원본 삭제 (같은 uid 유지)
-      const created = await api('POST', '/calendars/' + encodeURIComponent(calId) + '/events', { body: bodyOf(e, settings) });
-      await api('DELETE', '/calendars/' + encodeURIComponent(f.calId) + '/events/' + encodeURIComponent(e.id));
+      const created = await moveEv(f.calId,{...f.ev,...body,extendedProperties:{...f.ev.extendedProperties,private:{...f.ev.extendedProperties?.private,...body.extendedProperties.private}}},calId);
       return { ok: true, event: toObj(created, e.kind, fin), moved: f.calId !== calId };
     }
     await sealMemo(e, null, opt && opt.allowPlain);
@@ -859,7 +977,7 @@
     async getEvent(id) { const f = await findEvent(id); if (!f) return null; const o = toObj(f.ev, f.kind, f.done); if (f.done) o.inDone = true; return decObj(o); },
     saveAdj, postpone, moveDone, listDue, delDue: id => delDue(id).then(() => ({ ok: true })),
     async deleteEvent(id, up) { const r = await deleteEvent(id, up); if (r.current) await decObj(r.current); return r; },
-    getStats, exportBackup, restoreBackup, restoreEvents,
+    getStats, exportBackup, restoreBackup, restoreEvents, repairCompleted,
     lockState, lockSetup, lockUnlock, lockNow, lockAll, lockStash, lockResume, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
     linksLoad, linksSave, uploadForm, downloadForm, trashForm, notesLoad, notesSave, uploadMemoImage, readMemoImage,
     consultationScope, sealConsultation, openConsultation, copyConsultation, listConsultations, fetchConsultation,

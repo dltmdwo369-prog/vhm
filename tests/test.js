@@ -7,7 +7,7 @@ const SITE = require('path').join(__dirname, '..', 'site');
 const R = []; const check = (n, ok, info = '') => R.push(`${ok ? 'PASS' : 'FAIL'} ${n}${info ? ' — ' + info : ''}`);
 
 /* ---------- 가짜 구글 캘린더 ---------- */
-let seq = 0; const nextId = p => p + (++seq).toString(36) + 'x';
+let seq = 0; const nextId = p => p + (++seq).toString(16) + 'aa';
 const G = { cals: [], events: {}, tokenOk: true, log: [], noAuth: 0 };
 function addCal(summary, extra = {}) { const c = Object.assign({ id: nextId('cal') + '@group.calendar.google.com', summary, accessRole: 'owner' }, extra); G.cals.push(c); G.events[c.id] = []; return c; }
 function tms(x) { return x.dateTime ? Date.parse(x.dateTime) : Date.parse(x.date + 'T00:00:00+09:00'); }
@@ -144,7 +144,7 @@ const server = http.createServer((req, res) => {
   await page.fill('#lockPw', '가상암호1234'); await page.click('#lockOk');
   await page.waitForFunction(() => /메모 열림/.test(document.querySelector('#btnLock').textContent), null, { timeout: 20000 }); await idle(page);
   check('암호 만든 뒤 잠그고 같은 창에서 다시 열기 → 열기 버튼 정상', okEnabled);
-  const created = G.events[G.work].find(e => e.extendedProperties && e.extendedProperties.private.vhm_target === '가상가-01');
+  let created = G.events[G.work].find(e => e.extendedProperties && e.extendedProperties.private.vhm_target === '가상가-01');
   check('새 일정 → 업무 캘린더, 제목 “[방문]”(별칭·메모 미포함)', created && created.summary === '[방문]', created && created.summary);
   check('시간 +09:00, 알림 30분, 숨은 정보 저장', created.start.dateTime === G.today + 'T10:00:00+09:00' && created.end.dateTime === G.today + 'T10:30:00+09:00'
     && created.reminders.useDefault === false && created.reminders.overrides[0].minutes === 30 && /^vhm1:/.test(created.extendedProperties.private.vhm_memo) && created.extendedProperties.private.vhm_uid.length === 32,
@@ -153,6 +153,7 @@ const server = http.createServer((req, res) => {
   G.cipher1 = created.extendedProperties.private.vhm_memo;
   // 3. 완료 버튼
   await page.click(`#dayList [data-quick="완료"][data-id="${created.id}"]`); await idle(page);
+  created = Object.values(G.events).flat().find(e=>e.id===created.id);
   const patchLog = G.log.filter(x => x.startsWith('PATCH') && x.includes('/events/'));
   check('완료 버튼 → PATCH, 제목 “[방문] 완료”', patchLog.length === 1 && created.summary === '[방문] 완료', created.summary);
   const doneCal = G.cals.find(c => c.summary === '방문건강관리(완료)');
@@ -160,8 +161,10 @@ const server = http.createServer((req, res) => {
     && created.reminders.useDefault === false && created.reminders.overrides.length === 0 && created.extendedProperties.private.vhm_prevrem === '30', JSON.stringify(created.reminders));
   check('완료한 일정은 일정표에서 빠지고 되돌리기 안내', !(await page.$(`#dayList .item[data-id="${created.id}"]`)) && /완료함으로 옮겼습니다/.test(await page.textContent('.undo-bar')));
   await page.click('.undo-bar .undo-btn'); await idle(page);
+  created = G.events[G.work].find(e=>e.id===created.id);
   check('되돌리기 → 업무 캘린더로 돌아와 ‘예정’, 알림 30분 복원', G.events[G.work].includes(created) && created.summary === '[방문]' && created.reminders.overrides[0].minutes === 30 && !!(await page.$(`#dayList .item[data-id="${created.id}"]`)), created.summary + JSON.stringify(created.reminders));
   await page.click(`#dayList [data-quick="완료"][data-id="${created.id}"]`); await idle(page);
+  created = G.events[doneCal.id].find(e=>e.id===created.id);
   const visit = await page.$eval('#statsTable tbody tr:nth-child(2) td.done', t => t.textContent);
   check('오늘 실적 방문 1 (완료 캘린더로 옮겨도 실적 포함)', visit === '1', visit);
 
@@ -171,8 +174,9 @@ const server = http.createServer((req, res) => {
   const tot = await page.$eval('#statsTable tfoot td:nth-child(2)', t => t.textContent);
   check('개인 일정 → 개인 캘린더, 실적 합계 그대로 2', G.events[G.pers].length === 1 && tot === '2', tot);
   // 4-1. 개인 일정 완료 → 완료함, 완료함에서 되돌리기
-  const pev = G.events[G.pers][0];
+  let pev = G.events[G.pers][0];
   await page.click(`#dayList [data-quick="완료"][data-id="${pev.id}"]`); await idle(page);
+  pev = G.events[doneCal.id].find(e=>e.id===pev.id);
   check('개인 일정 완료 버튼 → 완료 캘린더로, 실적 합계 그대로', G.events[doneCal.id].includes(pev) && pev.extendedProperties.private.vhm_done === '1' && await page.$eval('#statsTable tfoot td:nth-child(2)', t => t.textContent) === '2');
   await page.click('#viewSeg [data-v="done"]'); await idle(page);
   const doneTxt = await page.textContent('#listView');
@@ -180,13 +184,15 @@ const server = http.createServer((req, res) => {
   await page.screenshot({ path: 'done-view.png' });
   check('예전에 완료한 일정은 ‘휴대폰 캘린더에서도 빼기’ 안내', /1건/.test(await page.textContent('.done-move')));
   await page.click('#btnMoveDone'); await idle(page);
-  check('‘휴대폰 캘린더에서도 빼기’ → 완료 캘린더로 이동', G.events[doneCal.id].includes(G.legacy) && !G.events[G.work].includes(G.legacy) && !(await page.$('.done-move')));
+  check('‘휴대폰 캘린더에서도 빼기’ → 완료 캘린더로 이동', G.events[doneCal.id].some(e=>e.id===G.legacy.id) && !G.events[G.work].some(e=>e.id===G.legacy.id) && !(await page.$('.done-move')));
   await page.click(`#listView [data-undone][data-id="${pev.id}"]`); await idle(page);
+  pev = G.events[G.pers].find(e=>e.id===pev.id);
   check('완료함 되돌리기(개인) → 개인 캘린더로', G.events[G.pers].includes(pev) && pev.extendedProperties.private.vhm_done === '' && !/가상 개인 약속/.test(await page.textContent('#listView')));
   // 개인 일정 창에서 ‘완료’ 체크 후 저장
   await page.click('#viewSeg [data-v="month"]'); await idle(page);
   await page.click(`#dayList .item[data-id="${pev.id}"] .t-line`); await page.check('#eventForm input[name=done]');
   const dh = await page.textContent('#doneHint'); await page.click('#btnSave'); await idle(page);
+  pev = G.events[doneCal.id].find(e=>e.id===pev.id);
   check('일정 창 ‘완료’ 체크 → 안내 후 완료함으로', /완료함/.test(dh) && G.events[doneCal.id].includes(pev), dh);
   await page.click('.undo-bar .undo-btn'); await idle(page);
 
@@ -493,7 +499,7 @@ const server = http.createServer((req, res) => {
   await setT(page, 'dueTime', '1400'); await page.selectOption('#eventForm select[name=dueRem]', '1440,0'); await page.check('#eventForm input[name=dueMail]');
   await page.click('#btnSave'); await idle(page);
   const dueCal = G.cals.find(c => c.summary === '방문건강관리(기한)');
-  const kItem = G.events[G.work].find(e => e.extendedProperties && e.extendedProperties.private.vhm_due);
+  let kItem = G.events[G.work].find(e => e.extendedProperties && e.extendedProperties.private.vhm_due);
   const dEv = dueCal && G.events[dueCal.id][0];
   check('기한 날짜를 고르면 시각 09:00 자동', autoT === '09:00', autoT);
   check('기한 저장 → ‘방문건강관리(기한)’ 캘린더에 알림 일정(제목은 유형만, 대상자 정보 없음)', dEv && dEv.summary === '[기한] 방문' && !/가/.test(JSON.stringify(dEv)) && dEv.start.dateTime === tmr + 'T14:00:00+09:00', dEv && JSON.stringify({ s: dEv.summary, st: dEv.start, d: dEv.description }));
@@ -510,8 +516,10 @@ const server = http.createServer((req, res) => {
   // 완료 → 알림 지움, 되돌리기 → 다시 만듦
   await page.evaluate(d => { S.selected = d; render(); }, kItem.start.dateTime.slice(0, 10));
   await page.click(`#dayList [data-quick="완료"][data-id="${kItem.id}"]`); await idle(page);
+  kItem = Object.values(G.events).flat().find(e=>e.id===kItem.id);
   check('완료하면 기한 알림도 사라짐', G.events[dueCal.id].length === 0 && kItem.extendedProperties.private.vhm_dueid === '' && await page.$eval('#dueCard', x => x.hidden));
   await page.click('.undo-bar .undo-btn'); await idle(page);
+  kItem = Object.values(G.events).flat().find(e=>e.id===kItem.id);
   check('되돌리면 기한 알림 다시 만듦', G.events[dueCal.id].length === 1 && kItem.extendedProperties.private.vhm_dueid === G.events[dueCal.id][0].id);
   // 지난 기한(메모) → 확인 후 저장, 빨간 표시
   await page.evaluate(d => { S.selected = d; render(); }, G.today);

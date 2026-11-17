@@ -43,8 +43,8 @@ rep(' 로 저장했습니다.`;', ' 파일로 내려받았습니다.`;')
 rep('<select name="reminder">\n          <option value="-1">알림 없음</option>', '<select name="reminder">\n          <option value="-2">캘린더 기본 알림</option><option value="-1">알림 없음</option>')
 
 # 후속 일정: 예전(Apps Script) 방식 ID 도 찾기
-rep('S.events.find(x => x.id === d.parentId)', 'S.events.find(x => x.id === d.parentId || x.ical === d.parentId)')
-rep("S.events.find(x => x.id === $('#eventForm').dataset.parentId)", "S.events.find(x => x.id === $('#eventForm').dataset.parentId || x.ical === $('#eventForm').dataset.parentId)")
+rep('S.events.find(x => x.id === d.parentId)', 'S.events.find(x => x.id === d.parentId || x.ical === d.parentId || x.uid === d.parentId || (x.previousIds || []).includes(d.parentId))')
+rep("S.events.find(x => x.id === $('#eventForm').dataset.parentId)", "S.events.find(x => x.id === $('#eventForm').dataset.parentId || x.ical === $('#eventForm').dataset.parentId || x.uid === $('#eventForm').dataset.parentId || (x.previousIds || []).includes($('#eventForm').dataset.parentId))")
 
 # 서버 호출 → 브라우저에서 직접
 old_call = s[s.index('function call(fn, ...args) {'):s.index('function toast(msg')]
