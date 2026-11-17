@@ -608,7 +608,7 @@
           <button class="primary" id="ntCopy" style="flex:1">복사하기</button>
           <button id="ntClear">다음 대상자 (모두 지우기)</button>
         </div>
-        <p class="hint" style="margin:8px 0 0">체크한 내용과 문장은 자동 저장·전송하지 않습니다. ‘새로 저장’을 누르면 이 기기에 암호화하여 보관하며, Drive 복사는 별도로 선택합니다. 잠금·로그아웃 전 필요한 내용을 저장하세요.</p>
+        <p class="hint" style="margin:8px 0 0">체크한 내용과 문장은 자동 저장·전송하지 않습니다. ‘새로 저장’을 누르면 이 기기에 암호화 보관하며, Drive 연결·저장 동기화가 켜져 있으면 Drive에도 함께 저장합니다. 잠금·로그아웃 전 필요한 내용을 저장하세요.</p>
       </div></div></div>`;
   }
   function editHtml() {

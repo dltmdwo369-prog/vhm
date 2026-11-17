@@ -924,7 +924,11 @@
       return prior.id;
     }
     const mp = multipart({name, parents:[folder], mimeType:'application/octet-stream', appProperties:{vhmType:'consultation-v1'}}, new Blob([encrypted]), 'application/octet-stream');
-    return (await api('POST', UPLOAD + '/files', {query:{uploadType:'multipart',fields:'id'},rawBody:mp.body,contentType:mp.type})).id;
+    const uploaded = await api('POST', UPLOAD + '/files', {query:{uploadType:'multipart',fields:'id'},rawBody:mp.body,contentType:mp.type});
+    if (typeof uploaded.id !== 'string' || !/^[\w-]{1,150}$/.test(uploaded.id)) throw new Error('Drive 저장 결과를 확인하지 못했습니다. 기기 원본은 유지됩니다.');
+    const verification = await api('GET', DRIVE + '/files/' + uploaded.id, {query:{alt:'media'},raw:true});
+    if (await verification.text() !== encrypted) throw new Error('Drive 저장 내용이 기기 원본과 다릅니다. 동기화 완료로 표시하지 않았으며 기기 원본은 유지됩니다.');
+    return uploaded.id;
   }
   async function listConsultations() {
     needDrive();

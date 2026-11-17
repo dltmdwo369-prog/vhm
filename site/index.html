@@ -1900,7 +1900,11 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
       return prior.id;
     }
     const mp = multipart({name, parents:[folder], mimeType:'application/octet-stream', appProperties:{vhmType:'consultation-v1'}}, new Blob([encrypted]), 'application/octet-stream');
-    return (await api('POST', UPLOAD + '/files', {query:{uploadType:'multipart',fields:'id'},rawBody:mp.body,contentType:mp.type})).id;
+    const uploaded = await api('POST', UPLOAD + '/files', {query:{uploadType:'multipart',fields:'id'},rawBody:mp.body,contentType:mp.type});
+    if (typeof uploaded.id !== 'string' || !/^[\w-]{1,150}$/.test(uploaded.id)) throw new Error('Drive 저장 결과를 확인하지 못했습니다. 기기 원본은 유지됩니다.');
+    const verification = await api('GET', DRIVE + '/files/' + uploaded.id, {query:{alt:'media'},raw:true});
+    if (await verification.text() !== encrypted) throw new Error('Drive 저장 내용이 기기 원본과 다릅니다. 동기화 완료로 표시하지 않았으며 기기 원본은 유지됩니다.');
+    return uploaded.id;
   }
   async function listConsultations() {
     needDrive();
@@ -4753,7 +4757,7 @@ window.VHM_SUPPS = [
           <button class="primary" id="ntCopy" style="flex:1">복사하기</button>
           <button id="ntClear">다음 대상자 (모두 지우기)</button>
         </div>
-        <p class="hint" style="margin:8px 0 0">체크한 내용과 문장은 자동 저장·전송하지 않습니다. ‘새로 저장’을 누르면 이 기기에 암호화하여 보관하며, Drive 복사는 별도로 선택합니다. 잠금·로그아웃 전 필요한 내용을 저장하세요.</p>
+        <p class="hint" style="margin:8px 0 0">체크한 내용과 문장은 자동 저장·전송하지 않습니다. ‘새로 저장’을 누르면 이 기기에 암호화 보관하며, Drive 연결·저장 동기화가 켜져 있으면 Drive에도 함께 저장합니다. 잠금·로그아웃 전 필요한 내용을 저장하세요.</p>
       </div></div></div>`;
   }
   function editHtml() {
@@ -5375,6 +5379,9 @@ window.VHM_SUPPS = [
   let strokes = [], active = null, tool = 'pen', color = '#183f35', width = 3;
   let fingerEnabled = false, frame = 0, pointCount = 0;
   let records = [], scope = '', selected = '', epoch = 0, busy = false, listOpen = false, boardOpen = false;
+  const SYNC_PREF = 'vhm-consultation-save-sync';
+  let autoSync = true;
+  try { autoSync = localStorage.getItem(SYNC_PREF) !== '0'; } catch (_) {}
   let database;
   const UUID = /^[a-f0-9-]{36}$/;
   function db() {
@@ -5421,6 +5428,16 @@ window.VHM_SUPPS = [
       tx.oncomplete = resolve; tx.onabort = tx.onerror = () => reject(tx.error || new Error('기기 저장 삭제에 실패했습니다.'));
     });
   }
+  async function markRemote(entry,remoteId) {
+    if (typeof remoteId !== 'string' || !/^[\w-]{1,150}$/.test(remoteId)) throw new Error('Drive 저장 결과를 확인하지 못했습니다. 기기 원본은 유지됩니다.');
+    const connection = await db();
+    return new Promise((resolve,reject) => {
+      const tx = connection.transaction('records','readwrite'), store = tx.objectStore('records'), req = store.get(entry.id);
+      req.onsuccess = () => { const saved = req.result; if (saved && saved.scope === entry.scope && saved.encrypted === entry.encrypted) store.put({...saved,remoteId,remoteAt:new Date().toISOString()}); };
+      tx.oncomplete = resolve; tx.onabort = tx.onerror = () => reject(tx.error || new Error('Drive 저장 상태를 기기에 기록하지 못했습니다. 기기 원본은 유지됩니다.'));
+    });
+  }
+  const driveReady = () => !!(window.VHM_AUTH?.hasDrive && VHM_AUTH.valid() && navigator.onLine !== false);
   function validate(record) {
     if (!record || record.schema !== 1 || !UUID.test(record.id) || !Number.isFinite(Date.parse(record.created)) || !Array.isArray(record.strokes) || record.strokes.length > 2000) throw new Error('저장 메모 형식이 올바르지 않습니다.');
     NOTES.validateSaved(record.note);
@@ -5513,6 +5530,7 @@ window.VHM_SUPPS = [
   }
   function paintList() {
     const container = $('#consultList'); if (!container) return;
+    if ($('#consultConnect')) $('#consultConnect').hidden = !!(window.VHM_AUTH?.hasDrive && VHM_AUTH.valid());
     const memoList = $('#consultMemoList');
     if (memoList) {
       memoList.replaceChildren(); memoList.hidden = !listOpen;
@@ -5530,6 +5548,7 @@ window.VHM_SUPPS = [
     for (const record of records) {
       const row = document.createElement('div'); row.className = 'row'; row.style.cssText = 'gap:6px;margin:8px 0;flex-wrap:wrap';
       const label = document.createElement('b'); label.textContent = '저장'+record.slot; row.append(label);
+      const syncLabel = document.createElement('span'); syncLabel.className = 'hint'; syncLabel.textContent = record.remoteId ? 'Drive 저장 확인' : autoSync ? '기기 저장 · 동기화 대기' : '기기 전용 저장'; row.append(syncLabel);
       const date = document.createElement('span'); date.className = 'hint'; date.textContent = new Date(record.created).toLocaleString('ko-KR'); row.append(date);
       for (const [label,action] of [['열기',()=>load(record)],['Drive에 복사',()=>copy(record)],['이 기기에서 삭제',()=>drop(record)]]) {
         const b = document.createElement('button'); b.type = 'button'; b.className = 'small'; b.textContent = label; b.disabled = busy; b.onclick = () => runAction(action); row.append(b);
@@ -5540,7 +5559,7 @@ window.VHM_SUPPS = [
   function mount() {
     const box = $('#consultationTools'); if (!box) return;
     if (frame) cancelAnimationFrame(frame); frame = 0; active = null;
-    box.innerHTML = '<div class="card" style="padding:12px;margin:10px 0"><div class="row" style="flex-wrap:wrap;gap:8px"><b>상담메모 저장·손글씨</b><button type="button" class="primary" id="consultSave">새로 저장</button><button type="button" id="consultShow">저장 목록</button><button type="button" id="consultImport">Drive에서 불러오기</button><button type="button" id="consultConnect" hidden>Drive 연결 (작성 내용 초기화)</button></div><p class="hint" id="consultStatus" role="status" style="margin:8px 0"></p><p class="hint">저장1, 저장2…로 이 기기에 암호화 보관합니다. 다른 기기에서 쓰려면 저장 목록에서 Drive에 복사하세요. 자동 저장·업로드는 하지 않습니다. 잠금·로그아웃 전 저장하세요.</p><div id="consultList"></div><details id="consultBoard"><summary>손글씨 필기판 열기</summary><p class="hint">Apple Pencil·마우스로 바로 작성하세요. 기본은 펜 전용으로 손바닥 터치를 무시합니다. 화면 밖에서는 평소처럼 스크롤할 수 있습니다.</p><label class="row" style="gap:6px;margin:8px 0"><input type="checkbox" id="consultFinger" style="width:auto"> 손가락으로도 쓰기 (터치 필기)</label><div class="row" style="margin:8px 0;flex-wrap:wrap"><button type="button" id="consultPen">펜</button><button type="button" id="consultEraser">지우개</button><label>색상 <select id="consultColor" aria-label="펜 색상"><option value="#183f35">검정</option><option value="#b42318">빨강</option><option value="#1d4ed8">파랑</option></select></label><label>굵기 <select id="consultWidth" aria-label="펜 굵기"><option value="3">가는 펜</option><option value="6">굵은 펜</option></select></label><button type="button" id="consultUndo">한 획 취소</button><button type="button" id="consultEraseAll">필기 지우기</button></div><canvas id="consultCanvas" width="1000" height="600" aria-label="손글씨 필기판: 마우스·펜·터치로 작성" style="display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff;touch-action:none"></canvas><p class="hint">메모와 필기를 함께 저장합니다. 손글씨는 필기 모양대로 보관합니다.</p></details></div>';
+    box.innerHTML = '<div class="card" style="padding:12px;margin:10px 0"><div class="row" style="flex-wrap:wrap;gap:8px"><b>상담메모 저장·손글씨</b><button type="button" class="primary" id="consultSave">새로 저장</button><button type="button" id="consultShow">저장 목록</button><button type="button" id="consultImport">Drive에서 불러오기</button><button type="button" id="consultConnect" hidden>Drive 연결 (작성 내용 초기화)</button></div><p class="hint" id="consultStatus" role="status" style="margin:8px 0"></p><p class="hint">저장1, 저장2…로 이 기기에 암호화 보관합니다. Drive 연결과 저장 시 동기화가 켜져 있으면 저장 버튼을 누를 때 Drive에도 보관합니다. 기존 태블릿 메모는 이 기기에서 동기화를 한 번 실행하세요. 저장 목록을 열면 연결된 Drive 자료도 불러옵니다. 입력 중에는 저장·전송하지 않습니다.</p><div id="consultList"></div><details id="consultBoard"><summary>손글씨 필기판 열기</summary><p class="hint">Apple Pencil·마우스로 바로 작성하세요. 기본은 펜 전용으로 손바닥 터치를 무시합니다. 화면 밖에서는 평소처럼 스크롤할 수 있습니다.</p><label class="row" style="gap:6px;margin:8px 0"><input type="checkbox" id="consultFinger" style="width:auto"> 손가락으로도 쓰기 (터치 필기)</label><div class="row" style="margin:8px 0;flex-wrap:wrap"><button type="button" id="consultPen">펜</button><button type="button" id="consultEraser">지우개</button><label>색상 <select id="consultColor" aria-label="펜 색상"><option value="#183f35">검정</option><option value="#b42318">빨강</option><option value="#1d4ed8">파랑</option></select></label><label>굵기 <select id="consultWidth" aria-label="펜 굵기"><option value="3">가는 펜</option><option value="6">굵은 펜</option></select></label><button type="button" id="consultUndo">한 획 취소</button><button type="button" id="consultEraseAll">필기 지우기</button></div><canvas id="consultCanvas" width="1000" height="600" aria-label="손글씨 필기판: 마우스·펜·터치로 작성" style="display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff;touch-action:none"></canvas><p class="hint">메모와 필기를 함께 저장합니다. 손글씨는 필기 모양대로 보관합니다.</p></details></div>';
     $('#consultBoard').open = boardOpen; $('#consultBoard').ontoggle = e => { boardOpen = e.target.open; };
     $('#consultColor').value = color; $('#consultWidth').value = String(width);
     $('#consultFinger').checked = fingerEnabled;
@@ -5556,11 +5575,18 @@ window.VHM_SUPPS = [
     $('#consultSave').onclick = () => runAction(save);
     $('#consultShow').onclick = () => runAction(show);
     $('#consultImport').onclick = () => runAction(importDrive);
+    const syncControls = document.createElement('div'); syncControls.className = 'row'; syncControls.style.cssText = 'flex-wrap:wrap;gap:8px;margin:8px 0';
+    syncControls.innerHTML = '<button type="button" id="consultSync">태블릿·컴퓨터 동기화</button><label class="row" style="gap:6px"><input type="checkbox" id="consultAutoSync" style="width:auto"> 저장할 때 Drive에도 동기화</label>';
+    box.querySelector('.card').insertBefore(syncControls,$('#consultStatus'));
+    $('#consultSync').onclick = () => runAction(syncAll);
+    $('#consultAutoSync').checked = autoSync;
+    $('#consultAutoSync').onchange = e => { autoSync = e.target.checked; try { localStorage.setItem(SYNC_PREF,autoSync ? '1' : '0'); } catch (_) {} paintList(); status(autoSync ? '다음 저장부터 Drive 연결 시 함께 보관합니다. 기존 메모는 동기화 버튼으로 올릴 수 있습니다.' : '저장은 이 기기에만 합니다. 동기화 버튼은 별도로 사용할 수 있습니다.'); };
     const memoTools = $('#consultationMemoTools');
     if (memoTools) {
-      memoTools.innerHTML = '<div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap"><button type="button" class="primary" id="consultMemoSave">상담메모 새로 저장</button><button type="button" id="consultMemoShow">저장한 메모 열기</button></div><p class="hint" style="margin:6px 0">이 입력란의 문장·체크 항목·손글씨를 저장1, 저장2…로 함께 보관합니다. 직접 고친 문장도 그대로 저장합니다.</p><p class="hint" id="consultMemoStatus" role="status" style="margin:6px 0"></p><div id="consultMemoList" class="row" style="gap:6px;flex-wrap:wrap" aria-label="저장된 상담메모 선택" hidden></div>';
+      memoTools.innerHTML = '<div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap"><button type="button" class="primary" id="consultMemoSave">상담메모 새로 저장</button><button type="button" id="consultMemoShow">저장한 메모 열기</button></div><p class="hint" style="margin:6px 0">이 입력란의 문장·체크 항목·손글씨를 저장1, 저장2…로 함께 보관합니다. 직접 고친 문장도 그대로 저장합니다. Drive 연결 시 상단의 저장 동기화 설정을 따릅니다.</p><p class="hint" id="consultMemoStatus" role="status" style="margin:6px 0"></p><div id="consultMemoList" class="row" style="gap:6px;flex-wrap:wrap" aria-label="저장된 상담메모 선택" hidden></div>';
       $('#consultMemoSave').onclick = () => runAction(save);
       $('#consultMemoShow').onclick = () => runAction(show);
+      const sync = document.createElement('button'); sync.type = 'button'; sync.id = 'consultMemoSync'; sync.textContent = '태블릿·컴퓨터 동기화'; sync.onclick = () => runAction(syncAll); memoTools.querySelector('.row').append(sync);
     }
     $('#consultConnect').hidden = !!(window.VHM_AUTH && VHM_AUTH.hasDrive);
     $('#consultConnect').onclick = () => VHM_AUTH.request('drive').catch(e=>toast(e.message||e));
@@ -5568,7 +5594,7 @@ window.VHM_SUPPS = [
     setBusy(busy); paintList(); bindBoard();
   }
   function status(text) { for (const id of ['#consultStatus','#consultMemoStatus']) if ($(id)) $(id).textContent = text; }
-  function setBusy(value) { busy = value; for (const s of ['#consultSave','#consultShow','#consultMemoSave','#consultMemoShow','#consultImport','#consultUndo','#consultEraseAll']) if ($(s)) $(s).disabled = value; paintList(); }
+  function setBusy(value) { busy = value; for (const s of ['#consultSave','#consultShow','#consultMemoSave','#consultMemoShow','#consultSync','#consultMemoSync','#consultAutoSync','#consultImport','#consultUndo','#consultEraseAll']) if ($(s)) $(s).disabled = value; paintList(); }
   async function runAction(action) {
     if (busy) return; setBusy(true);
     try { await action(); } catch (e) { status(e.message || String(e)); toast(e.message || String(e),7000); }
@@ -5582,6 +5608,7 @@ window.VHM_SUPPS = [
     const version = epoch; if (!(await unlocked()) || version !== epoch) return;
     records = await listLocal(scope); if (version !== epoch) return;
     listOpen = true; paintList(); status('이 기기에 저장된 메모 '+records.length+'개');
+    if (driveReady()) await importDrive();
   }
   async function save() {
     const version = epoch;
@@ -5591,7 +5618,16 @@ window.VHM_SUPPS = [
     const sealed = await SERVER.sealConsultation(record); if (version !== epoch || !SERVER.isOpen()) return;
     const entry = await insert({id:record.id,created:record.created,...sealed});
     if (version !== epoch) return;
-    records = await listLocal(scope); listOpen = true; selected = '저장'+entry.slot; paintList(); status(selected+' 기기 저장 완료. 다른 기기에서 쓰려면 Drive에 복사하세요.');
+    records = await listLocal(scope); listOpen = true; selected = '저장'+entry.slot; paintList(); status(selected+' 기기 저장 완료'+(autoSync ? ' · Drive 동기화 확인 중…' : ' · 이 기기에만 보관합니다.'));
+    if (autoSync) {
+      if (!driveReady()) { status(selected+' 기기 저장 완료 · Drive 동기화 대기. 연결 후 동기화 버튼을 누르세요.'); return; }
+      try {
+        const remoteId = await SERVER.copyConsultation(entry.id,entry.encrypted);
+        if (version !== epoch || !SERVER.isOpen()) return;
+        await markRemote(entry,remoteId); if (version !== epoch) return;
+        records = await listLocal(scope); paintList(); status(selected+' 기기 저장 완료 · Drive 동기화 완료');
+      } catch (err) { if (version === epoch) status(selected+' 기기 저장 완료 · Drive 동기화 대기: '+(err.message || err)+'. 기기 원본은 유지됩니다.'); }
+    }
   }
   async function load(entry) {
     const version = epoch; if (!(await unlocked()) || version !== epoch || entry.scope !== scope) return;
@@ -5603,12 +5639,15 @@ window.VHM_SUPPS = [
   async function copy(entry) {
     const version = epoch; if (!(await unlocked()) || version !== epoch || entry.scope !== scope) return;
     if (!VHM_AUTH.hasDrive) throw new Error('Drive 연결이 필요합니다. 기기 저장 후 Drive 연결 버튼을 눌러 주세요.');
-    await SERVER.copyConsultation(entry.id,entry.encrypted);
+    const remoteId = await SERVER.copyConsultation(entry.id,entry.encrypted);
+    if (version !== epoch) return;
+    await markRemote(entry,remoteId); if (version !== epoch) return;
+    records = await listLocal(scope); paintList();
     if (version === epoch) status('저장'+entry.slot+' Drive 복사 완료. 다른 기기에서 같은 계정으로 불러올 수 있습니다.');
   }
   async function drop(entry) {
     const version = epoch; if (!(await unlocked()) || version !== epoch || entry.scope !== scope) return;
-    if (!confirm('저장'+entry.slot+'을 이 기기에서 삭제할까요? Drive 복사본은 유지됩니다.')) return;
+    if (!confirm('저장'+entry.slot+'을 이 기기에서 삭제할까요? Drive 복사본은 유지되며 다음 동기화 때 다시 나타날 수 있습니다.')) return;
     await removeLocal(entry.id,scope); if (version !== epoch) return;
     records = await listLocal(scope); paintList(); status('이 기기에서 삭제했습니다. Drive 복사본은 유지됩니다.');
   }
@@ -5623,16 +5662,49 @@ window.VHM_SUPPS = [
       try {
         const encrypted = await SERVER.fetchConsultation(file.id), record = validate(await SERVER.openConsultation(encrypted));
         if (version !== epoch) return;
-        imported.push({id:record.id,scope,created:record.created,encrypted});
+        imported.push({id:record.id,scope,created:record.created,encrypted,remoteId:file.id,remoteAt:new Date().toISOString()});
       } catch (_) { failed++; }
     }
     imported.sort((a,b) => a.created.localeCompare(b.created) || a.id.localeCompare(b.id));
     for (const entry of imported) {
       if (version !== epoch || !SERVER.isOpen()) return;
-      try { await insert(entry); if (!have.has(entry.id)) { added++; have.add(entry.id); } } catch (_) { failed++; }
+      try { const saved = await insert(entry); await markRemote(saved,entry.remoteId); if (!have.has(entry.id)) { added++; have.add(entry.id); } } catch (_) { failed++; }
     }
     if (version !== epoch) return;
     records = await listLocal(scope); listOpen = true; paintList(); status('Drive에서 '+added+'개 추가 · 중복은 유지'+(failed ? ' · '+failed+'개 읽기 실패(기존 저장 보존)' : ''));
+  }
+  async function syncAll() {
+    const version = epoch;
+    if (!(await unlocked()) || version !== epoch) return;
+    if (!driveReady()) throw new Error('인터넷 연결과 같은 Google 계정의 Drive 연결을 확인한 뒤 다시 동기화하세요. 현재 기기 저장본은 유지됩니다.');
+    const owner = scope, files = await SERVER.listConsultations();
+    let downloaded = 0, uploaded = 0, failed = 0;
+    const verified = new Set(), imported = [], have = new Set((await listLocal(owner)).map(e=>e.id));
+    for (const file of files) {
+      if (version !== epoch || !SERVER.isOpen()) return;
+      try {
+        const encrypted = await SERVER.fetchConsultation(file.id), record = validate(await SERVER.openConsultation(encrypted));
+        if (version !== epoch) return;
+        imported.push({id:record.id,scope:owner,created:record.created,encrypted,remoteId:file.id,remoteAt:new Date().toISOString()});
+      } catch (_) { failed++; }
+    }
+    imported.sort((a,b)=>a.created.localeCompare(b.created)||a.id.localeCompare(b.id));
+    for (const entry of imported) {
+      if (version !== epoch || !SERVER.isOpen()) return;
+      try {
+        const saved = await insert(entry); await markRemote(saved,entry.remoteId);
+        verified.add(entry.id); if (!have.has(entry.id)) { downloaded++; have.add(entry.id); }
+      } catch (_) { failed++; }
+    }
+    for (const entry of await listLocal(owner)) {
+      if (version !== epoch || !SERVER.isOpen()) return;
+      if (verified.has(entry.id)) continue;
+      try { const remoteId = await SERVER.copyConsultation(entry.id,entry.encrypted); if (version !== epoch) return; await markRemote(entry,remoteId); uploaded++; }
+      catch (_) { failed++; }
+    }
+    if (version !== epoch) return;
+    records = await listLocal(owner); listOpen = true; paintList();
+    status((failed ? '일부 동기화 실패' : '동기화 완료')+' · Drive에 '+uploaded+'개 업로드 · 이 기기에 '+downloaded+'개 추가'+(failed ? ' · 오류 '+failed+'건(기기 저장본 유지, 다시 동기화 가능)' : ''));
   }
   function clearDraft() { epoch++; strokes = []; active = null; selected = ''; paintBoard(); status('현재 내용만 지웠습니다. 저장 목록은 유지됩니다.'); }
   function lock() { epoch++; strokes = []; active = null; records = []; scope = ''; selected = ''; listOpen = false; boardOpen = false; if (window.NOTES) NOTES.clearContent(); paintBoard(); paintList(); status('잠겼습니다. 저장 메모는 잠금을 푼 뒤 열 수 있습니다.'); }
