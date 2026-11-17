@@ -8,9 +8,9 @@ let browser;
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route('https://features.test/**',r=>r.fulfill({contentType:r.request().url().endsWith('config.js')?'text/javascript':'text/html',body:r.request().url().endsWith('config.js')?'window.VHM_CONFIG={clientId:"fake-client"};':fs.readFileSync(path.join(__dirname,'../site/index.html'),'utf8')}));
   await page.goto('https://features.test/');await page.click('[data-tab="set"]');
-  assert.equal(await page.locator('[role="switch"]').count(),6);
+  assert.equal(await page.locator('[role="switch"]').count(),7);
   await page.evaluate(()=>localStorage.setItem('vhm-settings',JSON.stringify({defaultReminder:30})));
-  for(const id of ['cal','note','link','box','edu','feedback']){
+  for(const id of ['cal','note','phis','link','box','edu','feedback']){
     await page.locator('[data-feature="'+id+'"]').uncheck();
     assert(await page.locator('[data-tab="'+id+'"]').isHidden());
   }
@@ -18,7 +18,7 @@ let browser;
   await page.evaluate(()=>showTab('cal'));
   assert(await page.locator('#tab-set').isVisible());
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('vhm-settings')).defaultReminder),30);
-  console.log('PASS all six features can be disabled; settings stays reachable and data is preserved');
+  console.log('PASS all seven features can be disabled; settings stays reachable and data is preserved');
   await page.reload();assert(await page.locator('#tab-set').isVisible());
   assert.equal(await page.locator('[data-feature]:checked').count(),0);
   await page.locator('[data-feature="note"]').focus();await page.keyboard.press('Space');
@@ -26,7 +26,7 @@ let browser;
   await page.click('[data-tab="note"]');assert(await page.locator('#tab-note').isVisible());
   console.log('PASS toggles survive reload and support keyboard re-enabling');
   await page.evaluate(()=>FEATURES.setAccount('alice@example.test'));await page.click('[data-tab="set"]');
-  assert.equal(await page.locator('[data-feature]:checked').count(),6);
+  assert.equal(await page.locator('[data-feature]:checked').count(),7);
   await page.locator('[data-feature="cal"]').uncheck();
   await page.evaluate(()=>FEATURES.setAccount('bob@example.test'));
   assert(await page.locator('[data-feature="cal"]').isChecked());

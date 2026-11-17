@@ -112,9 +112,9 @@ assert len({i['id'] for i in refined_items}) == len(refined_items), 'duplicate r
 assert all(i['parents'] and all(sid in {s['id'] for s in catalog['services']} for sid in i['serviceIds']) for i in refined_items), 'invalid refined need mapping'
 refined_js = json.dumps(refined, ensure_ascii=False).replace('<', '\\u003c').replace('>', '\\u003e').replace('&', '\\u0026')
 links = 'window.VHM_REFINED_NEEDS = ' + refined_js + ';\n' + 'window.VHM_PUBLIC_REFERRALS = ' + catalog_js + ';\n' + open(H + 'src/note-referrals.js', encoding='utf-8').read() + '\n' + open(H + 'src/referral-model.js', encoding='utf-8').read() + '\n' + open(H + 'src/links.js', encoding='utf-8').read()
-rep('    <button role="tab" data-tab="edu" aria-selected="false">교육자료</button>', '    <button role="tab" data-tab="note" aria-selected="false">상담 메모</button>\n    <button role="tab" data-tab="link" aria-selected="false">연계 안내</button>\n    <button role="tab" data-tab="box" aria-selected="false">보관함</button>\n    <button role="tab" data-tab="edu" aria-selected="false">교육자료</button>')
-rep('<section id="tab-edu" class="page" hidden></section>', '<section id="tab-note" class="page" hidden></section>\n<section id="tab-link" class="page" hidden></section>\n<section id="tab-box" class="page" hidden></section>\n<section id="tab-edu" class="page" hidden></section>')
-rep("  ['cal','edu','arch','set'].forEach(t => $('#tab-' + t).hidden = t !== name);", "  ['cal','note','link','box','edu','arch','set'].forEach(t => { const x = $('#tab-' + t); if (x) x.hidden = t !== name; });\n  if (name === 'link' && window.LINKS) LINKS.open({fromNotes:previousTab === 'note'});\n  if (name === 'box' && window.ARCHIVE) ARCHIVE.open();\n  if (name === 'note' && window.NOTES) NOTES.open();")
+rep('    <button role="tab" data-tab="edu" aria-selected="false">교육자료</button>', '    <button role="tab" data-tab="note" aria-selected="false">상담 메모</button>\n    <button role="tab" data-tab="phis" aria-selected="false">PHIS 기록 관리</button>\n    <button role="tab" data-tab="link" aria-selected="false">연계 안내</button>\n    <button role="tab" data-tab="box" aria-selected="false">보관함</button>\n    <button role="tab" data-tab="edu" aria-selected="false">교육자료</button>')
+rep('<section id="tab-edu" class="page" hidden></section>', '<section id="tab-note" class="page" hidden></section>\n<section id="tab-phis" class="page" hidden></section>\n<section id="tab-link" class="page" hidden></section>\n<section id="tab-box" class="page" hidden></section>\n<section id="tab-edu" class="page" hidden></section>')
+rep("  ['cal','edu','arch','set'].forEach(t => $('#tab-' + t).hidden = t !== name);", "  ['cal','note','phis','link','box','edu','arch','set'].forEach(t => { const x = $('#tab-' + t); if (x) x.hidden = t !== name; });\n  if (name === 'link' && window.LINKS) LINKS.open({fromNotes:previousTab === 'note'});\n  if (name === 'box' && window.ARCHIVE) ARCHIVE.open();\n  if (name === 'note' && window.NOTES) NOTES.open();\n  if (name === 'phis' && window.PHIS) PHIS.open();")
 rep('<!-- 선택 상자 -->', """<!-- 상담 메모 항목 편집 -->
 <dialog id="ntDlg" class="wide">
   <div class="dlg-head"><h3 id="ntDlgTitle">항목</h3><button type="button" class="link" data-close>닫기</button></div>
@@ -271,7 +271,7 @@ rep('    <h3 style="margin:4px 0 10px">구글 캘린더 연결 상태</h3>', '  
 rep('  S.settings = b.settings; renderSettings(b); render(); await loadEvents();', '  S.settings = b.settings; renderSettings(b); render(); if (window.FEATURES) FEATURES.setAccount(b.email); await loadEvents();')
 rep('    <button role="tab" data-tab="set"', '    <button role="tab" data-tab="feedback" aria-selected="false">피드백</button>\n    <button role="tab" data-tab="feedback-admin" aria-selected="false" hidden>피드백 관리</button>\n    <button role="tab" data-tab="set"')
 rep('<section id="tab-set"', '<section id="tab-feedback" class="page" hidden></section>\n<section id="tab-feedback-admin" class="page" hidden></section>\n<section id="tab-set"')
-rep("['cal','note','link','box','edu','arch','set']", "['cal','note','link','box','edu','arch','set','feedback','feedback-admin']")
+rep("['cal','note','phis','link','box','edu','arch','set']", "['cal','note','phis','link','box','edu','arch','set','feedback','feedback-admin']")
 rep("  if (name === 'link' && window.LINKS)", "  if ((name === 'feedback' || name === 'feedback-admin') && window.FEEDBACK) FEEDBACK.open(name === 'feedback-admin');\n  if (name === 'link' && window.LINKS)")
 s = s.replace('</body>', '<script>\n' + open(H + 'src/feedback-images.js', encoding='utf-8').read() + '\n</script>\n<script>\n' + open(H + 'src/feedback.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 notes = open(H + 'src/drugs.js', encoding='utf-8').read() + '\n' + open(H + 'src/supps.js', encoding='utf-8').read() + '\n' + open(H + 'src/notes.js', encoding='utf-8').read()
@@ -279,6 +279,7 @@ s = s.replace('</script>\n</body>', '</script>\n<script>\n' + links + '\n</scrip
 s = s.replace('</body>', '<script>\n' + open(H + 'src/features.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 s = s.replace('</body>', '<script>\n' + open(H + 'src/memo-images.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 s = s.replace('</body>', '<script>\n' + open(H + 'src/consultations.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
+s = s.replace('</body>', '<script>\n' + open(H + 'src/phis-model.js', encoding='utf-8').read() + '\n</script>\n<script>\n' + open(H + 'src/phis.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 assert 'google.script' not in s, 'google.script 남음'
 assert '<?' not in s, '템플릿 태그 남음'
 os.makedirs(H + 'site', exist_ok=True)

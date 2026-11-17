@@ -5,12 +5,14 @@
 
 > 디자인 개선 원본과 빌드 결과를 함께 관리하는 저장소입니다. 강서구 연계 안내 공개 카탈로그(2026-11-15 조사자료)를 추가했습니다. 운영·데이터 보존·갱신·롤백 절차는 [연계 안내 문서](docs/REFERRALS.md)를 참고하세요. 현재 접수나 지원 자격을 보장하는 자료는 아닙니다.
 
+PHIS 기록 요청은 [사용·보안·향후 처리기 계약 문서](docs/PHIS_REQUESTS.md)를 참고하세요. 현재는 기기별 암호화 준비 목록이며 PHIS 접속·전송·입력 기능은 없습니다.
+
 ## 한눈에
 - 서버 없는 단일 페이지(`site/index.html`). 브라우저에서 사용자의 구글 계정으로 **Google Calendar API·Drive API에 직접** 연결합니다.
 - 로그인: OAuth 2.0 암시적 흐름(페이지 이동 방식). `site/config.js`에는 **클라이언트 ID만** 있습니다(비밀 키 아님, 공개 가능).
   - OAuth 클라이언트는 Google Cloud **`jaranda-budget`** 프로젝트에 있음. 승인된 JS 원본 `https://dltmdwo369-prog.github.io`, 리디렉션 URI `https://dltmdwo369-prog.github.io/vhm/`. 동의 화면은 '테스트' 상태(테스트 사용자 = 소유자 계정).
   - 권한: `calendar` + `drive.file`(앱이 만든 파일만).
-- 데이터는 모두 사용자 본인 구글 계정에 있습니다(이 저장소엔 데이터 없음).
+- 사용자 데이터는 이 저장소에 없습니다. 기존 Google 자료 외에 기기별 암호화 상담 저장본과 PHIS 요청은 브라우저 IndexedDB에도 저장됩니다. PHIS 요청은 Drive 동기화 대상이 아닙니다.
 
 ## 폴더 구성
 | 경로 | 내용 |
@@ -23,6 +25,7 @@
 | `src/memo-images.js` | 일정 메모 이미지 선택·암호화 업로드·잠금 해제 미리보기·첨부 해제. [사용 및 백업 안내](docs/MEMO_IMAGES.md) |
 | `src/keepalive.js` | 업무시간 연결 유지(만료 전 `prompt=none` 조용한 재로그인) |
 | `src/notes.js` | 상담 메모 탭(체크 → 메모 문장 자동 작성, 항목 편집기) |
+| `src/phis-model.js`, `src/phis.js` | PHIS 기록 요청·기기별 암호화 대기 목록·검토 관리. 실제 자동화 미연동 |
 | `src/consultations.js` | 상담메모의 저장1·저장2… 암호화 기기 저장, 태블릿·컴퓨터 Drive 동기화, 손글씨 필기판. [사용 안내](docs/CONSULTATION_SAVES.md) |
 | `src/drugs.js`, `src/supps.js` | 처방약 111종·성분 66종, 영양제 26종 검색 목록 |
 | `src/links.js` | 연계 안내 탭(드라이브 `vhm-links.json`) |

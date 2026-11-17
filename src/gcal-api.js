@@ -75,6 +75,7 @@
       if (window.MEMO_IMAGES) MEMO_IMAGES.reset();
       if (window.NOTES) NOTES.resetSession();
       const t = this.token; this.token = null; this.exp = 0; this.hasDrive = false;
+      if (window.PHIS) PHIS.lock();
       if (window.FEEDBACK) FEEDBACK.signOut();
       if (window.FEATURES) FEATURES.setAccount('');
       try { sessionStorage.removeItem(TOKEN_KEY); ['vhm-consented', 'vhm-consented-drive', 'vhm-cal-ids', 'vhm-email'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
@@ -327,7 +328,7 @@
     if (!(await useRaw(await deriveRaw(pass, ub64(m.salt), m.iter)))) throw new Error('암호가 맞지 않습니다.');
     return true;
   }
-  function lockNow() { Lock.key = null; Lock.raw = null; if (window.MEMO_IMAGES) MEMO_IMAGES.lock(); if (window.CONSULTATIONS) CONSULTATIONS.lock(); }
+  function lockNow() { Lock.key = null; Lock.raw = null; if (window.MEMO_IMAGES) MEMO_IMAGES.lock(); if (window.CONSULTATIONS) CONSULTATIONS.lock(); if (window.PHIS) PHIS.lock(); }
   // 연결 유지로 페이지가 다시 열릴 때만 잠금 키를 잠깐 넘겨줌 (이 탭의 sessionStorage, 돌아오자마자 지움)
   function lockStash() { try { if (Lock.raw) sessionStorage.setItem('vhm-lk-tmp', b64(Lock.raw)); } catch (e) {} }
   async function lockResume() {
@@ -913,6 +914,29 @@
     if (Lock.key !== key) throw new LockNeeded();
     return record;
   }
+  // Local PHIS preparation only. Separate envelope prevents use by the Drive note uploader.
+  const PHIS_PREFIX = 'vhm-phis1:';
+  async function sealPhisJob(job) {
+    const key = Lock.key;
+    if (!key) throw new LockNeeded();
+    if (job?.type !== 'phis-record-request') throw new Error('PHIS 요청 형식이 올바르지 않습니다.');
+    const json = JSON.stringify(job);
+    if (te.encode(json).length > 2 * 1048576) throw new Error('PHIS 요청 크기 한도를 초과했습니다.');
+    const encrypted = PHIS_PREFIX + await encWith(key,json);
+    if (Lock.key !== key) throw new LockNeeded();
+    return {scope:await consultationScope(),encrypted};
+  }
+  async function openPhisJob(encrypted) {
+    const key = Lock.key;
+    if (!key) throw new LockNeeded();
+    if (typeof encrypted !== 'string' || encrypted.length > 3 * 1048576 || !encrypted.startsWith(PHIS_PREFIX)) throw new Error('PHIS 요청 형식이 올바르지 않습니다.');
+    let job;
+    try { job = JSON.parse(await decWith(key,encrypted.slice(PHIS_PREFIX.length))); }
+    catch (_) { throw new Error('PHIS 요청을 읽지 못했습니다.'); }
+    if (Lock.key !== key) throw new LockNeeded();
+    if (job?.type !== 'phis-record-request') throw new Error('PHIS 요청 형식이 올바르지 않습니다.');
+    return job;
+  }
   async function copyConsultation(id, encrypted) {
     needDrive();
     if (!/^[a-f0-9-]{36}$/.test(id) || typeof encrypted !== 'string' || encrypted.length > 3 * 1048576 || !encrypted.startsWith(CONSULT_PREFIX)) throw new Error('저장 메모가 올바르지 않습니다.');
@@ -985,6 +1009,7 @@
     lockState, lockSetup, lockUnlock, lockNow, lockAll, lockStash, lockResume, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
     linksLoad, linksSave, uploadForm, downloadForm, trashForm, notesLoad, notesSave, uploadMemoImage, readMemoImage,
     consultationScope, sealConsultation, openConsultation, copyConsultation, listConsultations, fetchConsultation,
+    sealPhisJob, openPhisJob,
     hasDrive: () => Auth.hasDrive,
     _resetCache() { CAL = null; LINK = null; NOTE_ID = null; Lock.meta = undefined; lockNow(); }
   };

@@ -28,6 +28,14 @@
       tx.onabort = tx.onerror = () => reject(tx.error || new Error('저장 목록을 읽지 못했습니다.'));
     });
   }
+  async function getSaved(id,owner) {
+    const connection = await db();
+    return new Promise((resolve,reject) => {
+      const tx = connection.transaction('records'), req = tx.objectStore('records').get(id);
+      tx.oncomplete = () => resolve(req.result?.scope === owner ? req.result : null);
+      tx.onabort = tx.onerror = () => reject(new Error('저장 메모를 읽지 못했습니다.'));
+    });
+  }
   async function insert(entry) {
     const connection = await db();
     return new Promise((resolve, reject) => {
@@ -180,6 +188,7 @@
         const b = document.createElement('button'); b.type = 'button'; b.className = 'small'; b.textContent = label; b.disabled = busy; b.onclick = () => runAction(action); row.append(b);
       }
       container.append(row);
+      if (window.PHIS) PHIS.addSavedRequestButton(row,record.id);
     }
   }
   function mount() {
@@ -334,6 +343,6 @@
   }
   function clearDraft() { epoch++; strokes = []; active = null; selected = ''; paintBoard(); status('현재 내용만 지웠습니다. 저장 목록은 유지됩니다.'); }
   function lock() { epoch++; strokes = []; active = null; records = []; scope = ''; selected = ''; listOpen = false; boardOpen = false; if (window.NOTES) NOTES.clearContent(); paintBoard(); paintList(); status('잠겼습니다. 저장 메모는 잠금을 푼 뒤 열 수 있습니다.'); }
-  window.CONSULTATIONS = {mount,clearDraft,lock,validate,_listLocal:listLocal};
+  window.CONSULTATIONS = {mount,clearDraft,lock,validate,getSaved,_listLocal:listLocal};
   if ($('#consultationTools')) mount();
 })();
