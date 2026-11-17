@@ -62,6 +62,7 @@ const PNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
  await page.locator('[data-tab="note"]').click();
  const ctx=page.context();
  await page.locator('.nt-row:has(.nt-label:text-is("수면")) .nt-chip:text-is("불량")').click();
+ await page.locator('.nt-row:has(.nt-label:text-is("수면")) .nt-notes input').fill('가상 수면 코멘트');
  await page.locator('.nt-row:has(.nt-label:text-is("Vital")) input[data-k="0"]').fill('130');
  await page.locator('#ntOut').fill('가상 상담 원문 <img src=x onerror=alert(1)>');
  const scope=await page.evaluate(()=>SERVER.consultationScope());
@@ -91,7 +92,7 @@ const PNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
  await page.waitForFunction(()=>document.querySelector('#ntOut').value.includes('가상 상담 원문'));
  check('load restores exact edited text without executing markup',await page.locator('#ntOut').inputValue()===first.note.out&&await page.locator('#tab-note img[src=x]').count()===0);
  const loaded=await page.evaluate(()=>NOTES.snapshot());
- check('questionnaire picks and original template restore',JSON.stringify(loaded.pick)===JSON.stringify(first.note.pick)&&loaded.tpl.items.length===first.note.tpl.items.length);
+ check('questionnaire picks and original template restore',JSON.stringify(loaded.pick)===JSON.stringify(first.note.pick)&&JSON.stringify(loaded.lead)===JSON.stringify(first.note.lead)&&loaded.tpl.items.length===first.note.tpl.items.length);
  check('loading old template keeps newer saved preferences intact',await page.evaluate(()=>JSON.parse(localStorage.getItem('vhm-notes-tpl')).items[0].label)==='가상 사용자 질문'&&loaded.tpl.items[0].label===first.note.tpl.items[0].label);
  await page.locator('#consultSave').click();await page.waitForFunction(()=>document.querySelector('#consultStatus').textContent.includes('저장3 기기 저장 완료'));
  list=await page.evaluate(scope=>CONSULTATIONS._listLocal(scope),scope);
@@ -114,6 +115,7 @@ const PNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
  check('another device restores handwriting and text',await p2.locator('#ntOut').inputValue()===first.note.out&&await p2.locator('#consultBoard').evaluate(el=>el.open));
  await p2.locator('#consultImport').click();await p2.waitForFunction(()=>document.querySelector('#consultStatus').textContent.includes('Drive에서 0개 추가'));
  check('repeated import is deduplicated',await p2.evaluate(async scope=>(await CONSULTATIONS._listLocal(scope)).length===1,scope));
+ await p2.locator('#consultFinger').check();
  await p2.locator('#consultCanvas').scrollIntoViewIfNeeded();const touchBox=await p2.locator('#consultCanvas').boundingBox();
  const finger=await p2.context().newCDPSession(p2);const x=touchBox.x+30,y=touchBox.y+30;
  await finger.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});await finger.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+40,y:y+40}]});await finger.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});

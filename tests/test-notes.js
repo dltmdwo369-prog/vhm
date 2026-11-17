@@ -318,7 +318,7 @@ const server = http.createServer((req, res) => {
     await page.reload(); await page.click('[data-tab="note"]'); await page.waitForSelector('#ntOut');
     const mig2 = await page.evaluate(() => { const it = NOTES._state.tpl.items, gs = []; it.forEach(i => { if (!gs.includes(i.group)) gs.push(i.group); });
       return { gs: gs.join('>'), first: it[0].kind, txt: it.find(i => i.label === '수면').options[0].text, w: it.some(i => i.label === '체중'), body: (it.find(i => i.label === '신체계측') || {}).group, act: !!it.find(i => i.label === '신체활동'), cist: it.findIndex(i => i.label === 'CIST 치매검사') === it.findIndex(i => i.label === '건강검진') + 1, bal: it.findIndex(i => i.label === '평형성') === it.findIndex(i => i.label === '악력') + 1 && it.findIndex(i => i.label === 'Mini-Cog') === it.findIndex(i => i.label === '악력') + 2, drugs: it.filter(i => i.kind === 'drugs').length, schema: NOTES._state.tpl.schema }; });
-    check('예전 틀 → 상담기록 순서로 재배치, 고친 문장 유지, 체중→신체계측, 운동→신체활동', mig2.gs === '상담목적>Vital>주질환>복약>신체계측 및 신체사정>건강상담>생활습관>서비스제공>기타사항' && mig2.first === 'lead' && mig2.txt === '가상 고친 문장.' && !mig2.w && mig2.body === '신체계측 및 신체사정' && mig2.act && mig2.drugs === 2 && mig2.schema === 16 && mig2.bal && mig2.cist, JSON.stringify(mig2));
+    check('예전 틀 → 상담기록 순서로 재배치, 고친 문장 유지, 체중→신체계측, 운동→신체활동', mig2.gs === '상담목적>Vital>주질환>복약>신체계측 및 신체사정>건강상담>생활습관>서비스제공>기타사항' && mig2.first === 'lead' && mig2.txt === '가상 고친 문장.' && !mig2.w && mig2.body === '신체계측 및 신체사정' && mig2.act && mig2.drugs === 2 && mig2.schema === 17 && mig2.bal && mig2.cist, JSON.stringify(mig2));
     await page.evaluate(() => { const d = JSON.parse(JSON.stringify(NOTES._state.tpl)); d.items.find(i => i.kind === 'drugs').template = '복용약: {목록}'; localStorage.setItem('vhm-notes-tpl', JSON.stringify(d)); });
     await page.reload(); await page.click('[data-tab="note"]'); await page.waitForSelector('#ntOut');
     await page.click(`${lab('처방약')} [data-dq]`); await page.keyboard.type('노바'); await page.keyboard.press('Enter');
@@ -368,6 +368,41 @@ const server = http.createServer((req, res) => {
       await page.screenshot({ path: path.join(__dirname, 'notes-' + n + '.png') });
       check(n + ' 화면 가로 넘침 없음', sw <= w, String(sw));
     }
+
+    // Health-counselling comments: one, many, numeric choices, migration and clearing.
+    const hc = await b.newPage({viewport:{width:390,height:844}});
+    await hc.goto(BASE); await hc.click('[data-tab="note"]');
+    const row = label => hc.locator(`.nt-row:has(.nt-label:text-is("${label}"))`);
+    await row('통증').locator('.nt-chip:text-is("있음")').click();
+    await row('통증').locator('.nt-notes input').fill('가상 오른무릎, 이동 시');
+    check('건강상담 단일 선택에 괄호 코멘트 반영', (await hc.inputValue('#ntOut')).includes('확인함.(가상 오른무릎, 이동 시)'));
+    await row('통증').locator('.nt-chip:text-is("없음")').click();
+    check('다른 보기로 전환하면 이전 코멘트를 출력하지 않음', !(await hc.inputValue('#ntOut')).includes('가상 오른무릎'));
+    await row('통증').locator('.nt-chip:text-is("있음")').click();
+    check('같은 대상자에서 보기별 코멘트 유지', await row('통증').locator('.nt-notes input').inputValue() === '가상 오른무릎, 이동 시');
+    await row('교육 내용').locator('.nt-chip:text-is("저염식")').click();await row('교육 내용').locator('.nt-chip:text-is("낙상 예방")').click();
+    await row('교육 내용').locator('.nt-note:has(span:text-is("저염식")) input').fill('가상 식사 설명');
+    await row('교육 내용').locator('.nt-note:has(span:text-is("낙상 예방")) input').fill('가상 운동 설명');
+    check('건강상담 다중 선택마다 각각 괄호 코멘트', (await hc.inputValue('#ntOut')).includes('저염식(가상 식사 설명), 낙상 예방(가상 운동 설명) 교육함.'));
+    await row('교육 내용').locator('.nt-chip:text-is("저염식")').click();
+    check('선택 해제 코멘트는 제외하고 나머지 코멘트 유지', !(await hc.inputValue('#ntOut')).includes('가상 식사 설명') && (await hc.inputValue('#ntOut')).includes('낙상 예방(가상 운동 설명)'));
+    await row('CIST 치매검사').locator('[data-v="받음"]').click();await row('CIST 치매검사').locator('[data-v="올해"]').click();
+    await row('CIST 치매검사').locator('.nt-note:has(span:text-is("검사: 받음")) input').fill('가상 검사기관');
+    check('건강상담 고르기 측정칸에도 코멘트 반영', (await hc.inputValue('#ntOut')).includes('받음(가상 검사기관)'));
+    await hc.locator('#ntOut').fill((await hc.inputValue('#ntOut'))+'\n가상 직접 기재 유지');
+    await row('통증').locator('.nt-notes input').fill('가상 변경 코멘트');
+    check('건강 코멘트 변경에도 직접 고친 상담문 유지', (await hc.inputValue('#ntOut')).includes('가상 직접 기재 유지') && (await hc.inputValue('#ntOut')).includes('가상 변경 코멘트'));
+    const hcMigration=await hc.evaluate(async()=>{
+      const d=NOTES.snapshot().tpl;d.schema=16;const i=d.items.find(i=>i.label==='통증');const id=i.id;i.options[1].text='가상 개인 통증 문장.';delete i.notes;
+      localStorage.setItem('vhm-notes-tpl',JSON.stringify(d));NOTES.resetSession();await NOTES.open();
+      const next=NOTES._state.tpl.items.find(i=>i.id===id);return next&&next.notes&&next.options[1].text==='가상 개인 통증 문장.'&&NOTES._state.tpl.schema===17;
+    });
+    check('구형 건강상담 질문은 ID·맞춤 문장 보존해 코멘트 활성화',hcMigration);
+    await row('통증').locator('.nt-chip:text-is("있음")').click();await row('통증').locator('.nt-notes input').fill('가상 개인 코멘트');
+    check('맞춤 문장에도 괄호 코멘트를 덧붙임',(await hc.inputValue('#ntOut')).includes('가상 개인 통증 문장.(가상 개인 코멘트)'));
+    await hc.click('#ntClear');
+    check('다음 대상자는 건강상담 코멘트도 모두 초기화',await hc.evaluate(()=>Object.keys(NOTES._state.lead).length===0)&&await hc.inputValue('#ntOut')==='');
+    await hc.close();
     check('스크립트 오류 없음', errs.length === 0, errs.join(' | '));
   } catch (e) { R.push('CRASH ' + e.message.split('\n')[0] + ' | errs: ' + errs.join(' ; ')); }
   await b.close(); server.close(); console.log(R.join('\n'));

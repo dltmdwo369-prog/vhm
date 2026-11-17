@@ -9,7 +9,7 @@
   const HIRA_MEDICATION_URL = 'https://www.hira.or.kr/rb/dur/form.do?pgmid=HIRAA050300000100';
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3);
   const KINDS = { one: '하나 고르기', many: '여러 개 고르기', num: '숫자 입력', drugs: '약 검색', lead: '입력칸 + 하나 고르기', acute: '여러 개 + 치료중·완치', text: '직접 적기 (+ 빠른 입력)' };
-  const SCHEMA = 16;
+  const SCHEMA = 17;
   const NOTE_ITEMS = ['만성질환', '급성질환', '눈·귀·구강', '관절'];   // 고른 보기마다 메모 칸 (사용자 요청 2026-11-12)
   const NO_HEAD = ['상담목적'];   // 이 묶음은 '*묶음이름' 머리줄 없이 (서두 줄이 이미 *로 시작)
   const ACUTE_ST = ['치료중', '완치'];   // 누를 때마다: 치료중 → 완치 → 해제
@@ -97,7 +97,7 @@
       textItem('서비스제공', '보건복지서비스 연계', '보건복지서비스 연계: {입력}', ['치매안심센터', '노인맞춤돌봄서비스', '정신건강복지센터', '장기요양 등급신청', '행정복지센터', '보건소 건강증진 프로그램'], '예: 치매안심센터 연계'),
       many('기타사항', '마무리', [['다음 방문 안내', '다음 방문 일정 안내함.'], ['보건소 내소 권유', '보건소 내소 권유함.'], ['진료 권유', '병원 진료 받으시도록 권유함.'], ['서비스 연계 검토', '필요 서비스 연계 검토 예정.']])
     ] };
-    base.items.forEach(i => { if (NOTE_ITEMS.includes(i.label)) i.notes = true; });
+    base.items.forEach(i => { if (NOTE_ITEMS.includes(i.label) || (i.group === '건강상담' && ['one','many','num'].includes(i.kind))) i.notes = true; });
     return base;
   }
   function clean(d) {
@@ -107,7 +107,7 @@
     const out = { schema: SCHEMA, updatedAt: d.updatedAt || null, defaultsPending: !!d.defaultsPending, joiner: d.joiner === '\n' ? '\n' : ' ', flagInMemo: !!d.flagInMemo, dash: d.schema >= 11 ? d.dash !== false : true,
       drugs: (Array.isArray(d.drugs) ? d.drugs : []).map(x => ({ name: String(x.name || '').slice(0, 60), note: String(x.note || '').slice(0, 40) })).filter(x => x.name).slice(0, 500),
       supps: (Array.isArray(d.supps) ? d.supps : []).map(x => ({ name: String(x.name || '').slice(0, 60), note: String(x.note || '').slice(0, 40) })).filter(x => x.name).slice(0, 500),
-      items: d.items.map(i => ({ id: i.id || uid(), group: String(i.group || '기타').slice(0, 30), label: String(i.label || '').slice(0, 40), kind: KINDS[i.kind] ? i.kind : 'one', ...(i.kind === 'drugs' && i.src === 'supp' ? { src: 'supp' } : {}), ...(i.kind === 'text' && i.ph ? { ph: String(i.ph).slice(0, 80) } : {}), ...(i.notes && ['many', 'acute', 'num'].includes(i.kind) ? { notes: true } : {}),
+      items: d.items.map(i => ({ id: i.id || uid(), group: String(i.group || '기타').slice(0, 30), label: String(i.label || '').slice(0, 40), kind: KINDS[i.kind] ? i.kind : 'one', ...(i.kind === 'drugs' && i.src === 'supp' ? { src: 'supp' } : {}), ...(i.kind === 'text' && i.ph ? { ph: String(i.ph).slice(0, 80) } : {}), ...(i.notes && ['one', 'many', 'acute', 'num'].includes(i.kind) ? { notes: true } : {}),
         options: (i.options || []).map(o => ({ label: String(o.label || '').slice(0, 40), text: String(o.text || '').slice(0, 200) })).filter(o => o.label),
         fields: (i.fields || []).map(f => {
           const o = { label: String(f.label || '').slice(0, 20), unit: String(f.unit || '').slice(0, 10) };
@@ -152,6 +152,7 @@
     if (!(d.schema >= 15)) [minicogItem, balanceItem].forEach(mk => { const it = mk(); if (out.items.some(i => i.label === it.label)) return;   // 악력 다음(없으면 신체사정 묶음 끝)에
       const g = out.items.findIndex(i => i.label === '악력'); const at = g >= 0 ? g + 1 : out.items.map(i => i.group).lastIndexOf('신체계측 및 신체사정') + 1 || out.items.length; out.items.splice(at, 0, it); });
     if (!(d.schema >= 14)) out.items.forEach(i => { if (NOTE_ITEMS.includes(i.label) && ['many', 'acute', 'num'].includes(i.kind)) i.notes = true; });   // 사용자 요청(2026-11-10): 상담기록 순서대로 묶음 재배치
+    if (!(d.schema >= 17)) out.items.forEach(i => { if (i.group === '건강상담' && ['one','many','num'].includes(i.kind)) i.notes = true; });
     return out;
   }
   // 예전 틀 → 새 묶음 순서. 같은 이름 항목은 사용자가 고친 보기 문장·정상 범위를 이어받고, 직접 추가한 항목은 알맞은 묶음 끝에 붙임
@@ -207,7 +208,7 @@
     if (it.kind === 'drugs') { const a = (p || []).filter(x => x.name.trim()); if (!a.length) return ''; const list = a.map(x => x.name.trim() + (x.note.trim() ? '(' + x.note.trim() + ')' : '')).join(', '); return (it.template || '{목록}').includes('{목록}') ? it.template.replace('{목록}', list) : list; }
     if (it.kind === 'lead') { const t = String(N.lead[it.id] || '').trim(), o = p != null ? it.options[p] : null; const body = [t, o ? o.text.trim() : ''].filter(Boolean).join(' '); return body ? (it.template || '') + body : ''; }
     if (it.kind === 'text') { const t = String(N.lead[it.id] || '').trim(); if (!t) return ''; return (it.template || '{입력}').includes('{입력}') ? it.template.replace('{입력}', t) : it.template + ' ' + t; }
-    if (it.kind === 'one') { if (p == null) return ''; const o = it.options[p]; return o ? o.text.trim() : ''; }
+    if (it.kind === 'one') { if (p == null) return ''; const o = it.options[p], m = noteOf(it,p); return o ? (o.text.trim() || (m ? o.label : '')) + (m ? `(${m})` : '') : ''; }
     if (it.kind === 'acute') { if (acuteHost()) return ''; const a = acuteList(it); return a.length ? (it.template.includes('{선택}') ? it.template.replace('{선택}', a.join(', ')) : a.join(', ')) : ''; }
     if (it.kind === 'many') {
       const sel = (p || []).map(k => it.options[k]).filter(Boolean);
@@ -225,7 +226,7 @@
         labels.push(...extra); flush();
         return sentences.filter(Boolean).join(N.tpl.joiner);
       }
-      return sel.map(o => (o.text || o.label).trim()).filter(Boolean).join(N.tpl.joiner);
+      return (p || []).filter(k => it.options[k]).map(k => { const o = it.options[k], m = noteOf(it,k); return (o.text || o.label).trim() + (m ? `(${m})` : ''); }).filter(Boolean).join(N.tpl.joiner);
     }
     return numText(it, p || []);
   }
@@ -544,11 +545,12 @@
   // 고른 보기마다 메모 칸 (예: 백내장 → 2025년도 op+, 연세솔안과의원)
   function notesHtml(it) {
     const p = N.pick[it.id]; let list = [];
-    if (it.kind === 'many') list = (p || []).filter(k => it.options[k]).map(k => [k, it.options[k].label]);
+    if (it.kind === 'one') list = p != null && it.options[p] ? [[p,it.options[p].label]] : [];
+    else if (it.kind === 'many') list = (p || []).filter(k => it.options[k]).map(k => [k, it.options[k].label]);
     else if (it.kind === 'acute') list = it.options.map((o, k) => (p || {})[k] ? [k, `${o.label}(${p[k]})`] : null).filter(Boolean);
     else if (it.kind === 'num') list = it.fields.map((f, k) => f.type === 'pick' && (p || [])[k] ? ['f' + k, `${f.label}: ${p[k]}`] : null).filter(Boolean);
-    const ph = it.kind === 'num' ? '예: 2025년도 op+, ○○안과' : '예: 2015년 진단, ○○내과 진료 중';
-    return list.map(([k, lab]) => `<label class="nt-note"><span>${esc(lab)}</span><input data-lead="${it.id}#${k}" value="${esc(N.lead[it.id + '#' + k] || '')}" placeholder="${esc(ph)}" maxlength="80" autocomplete="off"></label>`).join('');
+    const ph = it.group === '건강상담' ? '선택 항목의 코멘트 (증상·상담 내용 등)' : it.kind === 'num' ? '예: 2025년도 op+, ○○안과' : '예: 2015년 진단, ○○내과 진료 중';
+    return list.map(([k, lab]) => `<label class="nt-note"><span>${esc(lab)}</span><input data-lead="${it.id}#${k}" aria-label="${esc(it.label)} · ${esc(lab)} 괄호 코멘트" value="${esc(N.lead[it.id + '#' + k] || '')}" placeholder="${esc(ph)}" maxlength="80" autocomplete="off"></label>`).join('');
   }
   function paintNotes(id) { const el = $(`[data-notes="${id}"]`), it = N.tpl.items.find(i => i.id === id); if (el && it) el.innerHTML = notesHtml(it); }
   function hiraMedicationHtml() {
@@ -646,7 +648,7 @@
         <label class="f">항목 이름<input id="neLabel" value="${esc(e.label)}" maxlength="40"></label>
         <label class="f">묶음 <span class="hint">(메모의 *머리줄)</span><input id="neGroup" value="${esc(e.group)}" maxlength="30" list="ntGroups"><datalist id="ntGroups">${groups().map(g => `<option value="${esc(g)}">`).join('')}</datalist></label>
         <label class="f">고르는 방식<select id="neKind">${Object.keys(KINDS).map(k => `<option value="${k}"${e.kind === k ? ' selected' : ''}>${KINDS[k]}</option>`).join('')}</select></label>
-        ${['many', 'acute', 'num'].includes(e.kind) ? `<label class="row" style="gap:6px;align-items:center"><input type="checkbox" id="neNotes" style="width:auto"${e.notes ? ' checked' : ''}> 고른 보기마다 메모 칸 <span class="hint">(메모에 괄호로 들어감, 예: 백내장(2025년도 op+))</span></label>` : ''}
+        ${['one', 'many', 'acute', 'num'].includes(e.kind) ? `<label class="row" style="gap:6px;align-items:center"><input type="checkbox" id="neNotes" style="width:auto"${e.notes ? ' checked' : ''}> 고른 보기마다 메모 칸 <span class="hint">(메모에 괄호로 들어감, 예: 백내장(2025년도 op+))</span></label>` : ''}
       </div>
       ${e.kind === 'lead' ? `<label class="f" style="margin-top:10px">앞에 붙일 표시 <span class="hint">(예: * → *신규등록을 위해 방문함.)</span><input id="neTpl" value="${esc(e.template)}" maxlength="10"></label>` : ''}
       ${e.kind === 'text' ? `<label class="f" style="margin-top:10px">문장 틀 <span class="hint">({입력} 자리에 적은 내용이 들어감)</span><input id="neTpl" value="${esc(e.template)}" maxlength="100" placeholder="예: 물품: {입력}"></label>

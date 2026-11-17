@@ -3,6 +3,7 @@
   'use strict';
   const $ = s => document.querySelector(s), clone = x => structuredClone(x);
   let strokes = [], active = null, tool = 'pen', color = '#183f35', width = 3;
+  let fingerEnabled = false, frame = 0, pointCount = 0;
   let records = [], scope = '', selected = '', epoch = 0, busy = false, listOpen = false, boardOpen = false;
   let database;
   const UUID = /^[a-f0-9-]{36}$/;
@@ -63,6 +64,8 @@
     return record;
   }
   function paintBoard() {
+    if (frame) cancelAnimationFrame(frame); frame = 0;
+    pointCount = strokes.reduce((n,s) => n+s.points.length,0);
     const canvas = $('#consultCanvas'); if (!canvas) return;
     const c = canvas.getContext('2d'); c.clearRect(0,0,canvas.width,canvas.height);
     for (const s of strokes) {
@@ -73,22 +76,69 @@
       if (points.length === 1) { c.beginPath(); c.arc(...points[0],s.width/2,0,Math.PI*2); c.fill(); }
     }
     c.globalCompositeOperation = 'source-over';
+    if (active) active.drawn = active.stroke.points.length;
   }
   function bindBoard() {
     const canvas = $('#consultCanvas'); if (!canvas) return;
+    canvas.draggable = false;
+    canvas.tabIndex = 0;
+    canvas.style.cssText += ';user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none;touch-action:none;overscroll-behavior:contain';
     const point = e => { const r = canvas.getBoundingClientRect(); return [Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))]; };
-    canvas.onpointerdown = e => {
-      if (busy || active || (e.pointerType === 'mouse' && e.button !== 0)) return;
-      if (strokes.length >= 2000 || strokes.reduce((n,s)=>n+s.points.length,0) >= 30000) return toast('필기 한도에 도달했습니다. 저장하거나 지운 뒤 계속하세요.');
-      e.preventDefault(); canvas.setPointerCapture(e.pointerId); active = {id:e.pointerId,stroke:{tool,color,width:tool==='erase'?18:width,points:[point(e)]}}; strokes.push(active.stroke); paintBoard();
+    const prevent = e => { if (e.cancelable) e.preventDefault(); };
+    const flush = () => {
+      if (frame) cancelAnimationFrame(frame); frame = 0;
+      if (!active || active.canvas !== canvas) return;
+      const s = active.stroke, from = Math.max(0,active.drawn-1), c = canvas.getContext('2d');
+      if (active.drawn >= s.points.length) return;
+      c.globalCompositeOperation = s.tool === 'erase' ? 'destination-out' : 'source-over'; c.lineWidth = s.width; c.lineCap = 'round'; c.lineJoin = 'round'; c.strokeStyle = s.color;
+      c.beginPath(); c.moveTo(s.points[from][0]*1000,s.points[from][1]*600);
+      for (let k=from+1;k<s.points.length;k++) c.lineTo(s.points[k][0]*1000,s.points[k][1]*600);
+      c.stroke(); c.globalCompositeOperation = 'source-over'; active.drawn = s.points.length;
     };
-    canvas.onpointermove = e => {
-      if (!active || active.id !== e.pointerId) return; e.preventDefault();
-      if (strokes.reduce((n,s)=>n+s.points.length,0) >= 30000) return;
-      active.stroke.points.push(point(e)); paintBoard();
+    const append = e => {
+      let events = [];
+      try { events = e.getCoalescedEvents ? e.getCoalescedEvents() : []; } catch (_) {}
+      // Include the dispatch event too: Safari may omit its final position from the batch.
+      for (const sample of [...events,e]) {
+        if (pointCount >= 30000 || !Number.isFinite(sample.clientX) || !Number.isFinite(sample.clientY)) continue;
+        const p = point(sample), last = active.stroke.points.at(-1);
+        if (p[0] === last[0] && p[1] === last[1]) continue;
+        active.stroke.points.push(p); pointCount++;
+      }
     };
-    canvas.onpointerup = canvas.onpointercancel = e => { if (active?.id === e.pointerId) active = null; };
-    canvas.onlostpointercapture = () => { active = null; };
+    const finish = (e, finalPoint) => {
+      if (!active || active.id !== e.pointerId || active.canvas !== canvas) return;
+      prevent(e); if (finalPoint) append(e); flush(); active = null;
+      try { if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+    };
+    canvas.addEventListener('pointerdown', e => {
+      prevent(e);
+      if (busy || (e.pointerType === 'touch' && !fingerEnabled) || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      if (active) {
+        // A Pencil takes priority over a finger/palm that arrived first.
+        if (e.pointerType !== 'pen' || active.type === 'pen') return;
+        if (strokes.at(-1) === active.stroke) strokes.pop();
+        try { active.canvas.releasePointerCapture(active.id); } catch (_) {}
+        active = null; paintBoard();
+      }
+      if (strokes.length >= 2000 || pointCount >= 30000) return toast('필기 한도에 도달했습니다. 저장하거나 지운 뒤 계속하세요.');
+      // Leave text editing/Scribble focus without scrolling or changing its content.
+      try { canvas.focus({preventScroll:true}); window.getSelection()?.removeAllRanges(); } catch (_) {}
+      active = {id:e.pointerId,type:e.pointerType,canvas,drawn:1,stroke:{tool,color,width:tool==='erase'?18:width,points:[point(e)]}};
+      strokes.push(active.stroke); pointCount++;
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+      const c = canvas.getContext('2d'), s = active.stroke, p = s.points[0];
+      c.globalCompositeOperation = s.tool === 'erase' ? 'destination-out' : 'source-over'; c.fillStyle = s.color;
+      c.beginPath(); c.arc(p[0]*1000,p[1]*600,s.width/2,0,Math.PI*2); c.fill(); c.globalCompositeOperation = 'source-over';
+    }, {passive:false});
+    canvas.addEventListener('pointermove', e => {
+      prevent(e); if (!active || active.id !== e.pointerId || active.canvas !== canvas) return;
+      append(e); if (!frame) frame = requestAnimationFrame(flush);
+    }, {passive:false});
+    canvas.addEventListener('pointerup', e => finish(e,true), {passive:false});
+    canvas.addEventListener('pointercancel', e => finish(e,false), {passive:false});
+    canvas.addEventListener('lostpointercapture', e => finish(e,false));
+    for (const event of ['touchstart','touchmove','touchend','contextmenu','dragstart','selectstart']) canvas.addEventListener(event,prevent,{passive:false});
     paintBoard();
   }
   function paintList() {
@@ -119,10 +169,12 @@
   }
   function mount() {
     const box = $('#consultationTools'); if (!box) return;
-    active = null;
-    box.innerHTML = '<div class="card" style="padding:12px;margin:10px 0"><div class="row" style="flex-wrap:wrap;gap:8px"><b>상담메모 저장·손글씨</b><button type="button" class="primary" id="consultSave">새로 저장</button><button type="button" id="consultShow">저장 목록</button><button type="button" id="consultImport">Drive에서 불러오기</button><button type="button" id="consultConnect" hidden>Drive 연결 (작성 내용 초기화)</button></div><p class="hint" id="consultStatus" role="status" style="margin:8px 0"></p><p class="hint">저장1, 저장2…로 이 기기에 암호화 보관합니다. 다른 기기에서 쓰려면 저장 목록에서 Drive에 복사하세요. 자동 저장·업로드는 하지 않습니다. 잠금·로그아웃 전 저장하세요.</p><div id="consultList"></div><details id="consultBoard"><summary>손글씨 필기판 열기</summary><div class="row" style="margin:8px 0;flex-wrap:wrap"><button type="button" id="consultPen">펜</button><button type="button" id="consultEraser">지우개</button><label>색상 <select id="consultColor" aria-label="펜 색상"><option value="#183f35">검정</option><option value="#b42318">빨강</option><option value="#1d4ed8">파랑</option></select></label><label>굵기 <select id="consultWidth" aria-label="펜 굵기"><option value="3">가는 펜</option><option value="6">굵은 펜</option></select></label><button type="button" id="consultUndo">한 획 취소</button><button type="button" id="consultEraseAll">필기 지우기</button></div><canvas id="consultCanvas" width="1000" height="600" aria-label="손글씨 필기판: 마우스·펜·터치로 작성" style="display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff;touch-action:none"></canvas><p class="hint">메모와 필기를 함께 저장합니다. 손글씨는 필기 모양대로 보관합니다.</p></details></div>';
+    if (frame) cancelAnimationFrame(frame); frame = 0; active = null;
+    box.innerHTML = '<div class="card" style="padding:12px;margin:10px 0"><div class="row" style="flex-wrap:wrap;gap:8px"><b>상담메모 저장·손글씨</b><button type="button" class="primary" id="consultSave">새로 저장</button><button type="button" id="consultShow">저장 목록</button><button type="button" id="consultImport">Drive에서 불러오기</button><button type="button" id="consultConnect" hidden>Drive 연결 (작성 내용 초기화)</button></div><p class="hint" id="consultStatus" role="status" style="margin:8px 0"></p><p class="hint">저장1, 저장2…로 이 기기에 암호화 보관합니다. 다른 기기에서 쓰려면 저장 목록에서 Drive에 복사하세요. 자동 저장·업로드는 하지 않습니다. 잠금·로그아웃 전 저장하세요.</p><div id="consultList"></div><details id="consultBoard"><summary>손글씨 필기판 열기</summary><p class="hint">Apple Pencil·마우스로 바로 작성하세요. 기본은 펜 전용으로 손바닥 터치를 무시합니다. 화면 밖에서는 평소처럼 스크롤할 수 있습니다.</p><label class="row" style="gap:6px;margin:8px 0"><input type="checkbox" id="consultFinger" style="width:auto"> 손가락으로도 쓰기 (터치 필기)</label><div class="row" style="margin:8px 0;flex-wrap:wrap"><button type="button" id="consultPen">펜</button><button type="button" id="consultEraser">지우개</button><label>색상 <select id="consultColor" aria-label="펜 색상"><option value="#183f35">검정</option><option value="#b42318">빨강</option><option value="#1d4ed8">파랑</option></select></label><label>굵기 <select id="consultWidth" aria-label="펜 굵기"><option value="3">가는 펜</option><option value="6">굵은 펜</option></select></label><button type="button" id="consultUndo">한 획 취소</button><button type="button" id="consultEraseAll">필기 지우기</button></div><canvas id="consultCanvas" width="1000" height="600" aria-label="손글씨 필기판: 마우스·펜·터치로 작성" style="display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff;touch-action:none"></canvas><p class="hint">메모와 필기를 함께 저장합니다. 손글씨는 필기 모양대로 보관합니다.</p></details></div>';
     $('#consultBoard').open = boardOpen; $('#consultBoard').ontoggle = e => { boardOpen = e.target.open; };
     $('#consultColor').value = color; $('#consultWidth').value = String(width);
+    $('#consultFinger').checked = fingerEnabled;
+    $('#consultFinger').onchange = e => { fingerEnabled = e.target.checked; if (active?.type === 'touch') { active = null; paintBoard(); } };
     $('#consultColor').onchange = e => { color = e.target.value; };
     $('#consultWidth').onchange = e => { width = +e.target.value; };
     const paintTool = () => { for (const [id,value] of [['#consultPen','pen'],['#consultEraser','erase']]) { $(id).setAttribute('aria-pressed',String(tool === value)); $(id).classList.toggle('primary',tool === value); } };
