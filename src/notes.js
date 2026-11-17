@@ -100,6 +100,17 @@
     base.items.forEach(i => { if (NOTE_ITEMS.includes(i.label) || (i.group === '건강상담' && ['one','many','num'].includes(i.kind))) i.notes = true; });
     return base;
   }
+  // Display positions never change option indices used by selections, comments or referrals.
+  function optionIndices(it) {
+    const seen = new Set(), order = [], options = Array.isArray(it.options) ? it.options : [];
+    for (const k of Array.isArray(it.optionOrder) ? it.optionOrder : []) {
+      if (Number.isInteger(k) && k >= 0 && k < options.length && !seen.has(k)) { seen.add(k); order.push(k); }
+    }
+    options.forEach((_, k) => { if (!seen.has(k)) order.push(k); });
+    return order;
+  }
+  const displayOptions = it => optionIndices(it).map(k => ({option:it.options[k],index:k}));
+  const canOrder = it => ['many','acute','text'].includes(it.kind) && it.options.length > 1;
   function clean(d) {
     const base = defaults(); if (!d || !Array.isArray(d.items)) return base;
     if (d.defaultsPending && !(d.schema >= 2)) return base;   // 아직 손대지 않은 예전 임시 틀은 새 기본 틀로
@@ -108,6 +119,7 @@
       drugs: (Array.isArray(d.drugs) ? d.drugs : []).map(x => ({ name: String(x.name || '').slice(0, 60), note: String(x.note || '').slice(0, 40) })).filter(x => x.name).slice(0, 500),
       supps: (Array.isArray(d.supps) ? d.supps : []).map(x => ({ name: String(x.name || '').slice(0, 60), note: String(x.note || '').slice(0, 40) })).filter(x => x.name).slice(0, 500),
       items: d.items.map(i => ({ id: i.id || uid(), group: String(i.group || '기타').slice(0, 30), label: String(i.label || '').slice(0, 40), kind: KINDS[i.kind] ? i.kind : 'one', ...(i.kind === 'drugs' && i.src === 'supp' ? { src: 'supp' } : {}), ...(i.kind === 'text' && i.ph ? { ph: String(i.ph).slice(0, 80) } : {}), ...(i.notes && ['one', 'many', 'acute', 'num'].includes(i.kind) ? { notes: true } : {}),
+        ...(Array.isArray(i.optionOrder) ? {optionOrder:optionIndices(i)} : {}),
         options: (i.options || []).map(o => ({ label: String(o.label || '').slice(0, 40), text: String(o.text || '').slice(0, 200) })).filter(o => o.label),
         fields: (i.fields || []).map(f => {
           const o = { label: String(f.label || '').slice(0, 20), unit: String(f.unit || '').slice(0, 10) };
@@ -574,17 +586,17 @@
           : `<label class="nt-num">${esc(f.label)}<input inputmode="decimal" data-num="${it.id}" data-k="${k}" value="${esc(v[k] || '')}" autocomplete="off" title="${esc(rangeText(rangeOf(it, k, v)))}"><span>${esc(f.unit)}</span><span class="nt-flag" data-flag="${it.id}:${k}"></span></label>`).join('')
           + (it.fields.some(f => f.norm) ? `<span class="nt-flag" data-gsum="${it.id}"></span>` : ''); }
       else if (it.kind === 'text') ctl = `<input class="nt-lead nt-text" data-lead="${it.id}" value="${esc(N.lead[it.id] || '')}" placeholder="${esc(it.ph || '직접 적기')}" maxlength="200" autocomplete="off">`
-        + it.options.map(o => { const on = String(N.lead[it.id] || '').split(/,\s*/).includes(o.label); return `<button type="button" class="nt-chip sm${on ? ' on' : ''}" data-tadd="${it.id}" data-v="${esc(o.label)}" aria-pressed="${on}" title="눌러서 넣기·빼기">${esc(o.label)}</button>`; }).join('');
+        + displayOptions(it).map(({option:o}) => { const on = String(N.lead[it.id] || '').split(/,\s*/).includes(o.label); return `<button type="button" class="nt-chip sm${on ? ' on' : ''}" data-tadd="${it.id}" data-v="${esc(o.label)}" aria-pressed="${on}" title="눌러서 넣기·빼기">${esc(o.label)}</button>`; }).join('');
       else if (it.kind === 'lead') ctl = `<input class="nt-lead" data-lead="${it.id}" value="${esc(N.lead[it.id] || '')}" placeholder="예: 신규등록을 위해" maxlength="100" autocomplete="off">`
         + it.options.map((o, k) => `<button type="button" class="nt-chip${N.pick[it.id] === k ? ' on' : ''}" data-it="${it.id}" data-k="${k}" aria-pressed="${N.pick[it.id] === k}">${esc(o.label)}</button>`).join('');
       else if (it.kind === 'drugs') { const a = N.pick[it.id] || [];
         ctl = `<div class="nt-drugs">${a.map((x, k) => `<div class="nt-drug"><input data-dname="${it.id}" data-k="${k}" value="${esc(x.name)}" aria-label="약 이름">(<input data-dnote="${it.id}" data-k="${k}" value="${esc(x.note)}" placeholder="무슨 약" aria-label="무슨 약인지 메모">)<button type="button" class="small" data-ddel="${it.id}" data-k="${k}" title="빼기">✕</button></div>`).join('')}
           <div class="nt-dsearch"><input data-dq="${it.id}" placeholder="${isSupp(it) ? '영양제 이름·기능·초성으로 검색 (예: 루테인, 눈, ㄹㅌㅇ)' : '약 이름·성분·초성으로 검색 (예: 노바스크, 암로디핀, ㄴㅂㅅㅋ)'}" autocomplete="off"><div class="nt-dlist" data-dlist="${it.id}" hidden></div></div>${isSupp(it) ? '' : `<a class="nt-form" href="${HIRA_MEDICATION_URL}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">심평원 복약정보 확인 ↗</a>`}</div>`; }
       else if (it.kind === 'acute') { const st = N.pick[it.id] || {};
-        ctl = it.options.map((o, k) => `<button type="button" class="nt-chip${st[k] ? ' on' + (st[k] === '완치' ? ' done' : '') : ''}" data-it="${it.id}" data-k="${k}" aria-pressed="${!!st[k]}">${esc(o.label)}${st[k] ? `<small> · ${st[k]}</small>` : ''}</button>`).join('') + '<span class="hint" style="flex-basis:100%">한 번 누르면 치료중, 두 번 누르면 완치, 세 번 누르면 해제</span>'; }
-      else ctl = it.options.map((o, k) => { const on = it.kind === 'one' ? N.pick[it.id] === k : (N.pick[it.id] || []).includes(k);
+        ctl = displayOptions(it).map(({option:o,index:k}) => `<button type="button" class="nt-chip${st[k] ? ' on' + (st[k] === '완치' ? ' done' : '') : ''}" data-it="${it.id}" data-k="${k}" aria-pressed="${!!st[k]}">${esc(o.label)}${st[k] ? `<small> · ${st[k]}</small>` : ''}</button>`).join('') + '<span class="hint" style="flex-basis:100%">한 번 누르면 치료중, 두 번 누르면 완치, 세 번 누르면 해제</span>'; }
+      else ctl = displayOptions(it).map(({option:o,index:k}) => { const on = it.kind === 'one' ? N.pick[it.id] === k : (N.pick[it.id] || []).includes(k);
         return `<button type="button" class="nt-chip${on ? ' on' : ''}" data-it="${it.id}" data-k="${k}" aria-pressed="${on}">${esc(o.label)}</button>`; }).join('');
-      return `<div class="nt-row"><div class="nt-label">${esc(it.label)}${it.kind === 'many' ? ' <span class="hint">(여러 개)</span>' : ''}</div><div class="nt-ctl">${ctl}</div>${it.notes ? `<div class="nt-notes" data-notes="${it.id}">${notesHtml(it)}</div>` : ''}</div>`;
+      return `<div class="nt-row"><div><div class="nt-label">${esc(it.label)}${it.kind === 'many' ? ' <span class="hint">(여러 개)</span>' : ''}</div>${canOrder(it) ? `<button type="button" class="small" data-option-order="${it.id}" aria-label="${esc(it.label)} 세부항목 순서 변경"${savedTemplate ? ' disabled title="다음 대상자로 전환한 뒤 순서를 변경하세요."' : ''}>순서 변경</button>` : ''}</div><div class="nt-ctl">${ctl}</div>${it.notes ? `<div class="nt-notes" data-notes="${it.id}">${notesHtml(it)}</div>` : ''}</div>`;
     }).join('');
     return `<div class="agecalc nt-age" role="group" aria-label="만 나이 계산기">
         <label for="ntAgeIn"><b>만 나이 계산</b></label>
@@ -628,6 +640,36 @@
       <p class="hint" style="margin:18px 0 0">아래는 기본 목록에 없어서 직접 추가했거나 괄호 메모를 바꾼 약·영양제입니다. 다음 검색부터 먼저 나옵니다. 이름과 메모만 저장되고 대상자 정보는 저장되지 않습니다.</p>
       ${[['drugs', '내 약 목록'], ['supps', '내 영양제 목록']].map(([key, title]) => `<h4 style="margin:12px 0 6px">${title} (${(N.tpl[key] || []).length})</h4>
       <div class="nt-ctl">${(N.tpl[key] || []).map((d, k) => `<span class="lk-chip">${esc(d.name)}${d.note ? '(' + esc(d.note) + ')' : ''} <button type="button" class="link" data-mydel="${k}" data-mylist="${key}" title="빼기">✕</button></span>`).join('') || '<span class="hint">아직 없습니다.</span>'}</div>`).join('')}`;
+  }
+
+  /* ---------- Choice placement: keyboard/touch controls, no drag gestures ---------- */
+  let orderDraft = null;
+  function closeOrder() { orderDraft = null; const d=$('#ntOrderDlg'); if(d?.open)d.close(); d?.replaceChildren(); }
+  function openOrder(id) {
+    if(savedTemplate) { toast('다음 대상자로 전환한 뒤 순서를 변경하세요. 저장 메모는 보존합니다.'); return; }
+    const item=N.tpl.items.find(it=>it.id===id);if(!item || !canOrder(item))return;
+    orderDraft={item,tpl:N.tpl,options:JSON.stringify(item.options),order:optionIndices(item)};
+    let d=$('#ntOrderDlg');if(!d){d=document.createElement('dialog');d.id='ntOrderDlg';d.className='wide';d.setAttribute('aria-labelledby','ntOrderTitle');document.body.append(d);d.addEventListener('close',()=>{orderDraft=null;d.replaceChildren();});}
+    paintOrder();d.showModal();
+  }
+  function paintOrder(focus) {
+    const draft=orderDraft,d=$('#ntOrderDlg');if(!draft||!d)return;
+    d.innerHTML=`<div class="dlg-head"><h3 id="ntOrderTitle">${esc(draft.item.label)} · 세부항목 순서</h3><button type="button" class="link" id="ntOrderClose">닫기</button></div>
+      <div class="dlg-body"><p class="hint">위·아래 버튼이나 순번으로 위치를 정하세요. 선택 내용·괄호 코멘트·작성한 메모는 유지됩니다. 저장 전에는 적용되지 않습니다.</p>
+      <div id="ntOrderList">${draft.order.map((k,pos)=>`<div class="nt-order-row"><span>${esc(draft.item.options[k].label)}</span><div class="nt-order-controls"><select data-order-index="${k}" aria-label="${esc(draft.item.options[k].label)} 순번">${draft.order.map((_,i)=>`<option value="${i}"${i===pos?' selected':''}>${i+1}번째</option>`).join('')}</select><button type="button" data-order-move="${k}" data-order-dir="-1" aria-label="${esc(draft.item.options[k].label)} 위로"${pos===0?' disabled':''}>↑</button><button type="button" data-order-move="${k}" data-order-dir="1" aria-label="${esc(draft.item.options[k].label)} 아래로"${pos===draft.order.length-1?' disabled':''}>↓</button></div></div>`).join('')}</div>
+      <p id="ntOrderStatus" class="hint" role="status">${draft.order.length}개 항목</p></div>
+      <div class="dlg-foot"><button type="button" id="ntOrderReset">원래 순서</button><button type="button" id="ntOrderCancel">취소</button><button type="button" class="primary" id="ntOrderSave">순서 저장</button></div>`;
+    const move=(k,to)=>{const from=draft.order.indexOf(k);if(from<0||!Number.isInteger(to)||to<0||to>=draft.order.length)return;draft.order.splice(from,1);draft.order.splice(to,0,k);paintOrder(k);$('#ntOrderStatus').textContent=draft.item.options[k].label+' · '+(to+1)+'번째로 이동';};
+    d.querySelectorAll('[data-order-move]').forEach(b=>b.onclick=()=>{const k=+b.dataset.orderMove;move(k,draft.order.indexOf(k)+ +b.dataset.orderDir);});
+    d.querySelectorAll('[data-order-index]').forEach(el=>el.onchange=()=>move(+el.dataset.orderIndex,+el.value));
+    $('#ntOrderClose').onclick=$('#ntOrderCancel').onclick=closeOrder;
+    $('#ntOrderReset').onclick=()=>{draft.order=draft.item.options.map((_,k)=>k);paintOrder();};
+    $('#ntOrderSave').onclick=async()=>{
+      if(savedTemplate||N.tpl!==draft.tpl||JSON.stringify(draft.item.options)!==draft.options){closeOrder();toast('항목이 변경되었습니다. 순서 변경을 다시 열어 주세요.');return;}
+      $('#ntOrderSave').disabled=true;
+      draft.item.optionOrder=draft.order.slice();await saveTpl('세부항목의 표시 순서를 저장했습니다.');closeOrder();render();
+    };
+    if(focus!=null)d.querySelector(`[data-order-index="${focus}"]`)?.focus();
   }
 
   /* ---------- 항목 편집 창 ---------- */
@@ -679,6 +721,7 @@
       const t = ev.target.closest('button,[data-edit]'); if (!t) return;
       if (t.id === 'ntHiraCopy') { const ok = await copyText(HIRA_MEDICATION_URL); $('#ntHiraCopyStatus').textContent = ok ? ' 공식 주소를 복사했습니다.' : ' 복사하지 못했습니다. 위 바로가기를 이용하세요.'; return; }
       if (t.id === 'ntReferrals') { if (window.FEATURES && !FEATURES.enabled('link')) { toast('설정에서 연계 안내 기능을 켜주세요.'); return; } showTab('link'); return; }
+      if (t.dataset.optionOrder) { openOrder(t.dataset.optionOrder); return; }
       if (t.dataset.ntview) { N.view = t.dataset.ntview; render(); return; }
       if (t.dataset.it) {   // 보기 고르기 (다시 누르면 해제)
         const it = N.tpl.items.find(i => i.id === t.dataset.it), k = +t.dataset.k;
@@ -752,9 +795,9 @@
     // 편집 창
     $('#ntDlgBody').addEventListener('click', ev => {
       const t = ev.target.closest('button'); if (!t) return; readEdit(); const e = N.editing;
-      if (t.id === 'neOAdd') e.options.push({ label: '', text: '' });
+      if (t.id === 'neOAdd') { if(e.optionOrder)e.optionOrder=optionIndices(e).concat(e.options.length);e.options.push({ label: '', text: '' }); }
       else if (t.id === 'neFAdd') e.fields.push({ label: '', unit: '' });
-      else if (t.dataset.odel != null) e.options.splice(+t.dataset.odel, 1);
+      else if (t.dataset.odel != null) { const k=+t.dataset.odel; if(e.optionOrder)e.optionOrder=optionIndices(e).filter(i=>i!==k).map(i=>i>k?i-1:i);e.options.splice(k,1); }
       else if (t.dataset.fdel != null) e.fields.splice(+t.dataset.fdel, 1);
       else return;
       paintEdit();
@@ -790,12 +833,14 @@
   }
 
   function resetSession() {
+    closeOrder();
     savedTemplate = null;
     N.pick = {}; N.lead = {}; N.referralQuick = {}; N.extra = ''; N.age = ''; N.out = ''; N.gen = null; N.caret = null; N.edited = false; N.tpl = null; N.synced = false; N.editing = null; N.view = 'write';
     if (box()) box().replaceChildren(); if (window.LINKS) LINKS.clearNoteNeeds();
     if ($('#ntDlg')?.open) $('#ntDlg').close();
   }
   function clearContent() {
+    closeOrder();
     if (savedTemplate) { N.tpl = savedTemplate.tpl; N.synced = savedTemplate.synced; savedTemplate = null; }
     N.pick = {}; N.lead = {}; N.referralQuick = {}; N.extra = ''; N.age = ''; N.out = ''; N.gen = null; N.caret = null; N.edited = false;
     if (window.LINKS) LINKS.clearNoteNeeds(); if (N.tpl) render();

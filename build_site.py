@@ -170,6 +170,11 @@ rep('dialog::backdrop{', """.nt-layout{display:grid;grid-template-columns:minmax
 .nt-row{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)}
 @media (max-width:560px){.nt-row{grid-template-columns:1fr;gap:4px}.nt-notes{grid-column:1/-1}}
 .nt-label{font-size:14px;font-weight:600}
+.nt-order-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+.nt-order-row>span{flex:1 1 110px;min-width:0;overflow-wrap:anywhere}
+.nt-order-controls{display:flex;gap:6px;align-items:center}
+.nt-order-controls select{width:auto;min-height:44px}
+.nt-order-controls button{min-width:44px;min-height:44px}
 .nt-ctl{display:flex;flex-wrap:wrap;gap:6px}
 .nt-chip{border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:14px;background:#fff;min-height:36px}
 .nt-chip.on{background:#eaf2ff;border-color:#8fb3ee;color:#163f86;font-weight:700}

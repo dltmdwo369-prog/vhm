@@ -1,0 +1,62 @@
+// Synthetic checklist/template data only; no Google account or personal information.
+const {chromium}=require('playwright');
+const http=require('http'),fs=require('fs'),path=require('path'),assert=require('assert/strict');
+const root=path.join(__dirname,'..','site');let passed=0;
+const check=(name,ok)=>{assert.ok(ok,name);console.log('PASS '+name);passed++;};
+const server=http.createServer((req,res)=>{const p=path.join(root,req.url.split('?')[0]==='/'?'index.html':req.url.split('?')[0]);if(req.url==='/config.js')return res.end('window.VHM_CONFIG={clientId:""};');if(!fs.existsSync(p)){res.writeHead(404);return res.end();}res.end(fs.readFileSync(p));});
+(async()=>{await new Promise(r=>server.listen(0,r));const browser=await chromium.launch({executablePath:process.env.VHM_CHROMIUM||'/usr/bin/chromium'});
+try{const ctx=await browser.newContext(),page=await ctx.newPage(),errors=[],external=[];page.on('pageerror',e=>errors.push(e.message));
+await ctx.route('**/*',r=>{if(r.request().url().startsWith('http://localhost:'))r.continue();else{external.push(r.request().url());r.abort();}});
+const base='http://localhost:'+server.address().port;await page.goto(base);await page.locator('[data-tab="note"]').click();
+const row=label=>page.locator('.nt-row').filter({has:page.locator('.nt-label').filter({hasText:new RegExp('^'+label+'(?: \\(여러 개\\))?$')})});
+const labels=['만성질환','급성질환','교육 내용','물품','보건복지서비스 연계'];
+check('all five requested categories expose placement controls',await Promise.all(labels.map(l=>page.getByRole('button',{name:l+' 세부항목 순서 변경',exact:true}).count())).then(a=>a.every(n=>n===1)));
+await row('만성질환').getByRole('button',{name:'고혈압',exact:true}).click();await row('만성질환').locator('.nt-notes input').fill('가상 만성 코멘트');
+await row('급성질환').getByRole('button',{name:'폐렴',exact:true}).click();await row('급성질환').getByRole('button',{name:'폐렴 · 치료중',exact:true}).click();await row('급성질환').locator('.nt-notes input').fill('가상 급성 코멘트');
+await row('교육 내용').getByRole('button',{name:'저염식',exact:true}).click();await row('교육 내용').locator('.nt-notes input').fill('가상 교육 코멘트');
+await row('물품').getByRole('button',{name:'혈압계',exact:true}).click();await row('보건복지서비스 연계').getByRole('button',{name:'치매안심센터',exact:true}).click();
+await page.locator('#ntOut').fill((await page.locator('#ntOut').inputValue())+'\n직접 고친 가상 문장');
+const before=await page.evaluate(()=>NOTES.snapshot()),needs=await page.evaluate(()=>NOTES.referralNeeds());
+const originalOptions=new Map(before.tpl.items.map(i=>[i.label,i.options]));
+for(const label of labels){
+ const options=originalOptions.get(label),last=options.at(-1).label;
+ await page.getByRole('button',{name:label+' 세부항목 순서 변경',exact:true}).click();await page.getByLabel(last+' 순번',{exact:true}).selectOption('0');
+ await page.getByRole('button',{name:'순서 저장',exact:true}).click();await page.waitForSelector('#ntOrderDlg:not([open])',{state:'attached'});
+ check(label+' last option can be assigned to first position',await row(label).locator('.nt-chip').first().textContent().then(t=>t.trim()===last));
+}
+const after=await page.evaluate(()=>NOTES.snapshot());
+check('repositioning preserves all selections, acute status, bracket comments and typed text',JSON.stringify(before.pick)===JSON.stringify(after.pick)&&JSON.stringify(before.lead)===JSON.stringify(after.lead)&&JSON.stringify(before.referralQuick)===JSON.stringify(after.referralQuick));
+check('manual memo and generated wording remain unchanged',after.out===before.out&&after.out.includes('직접 고친 가상 문장'));
+check('option identities and source array order are never mutated',labels.every(l=>JSON.stringify(after.tpl.items.find(i=>i.label===l).options)===JSON.stringify(originalOptions.get(l))));
+check('referral requirements are unchanged by placement',JSON.stringify(needs)===JSON.stringify(await page.evaluate(()=>NOTES.referralNeeds())));
+const chronic=after.tpl.items.find(i=>i.label==='만성질환');await row('만성질환').getByRole('button',{name:'고혈압',exact:true}).click();
+check('reordered selected disease still toggles the original disease',!(await page.evaluate(()=>NOTES.snapshot())).pick[chronic.id].includes(0));
+await page.getByRole('button',{name:'만성질환 세부항목 순서 변경',exact:true}).click();
+check('edge movement is disabled',await page.locator('#ntOrderList .nt-order-row').first().getByRole('button',{name:/위로$/}).isDisabled()&&await page.locator('#ntOrderList .nt-order-row').last().getByRole('button',{name:/아래로$/}).isDisabled());
+await page.getByRole('button',{name:'원래 순서',exact:true}).click();await page.getByRole('button',{name:'취소',exact:true}).click();
+check('cancel discards placement draft',await row('만성질환').locator('.nt-chip').first().textContent()===originalOptions.get('만성질환').at(-1).label);
+await page.getByRole('button',{name:'만성질환 세부항목 순서 변경',exact:true}).click();await page.getByRole('button',{name:'고혈압 위로',exact:true}).click();
+check('keyboard focus follows the moved option',await page.getByLabel('고혈압 순번',{exact:true}).evaluate(el=>el===document.activeElement));
+await page.keyboard.press('Escape');await page.waitForSelector('#ntOrderDlg:not([open])',{state:'attached'});
+check('Escape discards placement draft',JSON.stringify((await page.evaluate(()=>NOTES.snapshot())).tpl.items.find(i=>i.id===chronic.id).optionOrder)===JSON.stringify(chronic.optionOrder));
+await page.reload();await page.locator('[data-tab="note"]').click();
+check('all five placements survive reload',await Promise.all(labels.map(async l=>(await row(l).locator('.nt-chip').first().textContent()).trim()===originalOptions.get(l).at(-1).label)).then(a=>a.every(Boolean)));
+check('only template placement persists, not patient selections or notes',await page.evaluate(()=>{const d=JSON.parse(localStorage.getItem('vhm-notes-tpl'));return !d.pick&&!d.lead&&!d.out&&!JSON.stringify(d).includes('가상 만성 코멘트');}));
+// Fake the existing Drive API boundary: only template definitions may be shared.
+await page.evaluate(()=>{window.orderUploads=[];SERVER.hasDrive=()=>true;SERVER.notesLoad=async()=>({data:null});SERVER.notesSave=async d=>orderUploads.push(structuredClone(d));});
+await page.getByRole('button',{name:'물품 세부항목 순서 변경',exact:true}).click();await page.getByRole('button',{name:'원래 순서',exact:true}).click();await page.getByRole('button',{name:'순서 저장',exact:true}).click();await page.waitForSelector('#ntOrderDlg:not([open])',{state:'attached'});
+const remote=await page.evaluate(()=>orderUploads.at(-1));check('placement uses existing Drive template save without clinical state',!!remote.items.find(i=>i.label==='물품').optionOrder&&!remote.pick&&!remote.lead&&!remote.out);
+const other=await browser.newContext(),p2=await other.newPage();await other.route('**/*',r=>r.request().url().startsWith(base)?r.continue():r.abort());await p2.goto(base);
+await p2.evaluate(d=>{SERVER.hasDrive=()=>true;SERVER.notesLoad=async()=>({data:d});SERVER.notesSave=async()=>{};},remote);await p2.locator('[data-tab="note"]').click();await p2.waitForSelector('[data-option-order]');
+check('second device loads placement through existing template sync',await p2.locator('.nt-row').filter({has:p2.locator('.nt-label').filter({hasText:/^만성질환/})}).locator('.nt-chip').first().textContent()===originalOptions.get('만성질환').at(-1).label);
+await other.close();
+const snapshot=await page.evaluate(()=>NOTES.snapshot());await page.evaluate(d=>NOTES.restoreSaved(d),snapshot);
+check('saved-note snapshot validates with placement and cannot alter its saved template',await page.getByRole('button',{name:'물품 세부항목 순서 변경',exact:true}).isDisabled());
+await page.evaluate(()=>NOTES.clearContent());
+check('next patient restores editable personal placement',await page.getByRole('button',{name:'물품 세부항목 순서 변경',exact:true}).isEnabled());
+const normalized=await page.evaluate(()=>{const d=NOTES.snapshot();const it=d.tpl.items.find(i=>i.label==='만성질환');it.optionOrder=[2,2,-1,999,'0',0];const t=NOTES.validateSaved(d);return t.items.find(i=>i.id===it.id).optionOrder;});
+check('invalid and duplicate positions are removed and omitted options retained',normalized.length===chronic.options.length&&new Set(normalized).size===chronic.options.length&&normalized[0]===2&&normalized[1]===0);
+for(const width of [1440,768,390,320]){await page.setViewportSize({width,height:900});await page.getByRole('button',{name:'보건복지서비스 연계 세부항목 순서 변경',exact:true}).click();check('placement dialog fits '+width+'px',await page.evaluate(()=>{const d=document.querySelector('#ntOrderDlg');return document.documentElement.scrollWidth<=innerWidth&&d.scrollWidth<=d.clientWidth+1;}));await page.getByRole('button',{name:'취소',exact:true}).click();}
+check('no external requests or JavaScript errors',external.length===0&&errors.length===0);
+console.log('TOTAL '+passed+' placement assertions passed');
+}finally{await browser.close();server.close();}})().catch(e=>{console.error(e);server.close();process.exitCode=1;});
