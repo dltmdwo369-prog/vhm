@@ -62,7 +62,7 @@
     return new Promise((resolve,reject)=>{
       const tx=connection.transaction(['records','counters'],'readwrite'),store=tx.objectStore('records'),counters=tx.objectStore('counters');
       for(const id of ids){counters.put({type:'consultation-deletion',scope:owner,id},'deleted:'+owner+':'+id);const req=store.get(id);req.onsuccess=()=>{if(req.result?.scope===owner)store.delete(id);};}
-      tx.oncomplete=resolve;tx.onabort=tx.onerror=()=>reject(new Error('기기 삭제 상태 저장에 실패했습니다. 다시 동기화하세요.'));
+      tx.oncomplete=()=>{if(window.SURVEYS)SURVEYS.deleted(ids);resolve();};tx.onabort=tx.onerror=()=>reject(new Error('기기 삭제 상태 저장에 실패했습니다. 다시 동기화하세요.'));
     });
   }
   async function deletionState(version,owner) {
@@ -87,6 +87,7 @@
   const driveReady = () => !!(window.VHM_AUTH?.hasDrive && VHM_AUTH.valid() && navigator.onLine !== false);
   function validate(record) {
     if (!record || record.schema !== 1 || !UUID.test(record.id) || !Number.isFinite(Date.parse(record.created)) || !Array.isArray(record.strokes) || record.strokes.length > 2000) throw new Error('저장 메모 형식이 올바르지 않습니다.');
+    if (record.survey) { if (!window.SURVEYS) throw new Error('조사표 모듈을 불러오세요.'); SURVEYS.validate(record.survey); }
     NOTES.validateSaved(record.note);
     let count = 0;
     for (const s of record.strokes) {
@@ -195,6 +196,7 @@
     for (const record of records) {
       const row = document.createElement('div'); row.className = 'row'; row.style.cssText = 'gap:6px;margin:8px 0;flex-wrap:wrap';
       const label = document.createElement('b'); label.textContent = '저장'+record.slot; row.append(label);
+      const version=epoch; SERVER.openConsultation(record.encrypted).then(r=>{if(version===epoch&&SERVER.isOpen()&&row.isConnected&&r.survey){label.textContent='저장'+record.slot+' · '+r.survey.name+' · '+(window.VHM_SURVEYS.find(f=>f.id===r.survey.form)?.title||'조사표');}}).catch(()=>{});
       const syncLabel = document.createElement('span'); syncLabel.className = 'hint'; syncLabel.textContent = record.remoteId ? 'Drive 저장 확인' : autoSync ? '기기 저장 · 동기화 대기' : '기기 전용 저장'; row.append(syncLabel);
       const date = document.createElement('span'); date.className = 'hint'; date.textContent = new Date(record.created).toLocaleString('ko-KR'); row.append(date);
       for (const [label,action] of [['열기',()=>load(record)],['Drive에 복사',()=>copy(record)],['Drive에서도 삭제',()=>drop(record)]]) {
@@ -258,13 +260,14 @@
     listOpen = true; paintList(); status('이 기기에 저장된 메모 '+records.length+'개');
     if (driveReady()) await importDrive();
   }
-  async function save() {
+  async function save(survey = null) {
     const version = epoch;
-    const record = validate({schema:1,id:crypto.randomUUID(),created:new Date().toISOString(),note:NOTES.snapshot(),strokes:clone(strokes)});
-    if (!record.note.out.trim() && !record.strokes.length && !Object.keys(record.note.pick || {}).length && !Object.values(record.note.lead || {}).some(Boolean)) throw new Error('상담 내용이나 손글씨를 작성하세요.');
+    const record = validate({schema:1,id:crypto.randomUUID(),created:new Date().toISOString(),note:survey ? {tpl:NOTES._defaults(),pick:{},lead:{},out:''} : NOTES.snapshot(),strokes:survey ? [] : clone(strokes),...(survey ? {survey} : {})});
+    if (!record.survey && !record.note.out.trim() && !record.strokes.length && !Object.keys(record.note.pick || {}).length && !Object.values(record.note.lead || {}).some(Boolean)) throw new Error('상담 내용이나 손글씨를 작성하세요.');
     if (!(await unlocked()) || version !== epoch) return;
     const sealed = await SERVER.sealConsultation(record); if (version !== epoch || !SERVER.isOpen()) return;
     const entry = await insert({id:record.id,created:record.created,...sealed});
+    if(survey && version===epoch)SURVEYS.markSaved(survey,record.id);
     if (version !== epoch) return;
     records = await listLocal(scope); listOpen = true; selected = '저장'+entry.slot; paintList(); status(selected+' 기기 저장 완료'+(autoSync ? ' · Drive 동기화 확인 중…' : ' · 이 기기에만 보관합니다.'));
     if (autoSync) {
@@ -281,6 +284,7 @@
     const version = epoch; if (!(await unlocked()) || version !== epoch || entry.scope !== scope) return;
     const record = validate(await SERVER.openConsultation(entry.encrypted)); if (version !== epoch) return;
     if (!confirm('현재 작성 중인 내용 대신 저장'+entry.slot+'을 열까요? 필요한 내용은 먼저 저장하세요.')) return;
+    if (record.survey) { SURVEYS.restore(record.survey,record.id); status('저장'+entry.slot+' 조사표를 열었습니다.'); return; }
     strokes = clone(record.strokes); selected = '저장'+entry.slot; boardOpen = strokes.length > 0;
     NOTES.restoreSaved(record.note); status(selected+'을 열었습니다. 수정 후 새로 저장하면 원본은 보존됩니다.');
   }
@@ -362,8 +366,8 @@
     records = await listLocal(owner); listOpen = true; paintList();
     status((failed ? '일부 동기화 실패' : '동기화 완료')+' · Drive에 '+uploaded+'개 업로드 · 이 기기에 '+downloaded+'개 추가'+(failed ? ' · 오류 '+failed+'건(기기 저장본 유지, 다시 동기화 가능)' : ''));
   }
-  function clearDraft() { epoch++; strokes = []; active = null; selected = ''; paintBoard(); status('현재 내용만 지웠습니다. 저장 목록은 유지됩니다.'); }
-  function lock() { epoch++; strokes = []; active = null; records = []; scope = ''; selected = ''; listOpen = false; boardOpen = false; if (window.NOTES) NOTES.clearContent(); paintBoard(); paintList(); status('잠겼습니다. 저장 메모는 잠금을 푼 뒤 열 수 있습니다.'); }
-  window.CONSULTATIONS = {mount,clearDraft,lock,validate,getSaved,_listLocal:listLocal};
+  function clearDraft() { if(window.SURVEYS)SURVEYS.clear(); epoch++; strokes = []; active = null; selected = ''; paintBoard(); status('현재 내용만 지웠습니다. 저장 목록은 유지됩니다.'); }
+  function lock() { if(window.SURVEYS)SURVEYS.clear(); epoch++; strokes = []; active = null; records = []; scope = ''; selected = ''; listOpen = false; boardOpen = false; if (window.NOTES) NOTES.clearContent(); paintBoard(); paintList(); status('잠겼습니다. 저장 메모는 잠금을 푼 뒤 열 수 있습니다.'); }
+  window.CONSULTATIONS = {saveSurvey:survey=>runAction(()=>save(survey)),mount,clearDraft,lock,validate,getSaved,_listLocal:listLocal};
   if ($('#consultationTools')) mount();
 })();

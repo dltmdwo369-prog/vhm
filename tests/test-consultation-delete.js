@@ -68,12 +68,13 @@ const PNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
  async function save(p,text){await p.locator('#ntOut').fill(text);await p.locator('#consultMemoSave').click();await p.waitForFunction(()=>!document.querySelector('#consultMemoSave').disabled);}
  async function sync(p){await p.locator('#consultSync').click();await p.waitForFunction(()=>!document.querySelector('#consultSync').disabled);}
  async function drop(p,id){await p.locator('#consultList>div').filter({has:p.locator('[data-phis-source="'+id+'"]')}).getByRole('button',{name:'Drive에서도 삭제',exact:true}).click();await p.waitForFunction(()=>!document.querySelector('#consultSave').disabled);}
- await save(page,'가상 삭제 대상');await save(page,'가상 보존 대상');await page.evaluate(()=>VHM_AUTH.hasDrive=true);await sync(page);
+ await page.locator('[data-survey="phq"]').click();await page.locator('#surveyName').fill('가상 삭제 대상');await page.locator('#surveyEditor [data-q="0"]').first().check();await page.locator('#surveySave').click();await page.waitForFunction(()=>!document.querySelector('#surveySave').disabled);await save(page,'가상 보존 대상');await page.evaluate(()=>VHM_AUTH.hasDrive=true);await sync(page);
  const initial=await rows(page),target=initial[0],kept=initial[1],cloudTarget=cloud().find(([id,f])=>f.body===target.encrypted);
  // Separate browser storage represents a second device with the same original encryption key.
  const desktop=await browser.newPage();desktop.on('dialog',d=>d.accept());desktop.on('pageerror',e=>errors.push(e.message));
  await desktop.route('**/*',r=>r.request().url().startsWith('http://localhost:')?r.continue():r.abort());await desktop.route('https://www.googleapis.com/**',google);
  await desktop.goto('http://localhost:'+server.address().port+'/');await desktop.evaluate(async()=>{VHM_AUTH.token='tok-fake';VHM_AUTH.exp=Date.now()+3600000;VHM_AUTH.hasDrive=false;await SERVER.lockUnlock('fake-delete-password-123');await MEMOLOCK.refresh();await NOTES.open();});await desktop.locator('[data-tab="note"]').click();await desktop.evaluate(()=>VHM_AUTH.hasDrive=true);await sync(desktop);
+ check('questionnaire name and answers survive another device sync',await desktop.evaluate(async s=>{const r=await CONSULTATIONS._listLocal(s);const d=await SERVER.openConsultation(r[0].encrypted);return d.survey.name==='가상 삭제 대상'&&d.survey.answers[0]===0;},scope));
  check('both devices initially contain the same synced records',(await rows(desktop)).length===2&&cloud().length===2);
  files.set('duplicate',{meta:structuredClone(cloudTarget[1].meta),body:target.encrypted});
  let cancelled=false;page.removeAllListeners('dialog');page.once('dialog',d=>{cancelled=d.message().includes('영구 삭제');d.dismiss();});

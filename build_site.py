@@ -292,6 +292,8 @@ s = s.replace('</body>', '<script>\n' + open(H + 'src/phis-model.js', encoding='
 assert 'google.script' not in s, 'google.script 남음'
 assert '<?' not in s, '템플릿 태그 남음'
 os.makedirs(H + 'site', exist_ok=True)
+# Interactive surveys share encrypted consultation persistence.
+s = s.replace('</body>', '<script>\n' + open(H + 'src/survey-data.js', encoding='utf-8').read() + '\n' + open(H + 'src/surveys.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 open(H + 'site/index.html', 'w', encoding='utf-8').write(s)
 cfg = H + 'site/config.js'
 if not os.path.exists(cfg):

@@ -4843,11 +4843,12 @@ window.VHM_SUPPS = [
       + `<span class="nt-forms"><a class="nt-form" href="forms/survey-all-p1-4.pdf" download="방문건강관리_설문지_전체_1-4쪽.pdf" title="간이 설문지(1·2쪽) + 기초조사표(3·4쪽) — A4 양면 2장, 4쪽">📄 전체 내려받기 (1~4쪽)</a><a class="nt-form" href="forms/simple-survey-p12.pdf" download="방문건강관리_간이설문지_1-2쪽.pdf" title="방문 상담용 빈 설문지 — A4 양면 1장(1·2쪽): 기본정보·Vital·주질환·복약·신체계측/신체사정·건강상담·생활습관·서비스제공·PHQ-9">📄 간이 설문지 내려받기 (1·2쪽)</a><a class="nt-form" href="forms/base-survey-p34.pdf" download="방문건강관리_기초조사표_3-4쪽.pdf" title="기초조사표 — A4 양면 1장(3·4쪽): 허약노인 기초측정표, 재가암·재가장애인(간이) 기초조사표, 변형 바델 지수">📄 기초조사표 내려받기 (3·4쪽)</a><a class="nt-form" href="forms/sgds-k-short-form.pdf" download="SGDS-K 단축형 노인우울척도 검사.pdf" title="단축형 노인우울척도 검사(SGDS-K) — 첨부 원본 PDF, 1쪽">📄 노인우울척도 내려받기 (SGDS-K)</a></span>`
       + `<span class="hint">${N.synced ? '질문 틀: 구글 드라이브와 이 기기에 저장' : '질문 틀: 이 기기에 저장 (연계 안내 탭에서 드라이브를 연결하면 다른 기기와 같이 씀)'}</span></div>`;
     if (N.tpl.defaultsPending) h += '<div class="warnbox" style="margin-bottom:10px">질문 항목과 문장은 아직 <b>임시 기본값</b>입니다. ‘항목 편집’에서 평소 쓰시는 말투로 고친 뒤 ‘확인 완료’를 눌러 주세요.</div>';
-    if (N.view === 'write') h += hiraMedicationHtml() + '<div id="consultationTools"></div><div class="nt-referral-action"><button class="primary" id="ntReferrals">체크 항목으로 연계 보기</button><span class="hint">연계 안내로 이동하면 관련 요구를 자동 체크합니다. 직접 적은 문장·수치·이름은 가져오지 않습니다.</span></div>';
+    if (N.view === 'write') h += hiraMedicationHtml() + '<div id="consultationTools"></div><div id="surveyTools"></div><div class="nt-referral-action"><button class="primary" id="ntReferrals">체크 항목으로 연계 보기</button><span class="hint">연계 안내로 이동하면 관련 요구를 자동 체크합니다. 직접 적은 문장·수치·이름은 가져오지 않습니다.</span></div>';
     h += N.view === 'write' ? writeHtml() : editHtml();
     box().innerHTML = h;
     if (N.view === 'write') { refreshOut(); if (N.age && typeof calcAge === 'function') calcAge('ntAge'); }
     if (window.CONSULTATIONS) CONSULTATIONS.mount();
+    if (window.SURVEYS) SURVEYS.mount();
   }
   // 고른 보기마다 메모 칸 (예: 백내장 → 2025년도 op+, 연세솔안과의원)
   function notesHtml(it) {
@@ -5684,7 +5685,7 @@ window.VHM_SUPPS = [
     return new Promise((resolve,reject)=>{
       const tx=connection.transaction(['records','counters'],'readwrite'),store=tx.objectStore('records'),counters=tx.objectStore('counters');
       for(const id of ids){counters.put({type:'consultation-deletion',scope:owner,id},'deleted:'+owner+':'+id);const req=store.get(id);req.onsuccess=()=>{if(req.result?.scope===owner)store.delete(id);};}
-      tx.oncomplete=resolve;tx.onabort=tx.onerror=()=>reject(new Error('기기 삭제 상태 저장에 실패했습니다. 다시 동기화하세요.'));
+      tx.oncomplete=()=>{if(window.SURVEYS)SURVEYS.deleted(ids);resolve();};tx.onabort=tx.onerror=()=>reject(new Error('기기 삭제 상태 저장에 실패했습니다. 다시 동기화하세요.'));
     });
   }
   async function deletionState(version,owner) {
@@ -5709,6 +5710,7 @@ window.VHM_SUPPS = [
   const driveReady = () => !!(window.VHM_AUTH?.hasDrive && VHM_AUTH.valid() && navigator.onLine !== false);
   function validate(record) {
     if (!record || record.schema !== 1 || !UUID.test(record.id) || !Number.isFinite(Date.parse(record.created)) || !Array.isArray(record.strokes) || record.strokes.length > 2000) throw new Error('저장 메모 형식이 올바르지 않습니다.');
+    if (record.survey) { if (!window.SURVEYS) throw new Error('조사표 모듈을 불러오세요.'); SURVEYS.validate(record.survey); }
     NOTES.validateSaved(record.note);
     let count = 0;
     for (const s of record.strokes) {
@@ -5817,6 +5819,7 @@ window.VHM_SUPPS = [
     for (const record of records) {
       const row = document.createElement('div'); row.className = 'row'; row.style.cssText = 'gap:6px;margin:8px 0;flex-wrap:wrap';
       const label = document.createElement('b'); label.textContent = '저장'+record.slot; row.append(label);
+      const version=epoch; SERVER.openConsultation(record.encrypted).then(r=>{if(version===epoch&&SERVER.isOpen()&&row.isConnected&&r.survey){label.textContent='저장'+record.slot+' · '+r.survey.name+' · '+(window.VHM_SURVEYS.find(f=>f.id===r.survey.form)?.title||'조사표');}}).catch(()=>{});
       const syncLabel = document.createElement('span'); syncLabel.className = 'hint'; syncLabel.textContent = record.remoteId ? 'Drive 저장 확인' : autoSync ? '기기 저장 · 동기화 대기' : '기기 전용 저장'; row.append(syncLabel);
       const date = document.createElement('span'); date.className = 'hint'; date.textContent = new Date(record.created).toLocaleString('ko-KR'); row.append(date);
       for (const [label,action] of [['열기',()=>load(record)],['Drive에 복사',()=>copy(record)],['Drive에서도 삭제',()=>drop(record)]]) {
@@ -5880,13 +5883,14 @@ window.VHM_SUPPS = [
     listOpen = true; paintList(); status('이 기기에 저장된 메모 '+records.length+'개');
     if (driveReady()) await importDrive();
   }
-  async function save() {
+  async function save(survey = null) {
     const version = epoch;
-    const record = validate({schema:1,id:crypto.randomUUID(),created:new Date().toISOString(),note:NOTES.snapshot(),strokes:clone(strokes)});
-    if (!record.note.out.trim() && !record.strokes.length && !Object.keys(record.note.pick || {}).length && !Object.values(record.note.lead || {}).some(Boolean)) throw new Error('상담 내용이나 손글씨를 작성하세요.');
+    const record = validate({schema:1,id:crypto.randomUUID(),created:new Date().toISOString(),note:survey ? {tpl:NOTES._defaults(),pick:{},lead:{},out:''} : NOTES.snapshot(),strokes:survey ? [] : clone(strokes),...(survey ? {survey} : {})});
+    if (!record.survey && !record.note.out.trim() && !record.strokes.length && !Object.keys(record.note.pick || {}).length && !Object.values(record.note.lead || {}).some(Boolean)) throw new Error('상담 내용이나 손글씨를 작성하세요.');
     if (!(await unlocked()) || version !== epoch) return;
     const sealed = await SERVER.sealConsultation(record); if (version !== epoch || !SERVER.isOpen()) return;
     const entry = await insert({id:record.id,created:record.created,...sealed});
+    if(survey && version===epoch)SURVEYS.markSaved(survey,record.id);
     if (version !== epoch) return;
     records = await listLocal(scope); listOpen = true; selected = '저장'+entry.slot; paintList(); status(selected+' 기기 저장 완료'+(autoSync ? ' · Drive 동기화 확인 중…' : ' · 이 기기에만 보관합니다.'));
     if (autoSync) {
@@ -5903,6 +5907,7 @@ window.VHM_SUPPS = [
     const version = epoch; if (!(await unlocked()) || version !== epoch || entry.scope !== scope) return;
     const record = validate(await SERVER.openConsultation(entry.encrypted)); if (version !== epoch) return;
     if (!confirm('현재 작성 중인 내용 대신 저장'+entry.slot+'을 열까요? 필요한 내용은 먼저 저장하세요.')) return;
+    if (record.survey) { SURVEYS.restore(record.survey,record.id); status('저장'+entry.slot+' 조사표를 열었습니다.'); return; }
     strokes = clone(record.strokes); selected = '저장'+entry.slot; boardOpen = strokes.length > 0;
     NOTES.restoreSaved(record.note); status(selected+'을 열었습니다. 수정 후 새로 저장하면 원본은 보존됩니다.');
   }
@@ -5984,9 +5989,9 @@ window.VHM_SUPPS = [
     records = await listLocal(owner); listOpen = true; paintList();
     status((failed ? '일부 동기화 실패' : '동기화 완료')+' · Drive에 '+uploaded+'개 업로드 · 이 기기에 '+downloaded+'개 추가'+(failed ? ' · 오류 '+failed+'건(기기 저장본 유지, 다시 동기화 가능)' : ''));
   }
-  function clearDraft() { epoch++; strokes = []; active = null; selected = ''; paintBoard(); status('현재 내용만 지웠습니다. 저장 목록은 유지됩니다.'); }
-  function lock() { epoch++; strokes = []; active = null; records = []; scope = ''; selected = ''; listOpen = false; boardOpen = false; if (window.NOTES) NOTES.clearContent(); paintBoard(); paintList(); status('잠겼습니다. 저장 메모는 잠금을 푼 뒤 열 수 있습니다.'); }
-  window.CONSULTATIONS = {mount,clearDraft,lock,validate,getSaved,_listLocal:listLocal};
+  function clearDraft() { if(window.SURVEYS)SURVEYS.clear(); epoch++; strokes = []; active = null; selected = ''; paintBoard(); status('현재 내용만 지웠습니다. 저장 목록은 유지됩니다.'); }
+  function lock() { if(window.SURVEYS)SURVEYS.clear(); epoch++; strokes = []; active = null; records = []; scope = ''; selected = ''; listOpen = false; boardOpen = false; if (window.NOTES) NOTES.clearContent(); paintBoard(); paintList(); status('잠겼습니다. 저장 메모는 잠금을 푼 뒤 열 수 있습니다.'); }
+  window.CONSULTATIONS = {saveSurvey:survey=>runAction(()=>save(survey)),mount,clearDraft,lock,validate,getSaved,_listLocal:listLocal};
   if ($('#consultationTools')) mount();
 })();
 
@@ -6163,6 +6168,799 @@ window.VHM_SUPPS = [
   setInterval(()=>{if(scope&&!accessible())lock();},30000);
   window.addEventListener('focus',()=>{if(scope&&!accessible())lock();});
   window.PHIS=Object.freeze({open,lock,addSavedRequestButton,requestPreview,refreshSaved,capability:M.capability});
+})();
+
+</script>
+<script>
+window.VHM_SURVEYS = [
+  {
+    "id": "phq",
+    "title": "PHQ-9",
+    "period": "지난 2주일 동안",
+    "fields": [
+      {
+        "label": "일 또는 여가 활동을 하는 데 흥미나 즐거움을 느끼지 못함",
+        "options": [
+          "전혀 아니다 (0)",
+          "여러 날 동안 (1)",
+          "일주일 이상 (2)",
+          "거의 매일 (3)"
+        ],
+        "multi": false
+      },
+      {
+        "label": "기분이 가라앉거나, 우울하거나, 희망이 없음",
+        "options": [
+          "전혀 아니다 (0)",
+          "여러 날 동안 (1)",
+          "일주일 이상 (2)",
+          "거의 매일 (3)"
+        ],
+        "multi": false
+      },
+      {
+        "label": "잠이 들거나 계속 잠을 자는 것이 어려움. 또는 잠을 너무 많이 잠",
+        "options": [
+          "전혀 아니다 (0)",
+          "여러 날 동안 (1)",
+          "일주일 이상 (2)",
+          "거의 매일 (3)"
+        ],
+        "multi": false
+      },
+      {
+        "label": "피곤하다고 느끼거나 기운이 거의 없음",
+        "options": [
+          "전혀 아니다 (0)",
+          "여러 날 동안 (1)",
+          "일주일 이상 (2)",
+          "거의 매일 (3)"
+        ],
+        "multi": false
+      },
+      {
+        "label": "입맛이 없거나 과식을 함",
+        "options": [
+          "전혀 아니다 (0)",
+          "여러 날 동안 (1)",
+          "일주일 이상 (2)",
+          "거의 매일 (3)"
+        ],
+        "multi": false
+      },
+      {
+        "label": "자신을 부정적으로 봄. 혹은 자신이 실패자라고 느끼거나 자신 또는 가족을 실망시킴",
+        "options": [
+          "전혀 아니다 (0)",
+          "여러 날 동안 (1)",
+          "일주일 이상 (2)",
+          "거의 매일 (3)"
+        ],
+        "multi": false
+      },
+      {
+        "label": "신문을 읽거나 텔레비전 보는 것과 같은 일에 집중하는 것이 어려움",
+        "options": [
+          "전혀 아니다 (0)",
+          "여러 날 동안 (1)",
+          "일주일 이상 (2)",
+          "거의 매일 (3)"
+        ],
+        "multi": false
+      },
+      {
+        "label": "다른 사람들이 주목할 정도로 너무 느리게 움직이거나 말을 함. 또는 반대로 평상시보다 많이 움직여서 너무 안절부절못하거나 들떠 있음",
+        "options": [
+          "전혀 아니다 (0)",
+          "여러 날 동안 (1)",
+          "일주일 이상 (2)",
+          "거의 매일 (3)"
+        ],
+        "multi": false
+      },
+      {
+        "label": "자신이 죽는 것이 더 낫다고 생각하거나 어떤 식으로든 자신을 해칠 것이라고 생각함",
+        "options": [
+          "전혀 아니다 (0)",
+          "여러 날 동안 (1)",
+          "일주일 이상 (2)",
+          "거의 매일 (3)"
+        ],
+        "multi": false
+      },
+      {
+        "label": "메모 / 기타 상세"
+      }
+    ]
+  },
+  {
+    "id": "sgds",
+    "title": "SGDS-K",
+    "period": "지난 1주일 동안",
+    "fields": [
+      {
+        "label": "현재의 생활에 대체적으로 만족하십니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "요즈음 들어 활동량이나 의욕이 많이 떨어지셨습니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "자신이 헛되이 살고 있다고 느끼십니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "생활이 지루하게 느껴질 때가 많습니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "평소에 기분은 상쾌한 편입니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "자신에게 불길한 일이 닥칠 것 같아 불안하십니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "대체로 마음이 즐거운 편이십니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "절망적이라는 느낌이 자주 드십니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "바깥에 나가기가 싫고 집에만 있고 싶습니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "비슷한 나이의 다른 노인들보다 기억력이 더 나쁘다고 느끼십니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "현재 살아있다는 것이 즐겁게 생각되십니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "지금의 내 자신이 아무 쓸모없는 사람이라고 느끼십니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "기력이 좋은 편이십니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "지금 자신의 처지가 아무런 희망도 없다고 느끼십니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "자신이 다른 사람들의 처지보다 더 못하다고 생각하십니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "메모 / 기타 상세"
+      }
+    ]
+  },
+  {
+    "id": "frail",
+    "title": "허약노인 기초측정표",
+    "period": "기초조사표 3쪽",
+    "fields": [
+      {
+        "label": "버스나 지하철(전철) 등, 교통수단을 이용해서 혼자 외출할 수 있습니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "슈퍼마켓이나 동네가게에서 잘못이나 실수 없이 제대로 생필품을 구입합니까? (주문배달의 경우는 ‘아니오’)",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "은행이나 농협, 우체국 등에서 예·적금 등의 금전관리를 스스로 하고 있습니까? (타인이 해주면 ‘아니오’)",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "이웃이나 친구의 집에 마실하러 다닙니까? (가족이나 친척 집 제외)",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "가족이나 친구에게 생활상의 문제에 대해 상담이나 조언을 해줍니까? (전화를 통한 상담·조언도 포함됨)",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "계단 손잡이나 벽을 짚지 않고 계단을 올라갑니까? (처음부터 습관적으로 잡는 경우는 ‘아니오’이고, 올라가는 중간에 잡는 경우는 ‘예’)",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "의자에 앉은 상태에서 부축이나 지팡이 없이 일어납니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "15분 정도 쉬지 않고 걸어 다닙니까? (실내·외 불문)",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "지난 1년간에 넘어진 적이 있습니까? (미끄러지거나, 걸려서)",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "넘어지는 것에 대한 걱정이나 염려가 큽니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "지난 6개월간 몸무게가 2~3kg 이상 빠졌습니까? (※고의적인 체중감량은 제외함)",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "신장( cm), 체중( kg) BMI( )가 18.5 미만인가?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "지난 6개월 전에 비해 딱딱한 음식을 먹기 어려워졌습니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "음료수나 국물을 드실 때 목이 멘 적(삼키기 어려움)이 있습니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "자주 입이 말라서 신경이 쓰입니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "1주일에 한 번 이상 외출(나들이)합니까? (1~2주에 한 번 정도도 ‘예’)",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "작년에 비해서 외출 횟수가 줄어들었습니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "주위사람이 ‘항상 똑같은 말을 되풀이 한다’는 등의 건망증이 있다는 말을 듣습니까? (건망증이 있어도 그런 말을 듣지 않으면 ‘아니오’)",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "혼자서 전화를 걸 수 있습니까? (누군가가 걸어주면 ‘아니오’)",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "오늘이 몇 월, 몇 일 인지를 모를 때가 있습니까?",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "(최근 2주간) 매사에 의욕이 없다.",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "(최근 2주간) 지금까지 즐겨왔던 취미가 싫증났다. (그래서 그만둔 경우도 ‘예’)",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "(최근 2주간) 예전에는 쉽게 했던 일들이 이제는 어려워서 겁이 난다.",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "(최근 2주간) 자신이 쓸모 있는 사람이라고 생각하지 않는다.",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "(최근 2주간) 아무 이유도 없이 피곤함을 느낀다.",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "현재 앓고 있는 질병",
+        "options": [
+          "고혈압",
+          "당뇨병",
+          "뇌졸중",
+          "관절염",
+          "요실금",
+          "암",
+          "심장질환",
+          "만성호흡기질환"
+        ],
+        "multi": true
+      },
+      {
+        "label": "낮은 시력으로 인해 일상생활에서 어려움을 경험하고 있습니까? (시력)",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "낮은 청력으로 인해 일상생활에서 어려움을 경험하고 있습니까? (청력)",
+        "options": [
+          "예",
+          "아니오"
+        ],
+        "multi": false
+      },
+      {
+        "label": "신장 (cm)"
+      },
+      {
+        "label": "체중 (kg)"
+      },
+      {
+        "label": "BMI"
+      },
+      {
+        "label": "TUG 분"
+      },
+      {
+        "label": "TUG 초"
+      },
+      {
+        "label": "TUG 측정 못 함 사유"
+      },
+      {
+        "label": "메모 / 기타 상세"
+      }
+    ]
+  },
+  {
+    "id": "cancer",
+    "title": "재가암 대상자 기초조사표",
+    "period": "만 19세 이상 암 진단 대상자 · 암 치료종료 후 5년 경과자 제외",
+    "fields": [
+      {
+        "label": "진단받은 암(원발암)의 종류",
+        "options": [
+          "위암",
+          "폐암",
+          "간암",
+          "유방암",
+          "대장암",
+          "췌장암",
+          "갑상선암",
+          "방광암",
+          "전립선암",
+          "자궁암",
+          "기타"
+        ],
+        "multi": true
+      },
+      {
+        "label": "기타 암 종류"
+      },
+      {
+        "label": "처음 암을 진단받은 해"
+      },
+      {
+        "label": "진단 시 암의 진행 정도",
+        "options": [
+          "0기",
+          "1기",
+          "2기",
+          "3기",
+          "4기",
+          "5기",
+          "모름"
+        ],
+        "multi": false
+      },
+      {
+        "label": "지금까지 받은 암 치료 방법 (모두)",
+        "options": [
+          "수술",
+          "방사선치료",
+          "항암치료",
+          "표적치료",
+          "호르몬",
+          "기타",
+          "모름"
+        ],
+        "multi": true
+      },
+      {
+        "label": "기타 치료 방법"
+      },
+      {
+        "label": "현재 암 치료 상태",
+        "options": [
+          "치료중",
+          "완치",
+          "치료중단"
+        ],
+        "multi": false
+      },
+      {
+        "label": "지난 일주일 동안의 스트레스 정도 (0 전혀 괴롭지 않음 ~ 10 매우 괴로움)",
+        "options": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10"
+        ],
+        "multi": false
+      },
+      {
+        "label": "메모 / 기타 상세"
+      }
+    ]
+  },
+  {
+    "id": "disability",
+    "title": "재가장애인 기초조사표",
+    "period": "기초조사표 간이 · 만 7세 이상 장애인 등록 가구원",
+    "fields": [
+      {
+        "label": "장애등록",
+        "options": [
+          "유",
+          "무"
+        ],
+        "multi": false
+      },
+      {
+        "label": "장애 정도",
+        "options": [
+          "심한 장애인",
+          "심하지 않은 장애인",
+          "예비 장애인"
+        ],
+        "multi": false
+      },
+      {
+        "label": "장애분류",
+        "options": [
+          "지체",
+          "뇌병변",
+          "시각",
+          "청각",
+          "언어",
+          "안면",
+          "호흡기",
+          "심장",
+          "신장",
+          "간",
+          "장루·요루",
+          "간질",
+          "지적",
+          "자폐성",
+          "정신"
+        ],
+        "multi": true
+      },
+      {
+        "label": "영양상태",
+        "options": [
+          "양호",
+          "불량(식단부족·삼키기 기능저하·식욕부진 등)"
+        ],
+        "multi": false
+      },
+      {
+        "label": "연하문제",
+        "options": [
+          "없음",
+          "있음"
+        ],
+        "multi": false
+      },
+      {
+        "label": "호흡상태",
+        "options": [
+          "정상",
+          "기침",
+          "호흡곤란",
+          "기관지삽관",
+          "기타"
+        ],
+        "multi": true
+      },
+      {
+        "label": "배뇨 상태",
+        "options": [
+          "정상",
+          "배뇨곤란(찔끔·잦은배뇨·느낌없음)"
+        ],
+        "multi": false
+      },
+      {
+        "label": "배뇨 방법",
+        "options": [
+          "정상",
+          "기저귀·기스모",
+          "간헐적 도뇨관",
+          "지속적 도뇨관",
+          "기타"
+        ],
+        "multi": false
+      },
+      {
+        "label": "배변 상태",
+        "options": [
+          "정상",
+          "변비",
+          "실변",
+          "기타"
+        ],
+        "multi": false
+      },
+      {
+        "label": "변비 횟수 (회/일)"
+      },
+      {
+        "label": "배변느낌",
+        "options": [
+          "유",
+          "무"
+        ],
+        "multi": false
+      },
+      {
+        "label": "배변 방법",
+        "options": [
+          "정상",
+          "항문자극",
+          "관장",
+          "기타"
+        ],
+        "multi": false
+      },
+      {
+        "label": "피부(위생)",
+        "options": [
+          "양호",
+          "불량",
+          "욕창"
+        ],
+        "multi": true
+      },
+      {
+        "label": "낙상경험",
+        "options": [
+          "없음",
+          "있음"
+        ],
+        "multi": false
+      },
+      {
+        "label": "관절구축",
+        "options": [
+          "없음",
+          "있음"
+        ],
+        "multi": false
+      },
+      {
+        "label": "관절구축 부위",
+        "options": [
+          "상지 좌",
+          "상지 우",
+          "어깨",
+          "팔꿈치",
+          "손",
+          "하지 좌",
+          "하지 우",
+          "고관절",
+          "무릎",
+          "발목"
+        ],
+        "multi": true
+      },
+      {
+        "label": "운동기능",
+        "options": [
+          "와상상태",
+          "앉아있을 수 있음",
+          "침대·휠체어 이동가능",
+          "기립가능",
+          "의존적 실내보행",
+          "독립적 실내보행",
+          "실외보행"
+        ],
+        "multi": true
+      },
+      {
+        "label": "메모 / 기타 상세"
+      }
+    ]
+  }
+];
+
+/* Drafts stay in memory. Explicit saves use the encrypted consultation lifecycle. */
+(function(){
+'use strict';
+const forms=window.VHM_SURVEYS, drafts=new Map(), savedIds=new Map(); let current='';
+const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function validate(d){
+ const f=forms.find(f=>f.id===d?.form);
+ if(!f||typeof d.name!=='string'||!d.name.trim()||d.name.length>80||!Array.isArray(d.answers)||d.answers.length!==f.fields.length)throw Error('조사표 형식 또는 대상자 이름을 확인하세요.');
+ d.answers.forEach((a,i)=>{const q=f.fields[i];if(q.options){if(q.multi){if(!Array.isArray(a)||new Set(a).size!==a.length||!a.every(v=>Number.isInteger(v)&&v>=0&&v<q.options.length))throw Error('조사표 선택값 오류');}else if(a!==null&&(!Number.isInteger(a)||a<0||a>=q.options.length))throw Error('조사표 선택값 오류');}else if(typeof a!=='string'||a.length>2000)throw Error('조사표 입력값 오류');});return d;
+}
+function fresh(f){return {form:f.id,name:'',answers:f.fields.map(q=>q.options?(q.multi?[]:null):'')};}
+function score(d){const n=d.form==='phq'?9:d.form==='sgds'?15:0;if(!n)return '';const a=d.answers.slice(0,n),done=a.filter(x=>x!==null).length;let total=a.reduce((s,v,i)=>s+(v===null?0:d.form==='phq'?v:([0,4,6,10,12].includes(i)?v===1:v===0)?1:0),0);return `${done}/${n}문항 응답 · ${done===n?'총점':'응답한 문항 점수'} ${total}점`+(d.form==='sgds'&&done===n&&total>=8?' · 전문의 상담 권유(원본 기준)':'')+(d.form==='phq'&&a[8]>0?' · 9번 응답에 따라 위험 확인 및 정신건강복지센터 연계 검토':'')+' · 선별검사이며 진단이 아닙니다.';}
+function mount(){
+ const host=document.querySelector('#surveyTools');if(!host)return;
+ host.innerHTML='<div class="card" style="padding:12px;margin:12px 0"><b>기초조사표 작성·저장</b><div class="row" id="surveyButtons" style="flex-wrap:wrap;gap:8px;margin:8px 0">'+forms.map(f=>`<button type="button" data-survey="${f.id}" aria-pressed="${current===f.id}">${esc(f.title)}</button>`).join('')+'</div><p class="hint">대상자 이름과 체크 응답만 입력해 저장하세요. 저장 목록·Drive 동기화·영구 삭제는 위의 상담메모 저장 기능을 함께 사용합니다. 입력 중에는 저장하지 않습니다.</p><div id="surveyEditor"></div></div>';
+ host.querySelectorAll('[data-survey]').forEach(b=>b.onclick=()=>{current=b.dataset.survey;mount();});render();
+}
+function render(){
+ const box=document.querySelector('#surveyEditor'),f=forms.find(f=>f.id===current);if(!box||!f)return;
+ if(!drafts.has(f.id))drafts.set(f.id,fresh(f));const d=drafts.get(f.id);
+ box.innerHTML=`<h3>${esc(f.title)}</h3><p class="hint">${esc(f.period)}</p><label class="f">대상자 이름<input id="surveyName" maxlength="80" autocomplete="off" value="${esc(d.name)}"></label>`+f.fields.map((q,i)=>`<fieldset style="margin:10px 0;border:1px solid var(--line);border-radius:8px;min-width:0"><legend>${i+1}. ${esc(q.label)}</legend>${q.options?'<div class="row" style="flex-wrap:wrap;gap:10px">'+q.options.map((v,k)=>`<label style="display:inline-flex;align-items:center;gap:5px"><input style="width:auto" type="${q.multi?'checkbox':'radio'}" name="survey-${i}" data-q="${i}" value="${k}" ${(q.multi?d.answers[i].includes(k):d.answers[i]===k)?'checked':''}>${esc(v)}</label>`).join('')+`</div>${q.multi?'':`<button type="button" class="small" data-unset="${i}">선택 해제</button>`}`:`<textarea rows="2" maxlength="2000" data-q="${i}">${esc(d.answers[i])}</textarea>`}</fieldset>`).join('')+`<p id="surveyScore" role="status">${esc(score(d))}</p><div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="primary" id="surveySave">이 조사표 새로 저장</button><button type="button" id="surveyReset">새 대상자 / 입력 지우기</button></div><p id="surveyStatus" role="status"></p>`;
+ box.querySelector('#surveyName').oninput=e=>d.name=e.target.value;
+ box.querySelectorAll('[data-q]').forEach(el=>el.oninput=()=>{const i=+el.dataset.q,q=f.fields[i];d.answers[i]=q.options?(q.multi?[...box.querySelectorAll(`[data-q="${i}"]:checked`)].map(x=>+x.value):+el.value):el.value;box.querySelector('#surveyScore').textContent=score(d);});
+ box.querySelectorAll('[data-unset]').forEach(el=>el.onclick=()=>{d.answers[+el.dataset.unset]=null;render();});
+ box.querySelector('#surveySave').onclick=async()=>{const b=box.querySelector('#surveySave');b.disabled=true;try{validate(d);await CONSULTATIONS.saveSurvey(structuredClone(d));const status=document.querySelector('#surveyStatus');if(status)status.textContent=document.querySelector('#consultStatus')?.textContent||'';}catch(e){box.querySelector('#surveyStatus').textContent=e.message;}finally{b.disabled=false;}};
+ box.querySelector('#surveyReset').onclick=()=>{if(confirm('이 조사표의 이름과 응답을 지울까요? 저장본은 유지됩니다.')){drafts.set(f.id,fresh(f));savedIds.delete(f.id);render();}};
+}
+function restore(d,id){validate(d);if(id)savedIds.set(d.form,id);current=d.form;drafts.set(current,structuredClone(d));mount();document.querySelector('#surveyTools')?.scrollIntoView({block:'start'});}
+function clear(){savedIds.clear();drafts.clear();current='';mount();}
+function deleted(ids){for(const [form,id] of savedIds){if(ids.includes(id)){drafts.delete(form);savedIds.delete(form);if(current===form)current='';}}mount();}
+window.SURVEYS={mount,restore,validate,clear,score,deleted,markSaved:(d,id)=>savedIds.set(d.form,id)};mount();
 })();
 
 </script>
