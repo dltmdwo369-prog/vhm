@@ -70,6 +70,7 @@
       + '<div class="lk-personal row"><span>' + (L.personalLoaded ? '개인 Drive 목록 ' + L.data.services.length + '건 · 공개자료와 별도 보관' : '공개자료는 로그인 없이 이용 가능합니다. 개인 Drive 목록은 별도로 불러옵니다.') + '</span><button class="small" id="lkDrive">' + (L.personalLoaded ? '개인 목록 다시 불러오기' : '개인 목록·드라이브 연결') + '</button><span role="status">' + esc(L.notice) + '</span></div>'
       + '<div class="hint lk-special">2026년 안내: 강서구 일상돌봄은 예산 소진으로 대기 신청만 가능 · 이동푸드마켓은 미운영(별도 신청 불가) · 그냥드림은 신규 운영 안내(당일 수량 확인).</div>'
       + (L.data.defaultsPending ? '<p class="hint">개인 요구 항목은 임시 기본값입니다. 기존 항목을 보존하며 ‘요구 항목’에서 관리합니다.</p>' : '')
+      + (['match','list','pending'].includes(L.view) ? searchHtml() : '')
       + (L.view === 'match' ? matchHtml() : L.view === 'list' || L.view === 'pending' ? listHtml() : L.view === 'needs' ? needsHtml() : catalogImportHtml() + ioHtml());
   }
   function allServices() {
@@ -134,6 +135,7 @@
     });
   }
   function matchHtml() {
+    if(L.q.trim())return '<p class="infobox">전체 연계서비스 부분 검색입니다. 담당기관 확인 필요 자료도 상태를 구분해 표시합니다. 검색어를 지우면 기존 요구 체크로 돌아갑니다.</p>'+listHtml();
     const res = scored(), refined = checkGroups(), count = refined.reduce((n,g) => n + g.items.length,0);
     const selected = selectedNeedIds();
     const pending = allServices().filter(s => s.verificationStatus === 'needs_contact' && M.refinedHits(s,needLabels(s),selected).length);
@@ -149,16 +151,19 @@
   }
   function options(values, selected, first) { return '<option value="">' + esc(first) + '</option>' + Object.entries(values).map(([k,v]) => '<option value="' + esc(k) + '"' + (selected === k ? ' selected' : '') + '>' + esc(v) + '</option>').join(''); }
   function filteredServices() {
-    const q = M.key(L.q), f = L.filters;
-    return allServices().filter(s => (L.view === 'pending' ? s.verificationStatus === 'needs_contact' : s.verificationStatus !== 'needs_contact')
-      && (!q || M.key([s.name,s.org,s.field,s.conditions,s.contact,s.memo,...(s.aliases || []),...needLabels(s)].join(' ')).includes(q))
+    const f = L.filters;
+    return allServices().filter(s => (L.view === 'pending' ? s.verificationStatus === 'needs_contact' : L.view === 'match' && L.q.trim() ? true : s.verificationStatus !== 'needs_contact')
+      && M.matchesSearch(s,L.q,needLabels(s))
       && (!f.field || s.field === f.field) && (!f.route || String(s.referralCode || 4) === f.route)
       && (!f.group || M.groups(s).includes(f.group)) && (!f.intake || M.intake(s) === f.intake)
       && (!f.source || (f.source === 'personal' ? s._personal : !s._personal)));
   }
+  function searchHtml() {
+    return '<section class="card" style="padding:12px;margin:10px 0" aria-label="연계서비스 부분 검색"><div class="row" style="flex-wrap:wrap;align-items:end;gap:8px"><label class="f" style="flex:1;min-width:0">연계서비스 부분 검색<input type="search" id="lkQ" autocomplete="off" aria-describedby="lkSearchHint" placeholder="예: 무릎, 강서 돌봄, 의료비" value="'+esc(L.q)+'"></label><button type="button" id="lkSearchClear"'+(!L.q?' disabled':'')+'>검색어 지우기</button></div><p class="hint" id="lkSearchHint">서비스·기관·대상조건·연락처·메모·양식 이름의 일부로 검색합니다. 여러 단어는 모두 포함된 자료를 찾습니다. 검색어는 저장·전송하지 않습니다.</p></section>';
+  }
   function listHtml() {
     const list = filteredServices(), f = L.filters;
-    return '<p class="hint">검토 후보 좁히기 — 선택 자격을 저장하지 않습니다. 일반 차상위와 차상위본인부담경감은 다르며, 필터 결과가 지원 자격을 뜻하지 않습니다. 주택바우처의 수급가구 제외 등은 상세에서 확인하세요.</p><div class="lk-filter"><label>검색<input type="search" id="lkQ" placeholder="서비스·기관·별칭·요구·조건·연락처" value="' + esc(L.q) + '"></label>'
+    return '<p class="hint">검토 후보 좁히기 — 선택 자격을 저장하지 않습니다. 일반 차상위와 차상위본인부담경감은 다르며, 필터 결과가 지원 자격을 뜻하지 않습니다. 주택바우처의 수급가구 제외 등은 상세에서 확인하세요.</p><div class="lk-filter">'
       + [['field','분야',Object.fromEntries(FIELDS.map(x => [x,x]))],['group','대상 자격',M.groupLabels],['route','의뢰 방식',M.routes],['intake','접수 상태',M.intakeLabels],['source','자료 출처',{public:'공개자료',personal:'개인 목록'}]].map(([k,label,values]) => '<label>' + label + '<select data-lkfilter="' + k + '">' + options(values,f[k],label + ' 전체') + '</select></label>').join('')
       + '<button id="lkFilterClear">필터 초기화</button></div><div class="row"><b role="status">검색 결과 ' + list.length + '건</b><button class="primary" id="lkAdd">+ 개인 서비스 추가</button></div>'
       + '<div class="lk-list">' + list.slice(0,L.listLimit).map(s => '<article class="lk-row"><div><button class="link lk-title" data-detail="' + esc(s._key) + '">' + esc(s.name) + '</button><p class="hint">' + esc(s.org) + ' · ' + esc(s.field) + '</p><div>' + badges(s) + '</div><p>대상 조건: ' + esc(s.conditions || '미확인') + '</p><p>' + esc(M.routes[s.referralCode] || M.routes[4]) + '</p><p class="hint">접수: ' + esc(s.intakeStatus || '미확인') + '</p>'
@@ -414,6 +419,7 @@
       if (t.id === 'lkShowMore') { L.listLimit += 12; render(); return; }
       if (t.id === 'lkRetry' || t.id === 'lkReload') { load(); return; }
       if (t.id === 'lkDrive') { t.disabled = true; try { if (!VHM_AUTH.valid()) { L.notice = '먼저 일정 탭에서 구글 계정으로 연결하세요. 공개자료는 계속 이용할 수 있습니다.'; render(); return; } if (!VHM_AUTH.hasDrive) await VHM_AUTH.request('drive'); await load(); } catch (e) { toast(e.message || String(e), 5000); t.disabled = false; } return; }
+      if(t.id==='lkSearchClear'){L.q='';L.listLimit=12;render();$('#lkQ')?.focus();return;}
       if (t.id === 'lkShowCandidates') { showCandidates(); return; }
       if (t.id === 'lkFromNotes') { applyNoteNeeds(); render(); showCandidates(); return; }
       if (t.id === 'lkClear') { clearNoteNeeds(); L.checks.clear(); render(); return; }
@@ -458,7 +464,9 @@
         downloadBackup(L.data,'연계목록_복원전백업');
         L.data = normalize(d); if (await save('백업 파일로 바꿨습니다.')) render(); }
     });
-    b.addEventListener('input', ev => { if (ev.target.id === 'lkQ') { L.q = ev.target.value; L.listLimit = 12; const pos = ev.target.selectionStart; render(); const q = $('#lkQ'); if (q) { q.focus(); q.setSelectionRange(pos, pos); } } });
+    const updateSearch=ev=>{if(ev.target.id!=='lkQ'||ev.isComposing||ev.target.value===L.q)return;L.q=ev.target.value;L.listLimit=12;const pos=ev.target.selectionStart;render();const q=$('#lkQ');if(q){q.focus();if(typeof pos==='number')q.setSelectionRange(pos,pos);}};
+    b.addEventListener('input',updateSearch);
+    b.addEventListener('compositionend',updateSearch);
     b.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.dataset && ev.target.dataset.edit) ev.target.click(); });
     // 서비스 대화상자
     $('#svcDlg').addEventListener('click', async ev => {

@@ -33,7 +33,7 @@ add('old','source-large','가상 큰 파일.zip','fake',{size:String(21*1048576)
 const originals=[...accounts.old].map(([id,f])=>[id,Buffer.from(f.bytes),JSON.stringify({...f,bytes:undefined})]);
 check('calendar login requests only calendar scope',auth[0].scope===CAL);
 const oldToken=await page.evaluate(()=>VHM_AUTH.token);await page.click('[data-tab="set"]');await page.locator('#driveTargetEmail').fill('large-drive@example.test');
-async function connectDrive(){await Promise.all([page.waitForNavigation(),page.click('#driveAccountConnect')]);await page.waitForFunction(()=>!!VHM_AUTH.redirectResult?.drive);await page.waitForFunction(()=>!document.querySelector('#sync .spin'));}
+async function connectDrive(){await Promise.all([page.waitForNavigation(),page.click('#driveAccountConnect')]);await page.waitForFunction(()=>!!VHM_AUTH.redirectResult?.drive);await page.waitForFunction(()=>!document.querySelector('#sync .spin'));await page.waitForSelector('#tab-set:not([hidden])');}
 wrong=true;await connectDrive();await page.waitForFunction(()=>VHM_AUTH.redirectResult?.driveError);
 check('wrong selected Drive identity is rejected without replacing Calendar token',await page.evaluate(t=>VHM_AUTH.token===t&&VHM_AUTH.valid()&&!VHM_AUTH.hasDrive,oldToken));
 check('unverified account never receives an application write',!log.some(r=>r.account==='new'&&r.method!=='GET'));

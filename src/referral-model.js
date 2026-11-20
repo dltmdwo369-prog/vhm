@@ -4,6 +4,14 @@
   const clone = value => JSON.parse(JSON.stringify(value));
   const text = value => value == null ? '' : String(value);
   const key = value => text(value).normalize('NFKC').replace(/\s/g, '').toLowerCase();
+  // Partial search is local only; terms are literal text, never executable patterns.
+  const searchKey = value => key(value).replace(/[·ㆍ,，()（）\[\]{}:/\\+\-–—_]/g,'');
+  const searchTerms = query => text(query).trim().split(/\s+/).map(searchKey).filter(Boolean);
+  function matchesSearch(s, query, labels = s.needs || []) {
+    const terms=searchTerms(query);if(!terms.length)return !text(query).trim();
+    const fields=[s.name,s.org,s.organization,s.field,s.conditions,s.eligibleGroups,s.contact,s.memo,s.exceptionsAndNotes,s.apply,s.applicationProcedure,s.docs,s.preapprovalStatus,s.formsNote,s.intakeStatus,s.referralDescription,s.officialSourceTitle,...(s.aliases||[]),...labels,...(s.forms||[]).map(f=>f.name||f.label)];
+    const indexed=fields.map(searchKey);return terms.every(term=>indexed.some(field=>field.includes(term)));
+  }
   function safeUrl(value) {
     try { const u = new URL(text(value)); return ['https:', 'http:'].includes(u.protocol) && !u.username && !u.password ? u.href : ''; } catch (_) { return ''; }
   }
@@ -124,5 +132,5 @@
     if (/등록장애인/.test(t)) out.push('disabled');
     return out.length ? out : ['unknown'];
   }
-  window.VHM_REFERRALS = {clone,key,needsKey,safeUrl,service,migrate,routes,mapNeeds,identity,isDuplicate,mergeCatalog,intake,intakeLabels,groups,groupLabels,refinedGroups,refinedHits,groupedNeeds,expandNeedSelection,attachmentState};
+  window.VHM_REFERRALS = {clone,key,searchTerms,matchesSearch,needsKey,safeUrl,service,migrate,routes,mapNeeds,identity,isDuplicate,mergeCatalog,intake,intakeLabels,groups,groupLabels,refinedGroups,refinedHits,groupedNeeds,expandNeedSelection,attachmentState};
 })();
