@@ -7,6 +7,8 @@
 
 PHIS 기록 요청은 [사용·보안·향후 처리기 계약 문서](docs/PHIS_REQUESTS.md)를 참고하세요. 현재는 기기별 암호화 준비 목록이며 PHIS 접속·전송·입력 기능은 없습니다.
 
+캘린더 계정은 유지하면서 Drive 저장 계정만 별도로 연결할 수 있습니다. [계정 분리·기존 자료 복사 안내](docs/DRIVE_ACCOUNT.md)를 참고하세요. 실제 계정 이메일은 공개 소스 대신 브라우저 설정에 저장합니다.
+
 ## 한눈에
 - 서버 없는 단일 페이지(`site/index.html`). 브라우저에서 사용자의 구글 계정으로 **Google Calendar API·Drive API에 직접** 연결합니다.
 - 로그인: OAuth 2.0 암시적 흐름(페이지 이동 방식). `site/config.js`에는 **클라이언트 ID만** 있습니다(비밀 키 아님, 공개 가능).
@@ -23,6 +25,7 @@ PHIS 기록 요청은 [사용·보안·향후 처리기 계약 문서](docs/PHIS
 | `src/gcal-api.js` | 구글 연결 계층: 로그인(`VHM_AUTH`), 캘린더 읽기·쓰기, 메모 잠금 암호화, 완료·기한·미루기·실적 집계·수기 실적 (`window.SERVER`) |
 | `src/memolock.js` | 메모 잠금 화면(AES-GCM + PBKDF2, 기기별 생체인증 WebAuthn PRF) |
 | `src/memo-images.js` | 일정 메모 이미지 선택·암호화 업로드·잠금 해제 미리보기·첨부 해제. [사용 및 백업 안내](docs/MEMO_IMAGES.md) |
+| `src/drive-account.js` | 저장용 Drive 계정 설정·검증, 기존 앱 폴더 복사 미리보기·명시적 복사·재조회 검증 |
 | `src/keepalive.js` | 업무시간 연결 유지(만료 전 `prompt=none` 조용한 재로그인) |
 | `src/notes.js` | 상담 메모 탭(체크 → 메모 문장 자동 작성, 항목 편집기) |
 | `src/phis-model.js`, `src/phis.js` | PHIS 기록 요청·기기별 암호화 대기 목록·검토 관리. 실제 자동화 미연동 |

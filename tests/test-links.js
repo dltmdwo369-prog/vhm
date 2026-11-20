@@ -24,6 +24,7 @@ function api(method, url, headers, buf) {
     if (method === 'GET') return [200, { items: G.events[cid] || [] }];
     const ev = Object.assign({ id: nid('ev'), etag: '"' + seq + '"', status: 'confirmed' }, json()); G.events[cid].push(ev); return [200, ev]; }
   // Drive
+  if(p==='/drive/v3/about')return [200,{user:{emailAddress:'large-drive@example.test'},storageQuota:{}}];
   if (p === '/drive/v3/files' && method === 'GET') {
     const q = u.searchParams.get('q'); const name = /name = '((?:[^'\\]|\\.)*)'/.exec(q)[1].replace(/\\'/g, "'"); const mime = (/mimeType = '([^']+)'/.exec(q) || [])[1]; const par = (/'([^']+)' in parents/.exec(q) || [])[1];
     return [200, { files: G.files.filter(f => !f.trashed && f.name === name && (!mime || f.mimeType === mime) && (!par || f.parents.includes(par))).map(f => ({ id: f.id, name: f.name, modifiedTime: f.modifiedTime, mimeType: f.mimeType })) }];
@@ -56,6 +57,7 @@ const server = http.createServer((req, res) => {
       const match = /\/drive\/v3\/files\/([^/?]+)/.exec(q.url()); const file = match && G.files.find(f => f.id === match[1]);
       await r.fulfill({ status: st, headers: file && !G.omitEtag ? {etag:'"' + file.modifiedTime + '"','access-control-expose-headers':'etag'} : {}, contentType: ct || 'application/json', body: Buffer.isBuffer(js) ? js : (js == null ? '' : JSON.stringify(js)) }); });
     await page.goto(BASE); await connectVia(page, '#btnConnect'); await page.waitForSelector('#connectBox[hidden]', { state: 'attached' });
+    await page.evaluate(()=>VHM_AUTH.setDriveTarget('large-drive@example.test'));
     return page;
   }
   const idle = p => p.waitForFunction(() => !document.querySelector('#sync .spin'), null, { timeout: 10000 });
@@ -82,7 +84,7 @@ const server = http.createServer((req, res) => {
   const prompts = AUTH.log.map(x => x.prompt), reqs = AUTH.log.map(x => x.scope);
   const folder = G.files.find(f => f.mimeType === 'application/vnd.google-apps.folder'), listFile = G.files.find(f => f.name === 'vhm-links.json');
   const onLinkTab = await page.$eval('#tab-link', x => !x.hidden);
-  check('드라이브는 따로 요청 (드라이브 권한만, 처음엔 동의 화면) → 돌아오면 연계 탭', reqs[1] === 'https://www.googleapis.com/auth/drive.file' && prompts.join() === 'consent,consent' && onLinkTab, JSON.stringify(reqs) + JSON.stringify(prompts));
+  check('드라이브는 따로 요청 (드라이브 권한만, 처음엔 동의 화면) → 돌아오면 연계 탭', reqs[1] === 'https://www.googleapis.com/auth/drive.file' && prompts.join() === 'consent,select_account consent' && onLinkTab, JSON.stringify(reqs) + JSON.stringify(prompts));
   check('열람만으로 개인 Drive 폴더·목록 파일을 생성하지 않음', !folder && !listFile && !G.log.some(x => x.startsWith('POST /drive') || x.startsWith('POST /upload')));
   const nChips = await page.$$eval('.lk-chip input[data-need]', x => x.length);
   check('기본 요구 항목 표시 + ‘임시 기본값’ 안내', nChips >= 25 && /임시 기본값/.test(await page.textContent('#tab-link')), String(nChips));

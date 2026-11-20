@@ -21,7 +21,7 @@ async function api(method, url, headers, buf) {
   if ((m = /^\/calendar\/v3\/calendars\/([^/]+)\/events$/.exec(p))) { const cid = decodeURIComponent(m[1]);
     if (method === 'GET') return [200, { items: G.events[cid] || [] }];
     const ev = Object.assign({ id: nid('ev'), etag: '"' + seq + '"', status: 'confirmed' }, json()); G.events[cid].push(ev); return [200, ev]; }
-  if (p === '/drive/v3/about') return [200, { storageQuota: { limit: String(15 * 1024 ** 3), usage: String(3 * 1024 ** 3) } }];
+  if (p === '/drive/v3/about') return [200, { user:{emailAddress:'large-drive@example.test'},storageQuota: { limit: String(15 * 1024 ** 3), usage: String(3 * 1024 ** 3) } }];
   if (p === '/drive/v3/files' && method === 'GET') {
     const q = u.searchParams.get('q');
     const name = (/name='((?:[^'\\]|\\.)*)'/.exec(q) || [])[1], mime = (/mimeType='([^']+)'/.exec(q) || [])[1], par = (/'([^']+)' in parents/.exec(q) || [])[1];
@@ -71,6 +71,7 @@ const server = http.createServer((req, res) => {
     await page.route('https://www.googleapis.com/**', async r => { const q = r.request(); const [st, js, ct, hd] = await api(q.method(), q.url(), q.headers(), q.postDataBuffer() || Buffer.alloc(0));
       await r.fulfill({ status: st, headers: Object.assign({}, CORS, hd || {}), contentType: ct || 'application/json', body: Buffer.isBuffer(js) ? js : (js == null ? '' : (typeof js === 'string' ? js : JSON.stringify(js))) }); });
     await page.goto(BASE); await connectVia(page, '#btnConnect'); await page.waitForSelector('#connectBox[hidden]', { state: 'attached' });
+    await page.evaluate(()=>VHM_AUTH.setDriveTarget('large-drive@example.test'));
     return page;
   }
   const idle = p => p.waitForFunction(() => !document.querySelector('#sync .spin'), null, { timeout: 10000 });

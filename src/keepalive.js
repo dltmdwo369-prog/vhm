@@ -21,6 +21,7 @@
   function failedRecently() { try { return Date.now() - (+sessionStorage.getItem(FAIL) || 0) < 30 * 60e3; } catch (e) { return false; } }
   // 다시 연결하면 페이지를 새로 읽으므로, 저장 안 된 작성 내용이 있으면 미룸
   function busyReason() {
+    if(window.VHM_AUTH?.migrationBusy)return 'Drive 자료 복사';
     if (document.querySelector('dialog[open]')) return '열려 있는 창';
     const N = window.NOTES && NOTES._state;
     const has = x => x != null && (typeof x === 'object' ? ('name' in x ? String(x.name || '').trim() !== '' : Object.keys(x).length > 0) : String(x).trim() !== '');
@@ -33,20 +34,22 @@
     return '';
   }
   function curTab() { const b = document.querySelector('.tabs button[aria-selected="true"]'); return b ? b.dataset.tab : 'cal'; }
-  function refreshNow() {
+  function refreshNow(kind='base') {
     try {
       sessionStorage.setItem(RESUME, JSON.stringify({ tab: curTab(), selected: S.selected, cursor: S.cursor && S.cursor.toISOString(), y: window.scrollY, at: Date.now() }));
     } catch (e) {}
     if (window.SERVER && SERVER.lockStash) SERVER.lockStash();
-    VHM_AUTH.request('base', { silent: true });
+    VHM_AUTH.request(kind, { silent: true });
   }
   let warned = false;
   function tick() {
     if (!window.VHM_AUTH || !VHM_AUTH.canSilent() || !inHours() || failedRecently()) return;
     const left = (VHM_AUTH.exp || 0) - Date.now();
-    if (VHM_AUTH.token && left > LEAD_MS) { warned = false; return; }
+    const drive=VHM_AUTH.driveInfo?.(),driveDue=drive?.separate&&drive.expiresAt>0&&drive.expiresAt-Date.now()<=LEAD_MS;
+    if (VHM_AUTH.token && left > LEAD_MS&&!driveDue) { warned = false; return; }
+    const kind=left>LEAD_MS&&driveDue?'drive':'base';
     const why = busyReason();
-    if (!why) { refreshNow(); return; }
+    if (!why) { refreshNow(kind); return; }
     if (!warned) { warned = true; toast(`구글 연결 시간이 곧 끝납니다. 하던 작업(${why})을 마치면 자동으로 다시 연결합니다.`, 6000); }
   }
   // 처음 열 때: 연결이 없고 업무시간이면 바로 조용히 연결 시도. 시도했으면 true

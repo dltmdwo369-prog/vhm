@@ -32,7 +32,7 @@ rep('<section id="tab-cal">', '<section id="tab-cal">\n  <div id="connectBox" cl
 rep('    <button role="tab" data-tab="arch" aria-selected="false">자료 보관함</button>\n', '')
 
 # 설정 탭
-rep('    <div class="infobox" id="setStatus"></div>', '    <div class="infobox" id="setStatus"></div>\n    <div class="row" style="margin-top:8px"><button id="btnSignOut">이 기기에서 연결 해제</button><span class="hint">구글 캘린더의 일정은 그대로 남습니다. 다시 쓰려면 ‘구글 계정으로 연결’을 누르세요.</span></div>\n    <h3 style="margin:18px 0 8px">연결 유지</h3>\n    <div class="infobox" id="keepSet"></div>')
+rep('    <div class="infobox" id="setStatus"></div>', '    <div class="infobox" id="setStatus"></div>\n    <div class="row" style="margin-top:8px"><button id="btnSignOut">이 기기에서 연결 해제</button><span class="hint">구글 캘린더의 일정은 그대로 남습니다. 다시 쓰려면 ‘구글 계정으로 연결’을 누르세요.</span></div>\n    <h3 style="margin:18px 0 8px">Drive 저장 계정</h3>\n    <div id="driveAccountSettings"></div>\n    <h3 style="margin:18px 0 8px">연결 유지</h3>\n    <div class="infobox" id="keepSet"></div>')
 rep('    <h3 style="margin:18px 0 8px">일정 기본값</h3>', '    <h3 style="margin:18px 0 8px">일정 기본값 <span class="hint" style="font-weight:400">(이 설정은 기기마다 따로 저장됩니다)</span></h3>')
 rep('실수로 지운 경우를 대비해 드라이브 ‘방문건강관리 백업’ 폴더에 JSON 파일로 남깁니다.', '실수로 지운 경우를 대비해 이 기기에 JSON 파일로 내려받아 둘 수 있습니다.')
 rep('    <label class="opt"><input type="checkbox" id="setDaily">', '    <label class="opt" hidden><input type="checkbox" id="setDaily">')
@@ -66,6 +66,8 @@ rep("  try { const r = await fn(); return r; }\n  catch (e) { syncState('err', '
 old_start = s[s.index('(async function start() {'):s.index('</script>\n</body>')]
 s = s.replace(old_start, """async function boot() {
   const b = await run('구글 캘린더 연결 중…', () => call('getBootstrap'));
+  await VHM_AUTH.verifyDrive(b.email);
+  if(window.DRIVE_ACCOUNT)DRIVE_ACCOUNT.render();
   $('#connectBox').hidden = true;
   S.settings = b.settings; renderSettings(b); render(); await loadEvents();
 }
@@ -94,7 +96,8 @@ s = s.replace(old_start, """async function boot() {
   if (!VHM_AUTH.valid()) { showConnect('처음 한 번, 그리고 1시간쯤 지나면 다시 연결이 필요합니다. 버튼을 누르면 구글 로그인 페이지로 이동했다가 돌아옵니다.'); syncState('err', '구글 캘린더 연결 필요'); return; }
   try {
     await boot();
-    if (rr && rr.drive) { let to = 'link'; try { to = sessionStorage.getItem('vhm-after-drive') || 'link'; sessionStorage.removeItem('vhm-after-drive'); } catch (e) {} showTab(to); if (rr.driveError) toast(rr.driveError, 6000); }
+    if (rr && rr.drive && !rr.silent) { let to = 'link'; try { to = sessionStorage.getItem('vhm-after-drive') || 'link'; sessionStorage.removeItem('vhm-after-drive'); } catch (e) {} showTab(to); if (rr.driveError) toast(rr.driveError, 6000); }
+    if (rr && rr.drive && rr.silent && rr.driveError) toast(rr.driveError,6000);
     if (rr && rr.silentFailed) toast('자동으로 다시 연결하지 못했습니다. 지금 연결은 곧 끝납니다. 끝나면 ‘구글 계정으로 연결’을 눌러 주세요.', 9000);
   } catch (e) {}
 })();
@@ -281,6 +284,7 @@ rep("  if (name === 'link' && window.LINKS)", "  if ((name === 'feedback' || nam
 s = s.replace('</body>', '<script>\n' + open(H + 'src/feedback-images.js', encoding='utf-8').read() + '\n</script>\n<script>\n' + open(H + 'src/feedback.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 notes = open(H + 'src/drugs.js', encoding='utf-8').read() + '\n' + open(H + 'src/supps.js', encoding='utf-8').read() + '\n' + open(H + 'src/notes.js', encoding='utf-8').read()
 s = s.replace('</script>\n</body>', '</script>\n<script>\n' + links + '\n</script>\n<script>\n' + notes + '\n</script>\n<script>\n' + open(H + 'src/archive.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
+s = s.replace('</body>', '<script>\n' + open(H + 'src/drive-account.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 s = s.replace('</body>', '<script>\n' + open(H + 'src/features.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 s = s.replace('</body>', '<script>\n' + open(H + 'src/memo-images.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)
 s = s.replace('</body>', '<script>\n' + open(H + 'src/consultations.js', encoding='utf-8').read() + '\n</script>\n</body>', 1)

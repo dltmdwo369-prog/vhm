@@ -23,8 +23,9 @@
   const signedIn = () => !!(window.VHM_AUTH && VHM_AUTH.valid());
   const driveOk = () => !!(window.SERVER && SERVER.hasDrive && SERVER.hasDrive());
   function authed() {
+    if(VHM_AUTH.migrationBusy)throw new Error('Drive 자료 복사 중입니다. 복사가 끝난 뒤 보관함을 사용하세요.');
     if (!signedIn()) { const e = new Error('구글 연결 시간이 지났습니다. 위의 ‘구글 계정으로 연결’을 눌러 주세요.'); e.authNeeded = true; throw e; }
-    return { Authorization: 'Bearer ' + VHM_AUTH.token };
+    return { Authorization: 'Bearer ' + VHM_AUTH.driveToken() };
   }
   async function api(path, opt) {
     opt = opt || {}; opt.headers = Object.assign({}, authed(), opt.headers || {});

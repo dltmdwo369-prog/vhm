@@ -851,6 +851,8 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
     <button type="button" id="featuresConnect">구글 계정으로 연결</button>
     <div class="infobox" id="setStatus"></div>
     <div class="row" style="margin-top:8px"><button id="btnSignOut">이 기기에서 연결 해제</button><span class="hint">구글 캘린더의 일정은 그대로 남습니다. 다시 쓰려면 ‘구글 계정으로 연결’을 누르세요.</span></div>
+    <h3 style="margin:18px 0 8px">Drive 저장 계정</h3>
+    <div id="driveAccountSettings"></div>
     <h3 style="margin:18px 0 8px">연결 유지</h3>
     <div class="infobox" id="keepSet"></div>
     <h3 style="margin:18px 0 8px">일정 기본값 <span class="hint" style="font-weight:400">(이 설정은 기기마다 따로 저장됩니다)</span></h3>
@@ -1012,24 +1014,61 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
   const AUTH_URL = 'https:' + '//accounts.google.com/o/oauth2/v2/auth';
   const REVOKE_URL = 'https:' + '//oauth2.googleapis.com/revoke';
   const REDIRECT = location.origin + location.pathname.replace(/index\.html$/, '');
+  const DRIVE_TOKEN_KEY='vhm-drive-token-v1', SOURCE_TOKEN_KEY='vhm-drive-source-v1', DRIVE_MODE_KEY='vhm-drive-separate-v1';
+  const driveTargetKey=()=> 'vhm-drive-target-v1:'+encodeURIComponent(localStorage.getItem('vhm-email')||'');
+  const driveTarget=()=>{try{return localStorage.getItem(driveTargetKey())||'';}catch(_){return '';}};
+  let driveSession=null,sourceSession=null,separateDrive=false;
+  try{separateDrive=sessionStorage.getItem(DRIVE_MODE_KEY)==='1';driveSession=JSON.parse(sessionStorage.getItem(DRIVE_TOKEN_KEY)||'null');sourceSession=JSON.parse(sessionStorage.getItem(SOURCE_TOKEN_KEY)||'null');}catch(_){separateDrive=true;}
+  try{if(localStorage.getItem(DRIVE_MODE_KEY)==='1')separateDrive=true;}catch(_){}
+  const activeSession=d=>!!(d?.token&&d.verified&&d.exp>Date.now()+60000);
   const Auth = {
-    token: null, exp: 0, hasDrive: false, redirectResult: null, redirectUri: REDIRECT,
+    token: null, exp: 0, _legacyDrive:false, migrationBusy:false,
+    get hasDrive(){return this.valid()&&(separateDrive?activeSession(driveSession)&&driveSession.owner===(localStorage.getItem('vhm-email')||'')&&driveSession.email===driveTarget():this._legacyDrive);},
+    set hasDrive(value){this._legacyDrive=!!value;},
+    driveToken(source=false){
+      if(!this.valid())throw new AuthNeeded();
+      if(source){if(activeSession(sourceSession)&&sourceSession.owner===(localStorage.getItem('vhm-email')||''))return sourceSession.token;if(this._legacyDrive)return this.token;throw new Error('기존 Drive 읽기 연결이 필요합니다.');}
+      if(separateDrive){if(!activeSession(driveSession)||driveSession.owner!==(localStorage.getItem('vhm-email')||'')||driveSession.email!==driveTarget())throw new Error('별도 Drive 연결이 만료되었습니다. 설정에서 다시 연결하세요.');return driveSession.token;}
+      if(!this._legacyDrive)throw new Error('Drive 연결이 필요합니다.');return this.token;
+    },
+    driveInfo(){return {separate:separateDrive,target:driveTarget(),email:activeSession(driveSession)?driveSession.email:'',owner:driveSession?.owner||'',ready:this.hasDrive,sourceReady:this.valid()&&(activeSession(sourceSession)||this._legacyDrive),busy:this.migrationBusy,expiresAt:driveSession?.verified?driveSession.exp:0};},
+    async verifyDrive(owner){
+      for(const [which,key]of [['target',DRIVE_TOKEN_KEY],['source',SOURCE_TOKEN_KEY]]){
+        let d=which==='target'?driveSession:sourceSession;if(!d)continue;
+        if(d.exp<=Date.now()+60000||!this.valid()||(d.owner&&d.owner!==owner)){if(which==='target')driveSession=null;else sourceSession=null;sessionStorage.removeItem(key);continue;}
+        try{const r=await fetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress),storageQuota',{headers:{Authorization:'Bearer '+d.token}});if(!r.ok)throw new Error('Drive 계정을 확인하지 못했습니다. 다시 연결하세요.');const about=await r.json(),email=String(about.user?.emailAddress||'').trim().toLowerCase(),expected=which==='target'?driveTarget():owner.toLowerCase();if(email!==expected)throw new Error('Drive 계정이 '+expected+'와 다릅니다. 해당 계정으로 다시 연결하세요.');d={...d,email,owner,verified:true};if(which==='target'){driveSession=d;if(window.SERVER)SERVER.resetDriveCache();}else sourceSession=d;sessionStorage.setItem(key,JSON.stringify(d));}catch(e){if(which==='target')driveSession=null;else sourceSession=null;sessionStorage.removeItem(key);this.redirectResult=this.redirectResult||{drive:true};this.redirectResult.driveError=e.message;}
+      }
+    },
+    setDriveTarget(email){
+      if(!this.valid()||!localStorage.getItem('vhm-email'))throw new Error('먼저 캘린더 계정에 연결하세요.');
+      if(this.migrationBusy)throw new Error('복사 중에는 계정을 변경할 수 없습니다.');
+      email=String(email||'').trim().toLowerCase();if(email.length>254||!/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(email))throw new Error('저장용 Google 계정 이메일을 정확히 입력하세요.');
+      const previous=driveTarget();localStorage.setItem(driveTargetKey(),email);
+      if(previous!==email){driveSession=null;sessionStorage.removeItem(DRIVE_TOKEN_KEY);separateDrive=true;sessionStorage.setItem(DRIVE_MODE_KEY,'1');localStorage.setItem(DRIVE_MODE_KEY,'1');if(window.SERVER)SERVER.resetDriveCache();}
+    },
+    disconnectDrive(){driveSession=null;sourceSession=null;separateDrive=true;try{sessionStorage.removeItem(DRIVE_TOKEN_KEY);sessionStorage.removeItem(SOURCE_TOKEN_KEY);sessionStorage.setItem(DRIVE_MODE_KEY,'1');localStorage.setItem(DRIVE_MODE_KEY,'1');}catch(_){}if(window.SERVER)SERVER.resetDriveCache();window.dispatchEvent(new Event('vhm-drive-changed'));},
+    redirectResult: null, redirectUri: REDIRECT,
     load() { try { const t = JSON.parse(sessionStorage.getItem(TOKEN_KEY) || 'null'); if (t && t.exp > Date.now() + 60e3) { this.token = t.token; this.exp = t.exp; this.hasDrive = !!t.drive; } } catch (e) {} },
     valid() { return !!this.token && Date.now() < this.exp - 60e3; },
     /** kind: 'base'(캘린더) | 'drive'(드라이브 추가). 구글 로그인 페이지로 이동합니다. */
     /** 연결 유지용: 구글 화면을 띄우지 않고(prompt=none) 조용히 다시 받음. 구글 로그인이 살아 있어야 함 */
     canSilent() { try { return !!CFG.clientId && !!localStorage.getItem('vhm-consented') && !!localStorage.getItem('vhm-email'); } catch (e) { return false; } },
     request(kind, opt) {
+      if(this.migrationBusy)return Promise.reject(new Error('자료 복사가 끝난 뒤 다시 연결하세요.'));
       if (!CFG.clientId) return Promise.reject(new Error('config.js 에 클라이언트 ID가 없습니다.'));
       const silent = !!(opt && opt.silent);
-      const drive = kind === 'drive';
+      const drive = kind === 'drive'||kind==='drive-source', source=kind==='drive-source';
+      if(drive&&!source&&!driveTarget()){if(window.DRIVE_ACCOUNT)DRIVE_ACCOUNT.configure();return Promise.reject(new Error('설정에서 저장용 Google 계정 이메일을 입력하고 연결하세요.'));}
+      if(drive&&!this.valid())return Promise.reject(new Error('캘린더 계정에 먼저 연결하세요.'));
+      if(drive&&this.migrationBusy)return Promise.reject(new Error('자료 복사 중에는 계정을 변경할 수 없습니다.'));
+      if(drive&&window.SERVER)SERVER.lockStash();
       const st = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
       let consented = false, hint = '';
-      try { consented = !!localStorage.getItem(drive ? 'vhm-consented-drive' : 'vhm-consented'); hint = localStorage.getItem('vhm-email') || '';
-        sessionStorage.setItem(STATE_KEY, JSON.stringify({ st, drive, silent, at: Date.now() })); } catch (e) {}
-      const identityScopes = CFG.feedback && CFG.feedback.apiKey ? ' openid email profile' : '';
-      const q = new URLSearchParams({ client_id: CFG.clientId, redirect_uri: REDIRECT, response_type: 'token', scope: (drive ? DRIVE_SCOPE : CAL_SCOPE) + identityScopes, include_granted_scopes: 'true', state: st });
-      if (silent) q.set('prompt', 'none'); else if (!consented) q.set('prompt', 'consent');
+      try { consented = !!localStorage.getItem(drive ? 'vhm-consented-drive' : 'vhm-consented'); hint = drive&&!source?driveTarget():localStorage.getItem('vhm-email') || '';
+        sessionStorage.setItem(STATE_KEY, JSON.stringify({ st, drive, source, owner:localStorage.getItem('vhm-email')||'', silent, at: Date.now() })); } catch (e) {}
+      const identityScopes = !drive && CFG.feedback && CFG.feedback.apiKey ? ' openid email profile' : '';
+      const q = new URLSearchParams({ client_id: CFG.clientId, redirect_uri: REDIRECT, response_type: 'token', scope: (drive ? DRIVE_SCOPE : CAL_SCOPE) + identityScopes, include_granted_scopes: drive?'false':'true', state: st });
+      if (silent) q.set('prompt', 'none'); else if (drive) q.set('prompt','select_account consent'); else if (!consented) q.set('prompt', 'consent');
       if (hint) q.set('login_hint', hint);
       location.assign(AUTH_URL + '?' + q.toString());
       return new Promise(() => {});   // 페이지가 이동하므로 끝나지 않음
@@ -1041,19 +1080,31 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
       try { saved = JSON.parse(sessionStorage.getItem(STATE_KEY) || 'null'); sessionStorage.removeItem(STATE_KEY); } catch (e) {}
       try { history.replaceState(null, '', REDIRECT + location.search); } catch (e) {}
       const res = { drive: !!(saved && saved.drive), silent: !!(saved && saved.silent), error: '', driveError: '' };
-      if (!saved || p.get('state') !== saved.st) { res.error = '로그인 응답을 확인하지 못했습니다. 다시 연결해 주세요.'; return res; }
+      if (!saved || p.get('state') !== saved.st || Date.now()-saved.at>600000) { res.error = '로그인 응답을 확인하지 못했습니다. 다시 연결해 주세요.'; return res; }
+      if(res.drive){
+        if(p.get('error')){if(saved.silent&&!saved.source){driveSession=null;sessionStorage.removeItem(DRIVE_TOKEN_KEY);}res.driveError='Drive 연결이 취소되었거나 승인되지 않았습니다. 캘린더 연결은 유지됩니다.';return res;}
+        const scopes=String(p.get('scope')||'').split(/[ +]/),token=p.get('access_token'),duration=Number(p.get('expires_in'));
+        if(!token||!scopes.includes(DRIVE_SCOPE)||!Number.isFinite(duration)||duration<=0){res.driveError='Drive 권한을 확인하지 못했습니다. 캘린더 연결은 유지됩니다.';return res;}
+        const d={token,exp:Date.now()+Math.min(duration,86400)*1000,owner:saved.owner||'',verified:false};
+        if(saved.source){sourceSession=d;sessionStorage.setItem(SOURCE_TOKEN_KEY,JSON.stringify(d));}else{driveSession=d;separateDrive=true;sessionStorage.setItem(DRIVE_MODE_KEY,'1');localStorage.setItem(DRIVE_MODE_KEY,'1');sessionStorage.setItem(DRIVE_TOKEN_KEY,JSON.stringify(d));}
+        return res;
+      }
       if (p.get('error') && res.silent) { res.silentFailed = true; res.error = '자동으로 다시 연결하지 못했습니다. 이 브라우저의 구글 로그인이 풀렸을 수 있습니다. ‘구글 계정으로 연결’ 버튼을 눌러 주세요.'; return res; }
       if (p.get('error')) { res.error = p.get('error') === 'access_denied' ? '구글 로그인이 취소되었거나, 이 계정이 테스트 사용자로 등록되어 있지 않습니다.' : '구글 로그인 오류: ' + p.get('error'); return res; }
       const scopes = String(p.get('scope') || '').split(/[ +]/);
       if (scopes.indexOf(CAL_SCOPE) < 0) { res.error = '캘린더 권한이 허용되지 않았습니다. 다시 연결하고 캘린더 체크박스를 켜 주세요.'; return res; }
+      if(driveSession){driveSession.verified=false;sessionStorage.setItem(DRIVE_TOKEN_KEY,JSON.stringify(driveSession));}if(sourceSession){sourceSession.verified=false;sessionStorage.setItem(SOURCE_TOKEN_KEY,JSON.stringify(sourceSession));}
       this.token = p.get('access_token'); this.exp = Date.now() + (Number(p.get('expires_in')) || 3600) * 1000;
       this.hasDrive = scopes.indexOf(DRIVE_SCOPE) >= 0;
-      try { sessionStorage.setItem(TOKEN_KEY, JSON.stringify({ token: this.token, exp: this.exp, drive: this.hasDrive }));
+      try { sessionStorage.setItem(TOKEN_KEY, JSON.stringify({ token: this.token, exp: this.exp, drive: this._legacyDrive }));
         localStorage.setItem('vhm-consented', '1'); if (this.hasDrive) localStorage.setItem('vhm-consented-drive', '1'); } catch (e) {}
       if (res.drive && !this.hasDrive) res.driveError = '드라이브 권한이 허용되지 않았습니다. 다시 누르고 드라이브 체크박스를 켜 주세요.';
       return res;
     },
     signOut() {
+      if(this.migrationBusy){toast('자료 복사가 끝난 뒤 연결을 해제하세요.');return false;}
+      const driveTokens=[driveSession?.token,sourceSession?.token];driveSession=null;sourceSession=null;
+      try{sessionStorage.removeItem(DRIVE_TOKEN_KEY);sessionStorage.removeItem(SOURCE_TOKEN_KEY);}catch(_){}
       if (window.CONSULTATIONS) CONSULTATIONS.lock();
       if (window.MEMO_IMAGES) MEMO_IMAGES.reset();
       if (window.NOTES) NOTES.resetSession();
@@ -1062,6 +1113,8 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
       if (window.FEEDBACK) FEEDBACK.signOut();
       if (window.FEATURES) FEATURES.setAccount('');
       try { sessionStorage.removeItem(TOKEN_KEY); ['vhm-consented', 'vhm-consented-drive', 'vhm-cal-ids', 'vhm-email'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
+      window.dispatchEvent(new Event('vhm-drive-changed'));
+      for(const token of driveTokens)if(token&&token!==t)try{fetch(REVOKE_URL+'?token='+encodeURIComponent(token),{method:'POST',mode:'no-cors'}).catch(()=>{});}catch(_){}
       if (t) try { fetch(REVOKE_URL + '?token=' + encodeURIComponent(t), { method: 'POST', mode: 'no-cors' }).catch(() => {}); } catch (e) {}
     }
   };
@@ -1070,17 +1123,25 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
   window.VHM_AUTH = Auth;
 
   /* ---------- REST 호출 ---------- */
-  async function api(method, path, { body, query, ifMatch, raw, rawBody, contentType } = {}) {
+  async function api(method, path, { body, query, ifMatch, raw, rawBody, contentType, resolved=false, source=false } = {}) {
     if (!Auth.valid()) throw new AuthNeeded();
     let url = /^https:/.test(path) ? path : API + path;
     if (query) url += '?' + new URLSearchParams(query).toString();
-    const headers = { Authorization: 'Bearer ' + Auth.token };
+    const isDrive=/^https:\/\/www\.googleapis\.com\/(?:upload\/)?drive\/v3(?:\/|$)/.test(url);
+    if(source&&(!isDrive||method!=='GET'))throw new Error('기존 Drive는 읽기만 허용됩니다.');
+    if(isDrive&&Auth.migrationBusy&&method!=='GET')throw new Error('Drive 자료 복사 중입니다. 잠시 후 다시 시도하세요.');
+    const credential=isDrive?Auth.driveToken(source):Auth.token;
+    const headers = { Authorization: 'Bearer ' + credential };
     if (body) headers['Content-Type'] = 'application/json';
     if (rawBody != null && contentType) headers['Content-Type'] = contentType;
     if (ifMatch) headers['If-Match'] = ifMatch;
     let res;
     try { res = await fetch(url, { method, headers, body: rawBody != null ? rawBody : (body ? JSON.stringify(body) : undefined) }); }
     catch (e) { throw new Error('인터넷 연결이 끊겼거나 구글 서버에 닿지 않습니다.'); }
+    if(res.status===404&&isDrive&&!source&&!resolved&&separateDrive){
+      const match=/\/files\/([\w-]+)$/.exec(path);if(match){const aliases=await api('GET','https://www.googleapis.com/drive/v3/files',{query:{q:"trashed = false and appProperties has { key='vhmSourceFileId' and value='"+match[1]+"' }",fields:'files(id)',pageSize:2}});if((aliases.files||[]).length>1)throw new Error('이전 파일의 복사본이 여러 개입니다. 자동 선택하지 않았습니다.');if(aliases.files?.length===1)return api(method,path.replace(/[^/]+$/,aliases.files[0].id),{body,query,ifMatch,raw,rawBody,contentType,resolved:true});if(method==='GET'&&query?.alt==='media'&&Auth.driveInfo().sourceReady)return api(method,path,{query,raw,source:true});}
+    }
+    if(res.status===401&&isDrive){if(source){sourceSession=null;sessionStorage.removeItem(SOURCE_TOKEN_KEY);}else if(separateDrive){driveSession=null;sessionStorage.removeItem(DRIVE_TOKEN_KEY);}else Auth._legacyDrive=false;throw new Error('Drive 연결이 만료되었습니다. 캘린더는 유지되며 Drive만 다시 연결하세요.');}
     if (res.status === 401) { Auth.token = null; try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) {} throw new AuthNeeded('연결 시간이 지났습니다. 다시 연결해 주세요.'); }
     if (res.status === 204) return null;
     if (raw && res.ok) return res;
@@ -2039,6 +2100,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
     consultationScope, sealConsultation, openConsultation, copyConsultation, listConsultations, fetchConsultation, deleteConsultation, listConsultationDeletions,
     sealPhisJob, openPhisJob,
     hasDrive: () => Auth.hasDrive,
+    resetDriveCache(){LINK=null;NOTE_ID=null;},
     _resetCache() { CAL = null; LINK = null; NOTE_ID = null; Lock.meta = undefined; lockNow(); }
   };
 })();
@@ -2184,6 +2246,7 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
   function failedRecently() { try { return Date.now() - (+sessionStorage.getItem(FAIL) || 0) < 30 * 60e3; } catch (e) { return false; } }
   // 다시 연결하면 페이지를 새로 읽으므로, 저장 안 된 작성 내용이 있으면 미룸
   function busyReason() {
+    if(window.VHM_AUTH?.migrationBusy)return 'Drive 자료 복사';
     if (document.querySelector('dialog[open]')) return '열려 있는 창';
     const N = window.NOTES && NOTES._state;
     const has = x => x != null && (typeof x === 'object' ? ('name' in x ? String(x.name || '').trim() !== '' : Object.keys(x).length > 0) : String(x).trim() !== '');
@@ -2196,20 +2259,22 @@ dialog::backdrop { background: rgba(17, 36, 27, .55); backdrop-filter: blur(3px)
     return '';
   }
   function curTab() { const b = document.querySelector('.tabs button[aria-selected="true"]'); return b ? b.dataset.tab : 'cal'; }
-  function refreshNow() {
+  function refreshNow(kind='base') {
     try {
       sessionStorage.setItem(RESUME, JSON.stringify({ tab: curTab(), selected: S.selected, cursor: S.cursor && S.cursor.toISOString(), y: window.scrollY, at: Date.now() }));
     } catch (e) {}
     if (window.SERVER && SERVER.lockStash) SERVER.lockStash();
-    VHM_AUTH.request('base', { silent: true });
+    VHM_AUTH.request(kind, { silent: true });
   }
   let warned = false;
   function tick() {
     if (!window.VHM_AUTH || !VHM_AUTH.canSilent() || !inHours() || failedRecently()) return;
     const left = (VHM_AUTH.exp || 0) - Date.now();
-    if (VHM_AUTH.token && left > LEAD_MS) { warned = false; return; }
+    const drive=VHM_AUTH.driveInfo?.(),driveDue=drive?.separate&&drive.expiresAt>0&&drive.expiresAt-Date.now()<=LEAD_MS;
+    if (VHM_AUTH.token && left > LEAD_MS&&!driveDue) { warned = false; return; }
+    const kind=left>LEAD_MS&&driveDue?'drive':'base';
     const why = busyReason();
-    if (!why) { refreshNow(); return; }
+    if (!why) { refreshNow(kind); return; }
     if (!warned) { warned = true; toast(`구글 연결 시간이 곧 끝납니다. 하던 작업(${why})을 마치면 자동으로 다시 연결합니다.`, 6000); }
   }
   // 처음 열 때: 연결이 없고 업무시간이면 바로 조용히 연결 시도. 시도했으면 true
@@ -3141,6 +3206,8 @@ function bind() {
 
 async function boot() {
   const b = await run('구글 캘린더 연결 중…', () => call('getBootstrap'));
+  await VHM_AUTH.verifyDrive(b.email);
+  if(window.DRIVE_ACCOUNT)DRIVE_ACCOUNT.render();
   $('#connectBox').hidden = true;
   S.settings = b.settings; renderSettings(b); render(); if (window.FEATURES) FEATURES.setAccount(b.email); await loadEvents();
   if (window.MEMOLOCK) await MEMOLOCK.refresh();
@@ -3171,7 +3238,8 @@ async function boot() {
   if (!VHM_AUTH.valid()) { showConnect('처음 한 번, 그리고 1시간쯤 지나면 다시 연결이 필요합니다. 버튼을 누르면 구글 로그인 페이지로 이동했다가 돌아옵니다.'); syncState('err', '구글 캘린더 연결 필요'); return; }
   try {
     await boot();
-    if (rr && rr.drive) { let to = 'link'; try { to = sessionStorage.getItem('vhm-after-drive') || 'link'; sessionStorage.removeItem('vhm-after-drive'); } catch (e) {} showTab(to); if (rr.driveError) toast(rr.driveError, 6000); }
+    if (rr && rr.drive && !rr.silent) { let to = 'link'; try { to = sessionStorage.getItem('vhm-after-drive') || 'link'; sessionStorage.removeItem('vhm-after-drive'); } catch (e) {} showTab(to); if (rr.driveError) toast(rr.driveError, 6000); }
+    if (rr && rr.drive && rr.silent && rr.driveError) toast(rr.driveError,6000);
     if (rr && rr.silentFailed) toast('자동으로 다시 연결하지 못했습니다. 지금 연결은 곧 끝납니다. 끝나면 ‘구글 계정으로 연결’을 눌러 주세요.', 9000);
   } catch (e) {}
 })();
@@ -5131,8 +5199,9 @@ window.VHM_SUPPS = [
   const signedIn = () => !!(window.VHM_AUTH && VHM_AUTH.valid());
   const driveOk = () => !!(window.SERVER && SERVER.hasDrive && SERVER.hasDrive());
   function authed() {
+    if(VHM_AUTH.migrationBusy)throw new Error('Drive 자료 복사 중입니다. 복사가 끝난 뒤 보관함을 사용하세요.');
     if (!signedIn()) { const e = new Error('구글 연결 시간이 지났습니다. 위의 ‘구글 계정으로 연결’을 눌러 주세요.'); e.authNeeded = true; throw e; }
-    return { Authorization: 'Bearer ' + VHM_AUTH.token };
+    return { Authorization: 'Bearer ' + VHM_AUTH.driveToken() };
   }
   async function api(path, opt) {
     opt = opt || {}; opt.headers = Object.assign({}, authed(), opt.headers || {});
@@ -5331,6 +5400,61 @@ window.VHM_SUPPS = [
   window.addEventListener('beforeunload', e => { if (A.busy) { e.preventDefault(); e.returnValue = ''; } });
   function reset() { A.folderId = null; A.files = []; if (A.built) { const l = el('arList'); if (l) l.innerHTML = ''; } }
   window.ARCHIVE = { open, reset, busy: () => A.busy > 0, _state: A };
+})();
+
+</script>
+<script>
+/* Separate Drive account and explicit copy-only migration. No account secrets or automatic transfer. */
+(function(){
+ 'use strict';
+ const API='https://www.googleapis.com/drive/v3',UPLOAD='https://www.googleapis.com/upload/drive/v3/files';
+ const FOLDERS=['방문건강관리 연계자료','방문건강관리 임시보관함'],MAX=20*1048576;
+ let plan=null,working=false,notice='',generation=0;
+ const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const qe=s=>String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+ function credentials(){const a=VHM_AUTH,info=a.driveInfo();if(info.email&&info.email===info.owner)throw new Error('기존 Drive와 저장용 Drive가 같은 계정입니다. 계정 간 복사는 필요하지 않습니다.');if(!a.valid()||!info.separate||!info.ready||!info.email||!info.sourceReady)throw new Error('기존 Drive 읽기 연결과 새 저장용 Drive 연결을 먼저 완료하세요.');return {target:a.driveToken(),source:a.driveToken(true),email:info.email,owner:info.owner};}
+ function current(c){try{const a=VHM_AUTH;return a.valid()&&a.driveToken()===c.target&&a.driveToken(true)===c.source&&a.driveInfo().owner===c.owner;}catch(_){return false;}}
+ async function req(c,source,path,opt={}){if(!current(c))throw new Error('계정 연결이 변경되거나 만료되어 복사를 중단했습니다.');if(source&&(opt.method||'GET')!=='GET')throw new Error('기존 Drive는 변경하지 않습니다.');const r=await fetch(path.startsWith('https://')?path:API+path,{...opt,headers:{...opt.headers,Authorization:'Bearer '+(source?c.source:c.target)}});if(!r.ok){const e=new Error('Drive 자료 확인/복사에 실패했습니다. 원본은 유지됩니다.');e.status=r.status;throw e;}return r;}
+ async function list(c,source,q){let token='',all=[];do{const u=new URLSearchParams({q,fields:'nextPageToken,files(id,name,mimeType,size,modifiedTime,appProperties)',pageSize:'100',...(token?{pageToken:token}:{})});const r=await (await req(c,source,'/files?'+u)).json();all.push(...(r.files||[]));token=r.nextPageToken;if(all.length>2000)throw new Error('복사 대상이 2,000개를 초과합니다. 일부 자료만 자동 이전하지 않았습니다.');}while(token);return all;}
+ async function folder(c,source,name,create=false){const found=await list(c,source,"name = '"+qe(name)+"' and mimeType = 'application/vnd.google-apps.folder' and trashed = false");if(found.length>1)throw new Error('같은 이름의 앱 폴더가 여러 개입니다. 자동 선택하지 않았습니다.');if(found.length)return found[0].id;if(!create)return '';return (await (await req(c,false,'/files?fields=id',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,mimeType:'application/vnd.google-apps.folder'})})).json()).id;}
+ async function preview(){const c=credentials(),items=[],dest=[];for(const name of FOLDERS){const source=await folder(c,true,name),target=await folder(c,false,name);if(source)for(const f of await list(c,true,"'"+qe(source)+"' in parents and trashed = false"))items.push({...f,folder:name});if(target)for(const f of await list(c,false,"'"+qe(target)+"' in parents and trashed = false"))dest.push({...f,folder:name});}
+  const deleted=new Set([...items,...dest].map(f=>/^vhm-consult-deleted-[a-f0-9]{64}-([a-f0-9-]{36})\.json$/.exec(f.name)?.[1]).filter(Boolean));
+  for(const f of items){const id=/^vhm-consult-([a-f0-9-]{36})\.vhm$/.exec(f.name)?.[1];f.skip=(f.mimeType||'').startsWith('application/vnd.google-apps.')?'Google 문서/하위 폴더(개별 이전 필요)':Number(f.size)>MAX?'20MB 초과(개별 이전 필요)':id&&deleted.has(id)?'삭제 표식이 있는 기록':f.folder===FOLDERS[1]&&Number(f.appProperties?.vhm_exp||0)>0&&Number(f.appProperties.vhm_exp)<=Date.now()?'보관 기한 만료':'';}
+  plan={c,items,dest,at:Date.now()};notice='복사할 자료를 검토한 뒤 확인란과 복사 버튼을 사용하세요. 기존 파일은 삭제하지 않습니다.';render();return plan;
+ }
+ async function digest(bytes){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),v=>v.toString(16).padStart(2,'0')).join('');}
+ async function media(c,source,id){const r=await req(c,source,'/files/'+encodeURIComponent(id)+'?alt=media');if(Number(r.headers.get('content-length'))>MAX)throw new Error('20MB보다 큰 파일은 개별 이전하세요.');const b=await r.arrayBuffer();if(b.byteLength>MAX)throw new Error('20MB보다 큰 파일은 개별 이전하세요.');return b;}
+ function rewrite(value,map){if(Array.isArray(value))return value.map(v=>rewrite(v,map));if(value&&typeof value==='object'){const out=Object.create(null);for(const [k,v]of Object.entries(value)){out[k]=k==='fileId'&&typeof v==='string'&&map.has(v)?map.get(v):k==='link'&&typeof v==='string'?v.replace(/(https:\/\/drive\.google\.com\/file\/d\/)([\w-]+)/,(all,p,id)=>p+(map.get(id)||id)):rewrite(v,map);}return out;}return value;}
+ async function copyOne(c,f,folderId,bytes){const existing=await list(c,false,"'"+qe(folderId)+"' in parents and trashed = false and (name = '"+qe(f.name)+"' or appProperties has { key='vhmSourceFileId' and value='"+qe(f.id)+"' })");if(existing.length>1)throw new Error('대상에 중복 파일이 있어 덮어쓰지 않았습니다.');if(existing.length){if(await digest(await media(c,false,existing[0].id))!==await digest(bytes))throw new Error('대상에 다른 내용의 같은 이름 파일이 있어 덮어쓰지 않았습니다.');if(existing[0].appProperties?.vhmSourceFileId&&existing[0].appProperties.vhmSourceFileId!==f.id)throw new Error('다른 원본에 연결된 파일입니다.');if(!existing[0].appProperties?.vhmSourceFileId)await req(c,false,'/files/'+existing[0].id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({appProperties:{vhmSourceFileId:f.id}})});return {id:existing[0].id,existing:true};}
+  const boundary='vhmcopy'+crypto.randomUUID(),meta={name:f.name,parents:[folderId],mimeType:f.mimeType||'application/octet-stream',appProperties:{...(f.appProperties||{}),vhmSourceFileId:f.id}},body=new Blob(['--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+JSON.stringify(meta)+'\r\n--'+boundary+'\r\nContent-Type: '+meta.mimeType+'\r\n\r\n',bytes,'\r\n--'+boundary+'--']);
+  const r=await (await req(c,false,UPLOAD+'?uploadType=multipart&fields=id',{method:'POST',headers:{'Content-Type':'multipart/related; boundary='+boundary},body})).json();if(!/^[\w-]{1,150}$/.test(r.id||'')||await digest(await media(c,false,r.id))!==await digest(bytes))throw new Error('복사본의 내용 일치를 확인하지 못했습니다. 원본은 유지됩니다.');return {id:r.id,existing:false};
+ }
+ async function apply(){if(window.ARCHIVE?.busy())throw new Error('보관함 전송이 끝난 뒤 복사하세요.');if(!plan||Date.now()-plan.at>600000)throw new Error('미리보기가 만료되었습니다. 목록을 다시 확인하세요.');const captured=plan,c=credentials();if(c.target!==captured.c.target||c.source!==captured.c.source)throw new Error('미리보기 이후 계정이 변경되었습니다. 다시 확인하세요.');
+  const map=new Map(captured.dest.filter(f=>f.appProperties?.vhmSourceFileId).map(f=>[f.appProperties.vhmSourceFileId,f.id])),folders=new Map(),results=[];
+  const rank=f=>f.appProperties?.vhmType==='consultation-deleted-v1'?0:f.name==='vhm-links.json'?2:1;
+  const items=captured.items.slice().sort((a,b)=>rank(a)-rank(b));let referenceFailure=false;
+  VHM_AUTH.migrationBusy=true;render();
+  try{for(const f of items){if(f.skip){results.push({name:f.name,result:'건너뜀: '+f.skip});continue;}if(f.name==='vhm-links.json'&&referenceFailure){results.push({name:f.name,result:'첨부 복사 미완료로 목록 복사 보류'});continue;}
+    try{if(!current(c))throw new Error('연결이 변경되었습니다.');const meta=await (await req(c,true,'/files/'+encodeURIComponent(f.id)+'?fields=id,modifiedTime,trashed')).json();if(meta.trashed||!meta.modifiedTime||meta.modifiedTime!==f.modifiedTime)throw new Error('원본이 미리보기 이후 변경되었습니다. 다시 확인하세요.');let bytes=await media(c,true,f.id);const after=await (await req(c,true,'/files/'+encodeURIComponent(f.id)+'?fields=modifiedTime,trashed')).json();if(after.trashed||after.modifiedTime!==meta.modifiedTime)throw new Error('복사 중 원본이 변경되었습니다.');if(f.name==='vhm-links.json'){const data=JSON.parse(new TextDecoder().decode(bytes)),known=new Set([...map.values(),...captured.dest.map(f=>f.id)]);const refs=v=>{if(Array.isArray(v))v.forEach(refs);else if(v&&typeof v==='object')for(const [key,value]of Object.entries(v)){if(key==='fileId'&&typeof value==='string'&&!map.has(value)&&!known.has(value))throw new Error('복사하지 못한 첨부가 있어 목록 복사를 보류합니다.');refs(value);}};refs(data);bytes=new TextEncoder().encode(JSON.stringify(rewrite(data,map),null,1)).buffer;}
+      if(!folders.has(f.folder))folders.set(f.folder,await folder(c,false,f.folder,true));const copied=await copyOne(c,f,folders.get(f.folder),bytes);map.set(f.id,copied.id);results.push({name:f.name,result:copied.existing?'같은 내용 확인(중복 없음)':'복사·내용 검증 완료'});
+    }catch(_){referenceFailure=true;results.push({name:f.name,result:'확인/복사 실패·충돌(원본 유지)'});if(!current(c))break;}
+  }}finally{VHM_AUTH.migrationBusy=false;SERVER.resetDriveCache();plan=null;notice='복사 결과를 확인하세요. 실패·건너뜀은 이전 완료가 아닙니다. 원본은 기존 Drive에 유지됩니다.';render();const area=$('#driveMigrationResults');if(area)for(const r of results){const p=document.createElement('p');p.className='hint';p.textContent=r.name+' · '+r.result;area.append(p);}}
+  return results;
+ }
+ async function action(fn){if(working)return;working=true;try{await fn();}catch(e){notice=e.message||'Drive 작업에 실패했습니다.';render();}finally{working=false;}}
+ function render(){const el=$('#driveAccountSettings');if(!el||!window.VHM_AUTH)return;const expanded=!!el.querySelector('details')?.open;const info=VHM_AUTH.driveInfo();el.className='infobox';el.style.overflowWrap='anywhere';el.innerHTML=`<p>캘린더: <b id="driveCalendarEmail"></b><br>Drive: <b>${esc(info.separate?(info.email||'별도 계정 연결 필요'):'현재 캘린더와 같은 계정')}</b></p><label class="f">저장용 Google 계정 이메일<input id="driveTargetEmail" type="email" autocomplete="off" maxlength="254" value="${esc(info.target)}"${info.busy?' disabled':''}></label><p class="hint">이메일은 이 브라우저에 계정별로 저장하며 공개 소스에 넣지 않습니다. 캘린더 계정·메모 잠금 키는 유지합니다. 로그인 시 작성 중인 화면은 초기화되므로 먼저 저장하세요.</p><div class="row" style="flex-wrap:wrap;gap:8px"><button id="driveAccountConnect" type="button"${info.busy?' disabled':''}>${info.ready&&info.separate?'저장용 Drive 다시 연결':'저장용 Drive 연결'}</button><button id="driveAccountDisconnect" type="button"${info.busy?' disabled':''}>Drive만 연결 해제</button></div><details style="margin-top:10px"><summary>기존 Drive 자료를 새 계정으로 복사</summary><p class="hint">앱의 연계자료·상담 저장본·삭제 표식·첨부·임시보관함을 복사합니다. 원본 삭제·공유 권한 변경은 하지 않습니다. 파일당 20MB 초과·하위 폴더·Google 문서는 개별 이전이 필요합니다. 목록을 검토하고 직접 확인한 경우에만 전송합니다.</p><div class="row" style="flex-wrap:wrap;gap:8px"><button id="driveSourceConnect" type="button"${info.busy?' disabled':''}>기존 Drive 읽기 연결</button><button id="driveMigrationPreview" type="button"${info.busy?' disabled':''}>복사 대상 확인</button></div><div id="driveMigrationPreviewList"></div><label class="row" style="gap:8px"><input id="driveMigrationConfirm" type="checkbox" style="width:auto"${info.busy?' disabled':''}> 기존 자료를 위 새 계정에 복사하는 것을 확인했습니다.</label><button id="driveMigrationApply" type="button" disabled>확인한 자료 복사</button><div id="driveMigrationResults"></div></details><p id="driveAccountNotice" class="hint" role="status"></p>`;
+  el.querySelector('details').open=expanded;
+  let calendarEmail='';try{calendarEmail=localStorage.getItem('vhm-email')||'';}catch(_){}$('#driveCalendarEmail').textContent=calendarEmail||'캘린더 연결 후 확인';$('#driveAccountNotice').textContent=notice||VHM_AUTH.redirectResult?.driveError||'';
+  $('#driveAccountConnect').onclick=()=>{try{VHM_AUTH.setDriveTarget($('#driveTargetEmail').value);sessionStorage.setItem('vhm-after-drive','set');VHM_AUTH.request('drive').catch(e=>{notice=e.message;render();});}catch(e){notice=e.message;render();}};
+  $('#driveSourceConnect').onclick=()=>{sessionStorage.setItem('vhm-after-drive','set');VHM_AUTH.request('drive-source').catch(e=>{notice=e.message;render();});};
+  $('#driveAccountDisconnect').onclick=()=>{if(info.busy)return;if(window.ARCHIVE?.busy()){notice='보관함 전송이 끝난 뒤 연결을 해제하세요.';render();return;}VHM_AUTH.disconnectDrive();plan=null;generation++;if(window.LINKS)LINKS.reset();if(window.ARCHIVE)ARCHIVE.reset();if(window.MEMO_IMAGES)MEMO_IMAGES.reset();notice='Drive만 연결을 해제했습니다. 캘린더는 유지됩니다.';render();};
+  $('#driveMigrationPreview').onclick=()=>action(preview);$('#driveMigrationConfirm').onchange=e=>$('#driveMigrationApply').disabled=!e.target.checked||!plan||info.busy;
+  $('#driveMigrationApply').onclick=()=>{if(!$('#driveMigrationConfirm').checked)return;action(()=>navigator.locks?navigator.locks.request('vhm-drive-migration',apply):apply());};
+  if(plan){const area=$('#driveMigrationPreviewList');for(const f of plan.items){const p=document.createElement('p');p.className='hint';p.style.overflowWrap='anywhere';p.textContent=f.folder+' / '+f.name+(f.skip?' · '+f.skip:' · 복사 후보');area.append(p);}area.append(document.createTextNode(plan.items.length+'개 항목 · 확인 후 복사'));}
+  const signOut=$('#btnSignOut');if(signOut)signOut.disabled=info.busy;
+ }
+ window.addEventListener('beforeunload',e=>{if(VHM_AUTH.migrationBusy){e.preventDefault();e.returnValue='';}});
+ window.addEventListener('vhm-drive-changed',()=>{plan=null;notice='';render();});window.DRIVE_ACCOUNT=Object.freeze({render,preview,apply,configure(){if(document.querySelector('dialog[open]'))return;if(typeof showTab==='function')showTab('set');render();$('#driveTargetEmail')?.focus();}});render();
 })();
 
 </script>
