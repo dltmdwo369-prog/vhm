@@ -937,14 +937,58 @@
     if (job?.type !== 'phis-record-request') throw new Error('PHIS 요청 형식이 올바르지 않습니다.');
     return job;
   }
+  // Deletion markers contain only random IDs and a key-scope hash, never clinical content.
+  async function listConsultationDeletions() {
+    needDrive();const folder=await linkFolder(false);if(!folder)return [];
+    let token,out=[];
+    do {
+      const r=await api('GET',DRIVE+'/files',{query:{q:"'"+qEsc(folder)+"' in parents and trashed = false and appProperties has { key='vhmType' and value='consultation-deleted-v1' }",fields:'nextPageToken,files(id,name)',pageSize:100,...(token?{pageToken:token}:{})}});
+      for(const f of r.files||[]){const m=/^vhm-consult-deleted-([a-f0-9]{64})-([a-f0-9-]{36})\.json$/.exec(f.name||'');if(!m)throw new Error('Drive 삭제 기록 형식을 확인하지 못했습니다. 다시 업로드하지 않았습니다.');out.push({scope:m[1],id:m[2],markerId:f.id});}
+      token=r.nextPageToken;if(out.length>10000)throw new Error('삭제 기록이 너무 많습니다. 삭제 상태를 일부만 적용하지 않았습니다.');
+    }while(token);return out;
+  }
+  async function ensureConsultationNotDeleted(id) {
+    const owner=await consultationScope();
+    if((await listConsultationDeletions()).some(d=>d.id===id&&d.scope===owner)){const e=new Error('삭제된 상담메모입니다. 다시 업로드하지 않았습니다.');e.code='CONSULT_DELETED';throw e;}
+  }
+  async function deleteConsultation(id, encrypted, remoteId) {
+    needDrive();if(!/^[a-f0-9-]{36}$/.test(id))throw new Error('상담메모 ID가 올바르지 않습니다.');
+    const owner=await consultationScope(),folder=await linkFolder(),name='vhm-consult-'+id+'.vhm';
+    const candidates=(await listConsultations()).filter(f=>f.name===name||f.id===remoteId),verified=[];
+    for(const f of candidates){
+      const cipher=await fetchConsultation(f.id),record=await openConsultation(cipher);
+      if(record.id!==id||(encrypted&&encrypted!==cipher))throw new Error('같은 ID의 다른 자료가 있어 삭제를 중단했습니다. 원본은 유지됩니다.');
+      verified.push({id:f.id,cipher});
+    }
+    let marker=(await listConsultationDeletions()).find(d=>d.scope===owner&&d.id===id);
+    if(!marker){
+      const markerName='vhm-consult-deleted-'+owner+'-'+id+'.json';
+      const mp=multipart({name:markerName,parents:[folder],mimeType:'application/json',appProperties:{vhmType:'consultation-deleted-v1'}},new Blob(['{}']),'application/json');
+      await api('POST',UPLOAD+'/files',{query:{uploadType:'multipart',fields:'id'},rawBody:mp.body,contentType:mp.type});
+      marker=(await listConsultationDeletions()).find(d=>d.scope===owner&&d.id===id);
+      if(!marker)throw new Error('삭제 기록 저장을 확인하지 못했습니다. 메모 원본은 삭제하지 않았습니다.');
+    }
+    for(const f of verified){
+      // Immutable snapshots: refuse deletion if the file changed after initial validation.
+      const current=await api('GET',DRIVE+'/files/'+f.id,{query:{alt:'media'},raw:true}),etag=current.headers.get('etag');
+      if(await current.text()!==f.cipher)throw new Error('Drive 원본이 변경되어 삭제를 중단했습니다. 다시 확인하세요.');
+      try{await api('DELETE',DRIVE+'/files/'+f.id,{ifMatch:etag||undefined});}catch(e){if(e.status!==404)throw new Error('Drive 원본 삭제에 실패했습니다. 삭제 완료가 아닙니다. 다시 삭제하거나 동기화하세요.');}
+      let absent=false;try{await fetchConsultation(f.id);}catch(e){if(e.status===404)absent=true;else throw e;}
+      if(!absent)throw new Error('Drive에서 삭제 여부를 확인하지 못했습니다. 삭제 완료가 아닙니다.');
+    }
+    if((await listConsultations()).some(f=>f.name===name||f.id===remoteId))throw new Error('삭제 중 같은 메모의 복사본이 추가되었습니다. 삭제 완료가 아닙니다. 다시 동기화하세요.');
+    return {deleted:true,id};
+  }
   async function copyConsultation(id, encrypted) {
     needDrive();
     if (!/^[a-f0-9-]{36}$/.test(id) || typeof encrypted !== 'string' || encrypted.length > 3 * 1048576 || !encrypted.startsWith(CONSULT_PREFIX)) throw new Error('저장 메모가 올바르지 않습니다.');
+    await ensureConsultationNotDeleted(id);
     const folder = await linkFolder(), name = 'vhm-consult-' + id + '.vhm';
     const prior = await driveFind(name, null, folder);
     if (prior) {
       const res = await api('GET', DRIVE + '/files/' + prior.id, { query: { alt:'media' }, raw:true });
       if (await res.text() !== encrypted) throw new Error('같은 ID의 다른 파일이 있습니다. 기존 파일을 덮어쓰지 않았습니다.');
+      await ensureConsultationNotDeleted(id);
       return prior.id;
     }
     const mp = multipart({name, parents:[folder], mimeType:'application/octet-stream', appProperties:{vhmType:'consultation-v1'}}, new Blob([encrypted]), 'application/octet-stream');
@@ -952,6 +996,7 @@
     if (typeof uploaded.id !== 'string' || !/^[\w-]{1,150}$/.test(uploaded.id)) throw new Error('Drive 저장 결과를 확인하지 못했습니다. 기기 원본은 유지됩니다.');
     const verification = await api('GET', DRIVE + '/files/' + uploaded.id, {query:{alt:'media'},raw:true});
     if (await verification.text() !== encrypted) throw new Error('Drive 저장 내용이 기기 원본과 다릅니다. 동기화 완료로 표시하지 않았으며 기기 원본은 유지됩니다.');
+    try { await ensureConsultationNotDeleted(id); } catch(e) { if(e.code==='CONSULT_DELETED')await deleteConsultation(id,encrypted,uploaded.id);throw e; }
     return uploaded.id;
   }
   async function listConsultations() {
@@ -1008,7 +1053,7 @@
     getStats, exportBackup, restoreBackup, restoreEvents, repairCompleted,
     lockState, lockSetup, lockUnlock, lockNow, lockAll, lockStash, lockResume, bioAvailable, bioRegister, bioUnlock, bioRemove, isOpen: () => !!Lock.key,
     linksLoad, linksSave, uploadForm, downloadForm, trashForm, notesLoad, notesSave, uploadMemoImage, readMemoImage,
-    consultationScope, sealConsultation, openConsultation, copyConsultation, listConsultations, fetchConsultation,
+    consultationScope, sealConsultation, openConsultation, copyConsultation, listConsultations, fetchConsultation, deleteConsultation, listConsultationDeletions,
     sealPhisJob, openPhisJob,
     hasDrive: () => Auth.hasDrive,
     _resetCache() { CAL = null; LINK = null; NOTE_ID = null; Lock.meta = undefined; lockNow(); }

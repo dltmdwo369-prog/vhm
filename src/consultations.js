@@ -23,8 +23,8 @@
   async function listLocal(owner) {
     const connection = await db();
     return new Promise((resolve, reject) => {
-      const tx = connection.transaction('records'), req = tx.objectStore('records').getAll();
-      tx.oncomplete = () => resolve(req.result.filter(r => r.scope === owner).sort((a,b) => a.slot-b.slot));
+      const tx = connection.transaction(['records','counters']), req = tx.objectStore('records').getAll(), del=tx.objectStore('counters').getAll();
+      tx.oncomplete = () => {const ids=new Set(del.result.filter(d=>d?.type==='consultation-deletion'&&d.scope===owner).map(d=>d.id));resolve(req.result.filter(r => r.scope === owner&&!ids.has(r.id)).sort((a,b) => a.slot-b.slot));};
       tx.onabort = tx.onerror = () => reject(tx.error || new Error('저장 목록을 읽지 못했습니다.'));
     });
   }
@@ -41,6 +41,8 @@
     return new Promise((resolve, reject) => {
       const tx = connection.transaction(['records','counters'],'readwrite'), store = tx.objectStore('records'), counters = tx.objectStore('counters');
       let result;
+      const deleted=counters.get('deleted:'+entry.scope+':'+entry.id);
+      deleted.onsuccess=()=>{if(deleted.result){tx.abort();return;}
       const prior = store.get(entry.id);
       prior.onsuccess = () => {
         if (prior.result) {
@@ -50,17 +52,28 @@
         const count = counters.get(entry.scope);
         count.onsuccess = () => { const slot = (+count.result || 0) + 1; result = {...entry,slot}; store.add(result); counters.put(slot,entry.scope); };
       };
+      };
       tx.oncomplete = () => resolve(result);
       tx.onabort = tx.onerror = () => reject(tx.error || new Error('기기 저장에 실패했습니다. 공간 부족 또는 동일 ID의 다른 자료를 확인하세요. 기존 저장은 유지됩니다.'));
     });
   }
-  async function removeLocal(id, owner) {
-    const connection = await db();
-    return new Promise((resolve,reject) => {
-      const tx = connection.transaction('records','readwrite'), store = tx.objectStore('records'), req = store.get(id);
-      req.onsuccess = () => { if (req.result?.scope === owner) store.delete(id); };
-      tx.oncomplete = resolve; tx.onabort = tx.onerror = () => reject(tx.error || new Error('기기 저장 삭제에 실패했습니다.'));
+  async function applyDeletions(ids,owner) {
+    const connection=await db();
+    return new Promise((resolve,reject)=>{
+      const tx=connection.transaction(['records','counters'],'readwrite'),store=tx.objectStore('records'),counters=tx.objectStore('counters');
+      for(const id of ids){counters.put({type:'consultation-deletion',scope:owner,id},'deleted:'+owner+':'+id);const req=store.get(id);req.onsuccess=()=>{if(req.result?.scope===owner)store.delete(id);};}
+      tx.oncomplete=resolve;tx.onabort=tx.onerror=()=>reject(new Error('기기 삭제 상태 저장에 실패했습니다. 다시 동기화하세요.'));
     });
+  }
+  async function deletionState(version,owner) {
+    const markers=(await SERVER.listConsultationDeletions()).filter(d=>d.scope===owner),ids=new Set(markers.map(d=>d.id));
+    if(version!==epoch||!SERVER.isOpen())return ids;
+    if(ids.size){
+      const active=await SERVER.listConsultations();
+      for(const file of active){const m=/^vhm-consult-([a-f0-9-]{36})\.vhm$/.exec(file.name||'');if(m&&ids.has(m[1])){await SERVER.deleteConsultation(m[1],null,file.id);if(version!==epoch||!SERVER.isOpen())return ids;}}
+      if(version===epoch&&SERVER.isOpen())await applyDeletions(ids,owner);
+    }
+    return ids;
   }
   async function markRemote(entry,remoteId) {
     if (typeof remoteId !== 'string' || !/^[\w-]{1,150}$/.test(remoteId)) throw new Error('Drive 저장 결과를 확인하지 못했습니다. 기기 원본은 유지됩니다.');
@@ -184,7 +197,7 @@
       const label = document.createElement('b'); label.textContent = '저장'+record.slot; row.append(label);
       const syncLabel = document.createElement('span'); syncLabel.className = 'hint'; syncLabel.textContent = record.remoteId ? 'Drive 저장 확인' : autoSync ? '기기 저장 · 동기화 대기' : '기기 전용 저장'; row.append(syncLabel);
       const date = document.createElement('span'); date.className = 'hint'; date.textContent = new Date(record.created).toLocaleString('ko-KR'); row.append(date);
-      for (const [label,action] of [['열기',()=>load(record)],['Drive에 복사',()=>copy(record)],['이 기기에서 삭제',()=>drop(record)]]) {
+      for (const [label,action] of [['열기',()=>load(record)],['Drive에 복사',()=>copy(record)],['Drive에서도 삭제',()=>drop(record)]]) {
         const b = document.createElement('button'); b.type = 'button'; b.className = 'small'; b.textContent = label; b.disabled = busy; b.onclick = () => runAction(action); row.append(b);
       }
       container.append(row);
@@ -194,7 +207,7 @@
   function mount() {
     const box = $('#consultationTools'); if (!box) return;
     if (frame) cancelAnimationFrame(frame); frame = 0; active = null;
-    box.innerHTML = '<div class="card" style="padding:12px;margin:10px 0"><div class="row" style="flex-wrap:wrap;gap:8px"><b>상담메모 저장·손글씨</b><button type="button" class="primary" id="consultSave">새로 저장</button><button type="button" id="consultShow">저장 목록</button><button type="button" id="consultImport">Drive에서 불러오기</button><button type="button" id="consultConnect" hidden>Drive 연결 (작성 내용 초기화)</button></div><p class="hint" id="consultStatus" role="status" style="margin:8px 0"></p><p class="hint">저장1, 저장2…로 이 기기에 암호화 보관합니다. Drive 연결과 저장 시 동기화가 켜져 있으면 저장 버튼을 누를 때 Drive에도 보관합니다. 기존 태블릿 메모는 이 기기에서 동기화를 한 번 실행하세요. 저장 목록을 열면 연결된 Drive 자료도 불러옵니다. 입력 중에는 저장·전송하지 않습니다.</p><div id="consultList"></div><details id="consultBoard"><summary>손글씨 필기판 열기</summary><p class="hint">Apple Pencil·마우스로 바로 작성하세요. 기본은 펜 전용으로 손바닥 터치를 무시합니다. 화면 밖에서는 평소처럼 스크롤할 수 있습니다.</p><label class="row" style="gap:6px;margin:8px 0"><input type="checkbox" id="consultFinger" style="width:auto"> 손가락으로도 쓰기 (터치 필기)</label><div class="row" style="margin:8px 0;flex-wrap:wrap"><button type="button" id="consultPen">펜</button><button type="button" id="consultEraser">지우개</button><label>색상 <select id="consultColor" aria-label="펜 색상"><option value="#183f35">검정</option><option value="#b42318">빨강</option><option value="#1d4ed8">파랑</option></select></label><label>굵기 <select id="consultWidth" aria-label="펜 굵기"><option value="3">가는 펜</option><option value="6">굵은 펜</option></select></label><button type="button" id="consultUndo">한 획 취소</button><button type="button" id="consultEraseAll">필기 지우기</button></div><canvas id="consultCanvas" width="1000" height="600" aria-label="손글씨 필기판: 마우스·펜·터치로 작성" style="display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff;touch-action:none"></canvas><p class="hint">메모와 필기를 함께 저장합니다. 손글씨는 필기 모양대로 보관합니다.</p></details></div>';
+    box.innerHTML = '<div class="card" style="padding:12px;margin:10px 0"><div class="row" style="flex-wrap:wrap;gap:8px"><b>상담메모 저장·손글씨</b><button type="button" class="primary" id="consultSave">새로 저장</button><button type="button" id="consultShow">저장 목록</button><button type="button" id="consultImport">Drive에서 불러오기</button><button type="button" id="consultConnect" hidden>Drive 연결 (작성 내용 초기화)</button></div><p class="hint" id="consultStatus" role="status" style="margin:8px 0"></p><p class="hint">저장1, 저장2…로 이 기기에 암호화 보관합니다. Drive 연결과 저장 시 동기화가 켜져 있으면 저장 버튼을 누를 때 Drive에도 보관합니다. 기존 태블릿 메모는 이 기기에서 동기화를 한 번 실행하세요. 저장 목록을 열면 연결된 Drive 자료도 불러옵니다. 입력 중에는 저장·전송하지 않습니다. ‘Drive에서도 삭제’는 메모 원본을 영구 삭제합니다. 재생성 방지용 삭제 표식에는 메모 내용이 포함되지 않습니다.</p><div id="consultList"></div><details id="consultBoard"><summary>손글씨 필기판 열기</summary><p class="hint">Apple Pencil·마우스로 바로 작성하세요. 기본은 펜 전용으로 손바닥 터치를 무시합니다. 화면 밖에서는 평소처럼 스크롤할 수 있습니다.</p><label class="row" style="gap:6px;margin:8px 0"><input type="checkbox" id="consultFinger" style="width:auto"> 손가락으로도 쓰기 (터치 필기)</label><div class="row" style="margin:8px 0;flex-wrap:wrap"><button type="button" id="consultPen">펜</button><button type="button" id="consultEraser">지우개</button><label>색상 <select id="consultColor" aria-label="펜 색상"><option value="#183f35">검정</option><option value="#b42318">빨강</option><option value="#1d4ed8">파랑</option></select></label><label>굵기 <select id="consultWidth" aria-label="펜 굵기"><option value="3">가는 펜</option><option value="6">굵은 펜</option></select></label><button type="button" id="consultUndo">한 획 취소</button><button type="button" id="consultEraseAll">필기 지우기</button></div><canvas id="consultCanvas" width="1000" height="600" aria-label="손글씨 필기판: 마우스·펜·터치로 작성" style="display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff;touch-action:none"></canvas><p class="hint">메모와 필기를 함께 저장합니다. 손글씨는 필기 모양대로 보관합니다.</p></details></div>';
     $('#consultBoard').open = boardOpen; $('#consultBoard').ontoggle = e => { boardOpen = e.target.open; };
     $('#consultColor').value = color; $('#consultWidth').value = String(width);
     $('#consultFinger').checked = fingerEnabled;
@@ -282,13 +295,18 @@
   }
   async function drop(entry) {
     const version = epoch; if (!(await unlocked()) || version !== epoch || entry.scope !== scope) return;
-    if (!confirm('저장'+entry.slot+'을 이 기기에서 삭제할까요? Drive 복사본은 유지되며 다음 동기화 때 다시 나타날 수 있습니다.')) return;
-    await removeLocal(entry.id,scope); if (version !== epoch) return;
-    records = await listLocal(scope); paintList(); status('이 기기에서 삭제했습니다. Drive 복사본은 유지됩니다.');
+    if(!driveReady())throw new Error('Drive까지 삭제하려면 인터넷과 Drive 연결이 필요합니다. 기존 저장본은 유지됩니다.');
+    if(!confirm('저장'+entry.slot+'을 이 기기와 Drive에서 영구 삭제할까요? Drive 휴지통에도 남기지 않으며 복구할 수 없습니다. 다른 기기의 같은 저장본도 다음 동기화 때 삭제됩니다.'))return;
+    const owner=scope;
+    await SERVER.deleteConsultation(entry.id,entry.encrypted,entry.remoteId);if(version!==epoch||!SERVER.isOpen())return;
+    await applyDeletions([entry.id],owner);if(version!==epoch)return;
+    records=await listLocal(owner);paintList();status('이 기기와 Drive에서 삭제했습니다. 다른 기기는 다음 동기화 때 반영됩니다.');
+    if(window.PHIS)PHIS.refreshSaved();
   }
   async function importDrive() {
     const version = epoch; if (!(await unlocked()) || version !== epoch) return;
     if (!VHM_AUTH.hasDrive) throw new Error('Drive 연결 후 다시 누르세요. 연결 전 현재 내용을 먼저 저장하세요.');
+    const deleted=await deletionState(version,scope);if(version!==epoch||!SERVER.isOpen())return;
     const files = await SERVER.listConsultations(); let added = 0, failed = 0;
     const imported = [];
     const have = new Set((await listLocal(scope)).map(x=>x.id));
@@ -297,6 +315,7 @@
       try {
         const encrypted = await SERVER.fetchConsultation(file.id), record = validate(await SERVER.openConsultation(encrypted));
         if (version !== epoch) return;
+        if(deleted.has(record.id))continue;
         imported.push({id:record.id,scope,created:record.created,encrypted,remoteId:file.id,remoteAt:new Date().toISOString()});
       } catch (_) { failed++; }
     }
@@ -312,7 +331,8 @@
     const version = epoch;
     if (!(await unlocked()) || version !== epoch) return;
     if (!driveReady()) throw new Error('인터넷 연결과 같은 Google 계정의 Drive 연결을 확인한 뒤 다시 동기화하세요. 현재 기기 저장본은 유지됩니다.');
-    const owner = scope, files = await SERVER.listConsultations();
+    const owner=scope,deleted=await deletionState(version,owner);if(version!==epoch||!SERVER.isOpen())return;
+    const files = await SERVER.listConsultations();
     let downloaded = 0, uploaded = 0, failed = 0;
     const verified = new Set(), imported = [], have = new Set((await listLocal(owner)).map(e=>e.id));
     for (const file of files) {
@@ -320,6 +340,7 @@
       try {
         const encrypted = await SERVER.fetchConsultation(file.id), record = validate(await SERVER.openConsultation(encrypted));
         if (version !== epoch) return;
+        if(deleted.has(record.id))continue;
         imported.push({id:record.id,scope:owner,created:record.created,encrypted,remoteId:file.id,remoteAt:new Date().toISOString()});
       } catch (_) { failed++; }
     }

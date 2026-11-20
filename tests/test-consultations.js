@@ -27,7 +27,7 @@ const PNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
   if(p==='/calendar/v3/users/me/calendarList')data={items:cals};
   else if(p==='/drive/v3/files'&&method==='GET'){
    const q=u.searchParams.get('q')||'';
-   if(q.includes('appProperties'))data={files:[...files].filter(([id,f])=>f.meta.appProperties?.vhmType==='consultation-v1').map(([id,f])=>({id,name:f.meta.name}))};
+   if(q.includes('appProperties'))data={files:[...files].filter(([id,f])=>f.meta.appProperties?.vhmType===(/value='([^']+)'/.exec(q)?.[1]||'consultation-v1')).map(([id,f])=>({id,name:f.meta.name}))};
    else if(q.includes('방문건강관리 연계자료'))data={files:[{id:'folder',name:'방문건강관리 연계자료',mimeType:'application/vnd.google-apps.folder'}]};
    else{const name=/name = '([^']+)'/.exec(q)?.[1];data={files:[...files].filter(([id,f])=>f.meta.name===name).map(([id,f])=>({id,name:f.meta.name}))};}
   }
@@ -39,6 +39,7 @@ const PNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
     const meta=JSON.parse(parts[0]),id='file'+(++seq);files.set(id,{meta,body:parts[1]});uploads++;data={id};
    }
   }
+  else if(p.startsWith('/drive/v3/files/')&&method==='DELETE'){files.delete(p.split('/').pop());return route.fulfill({status:204});}
   else if(p.startsWith('/drive/v3/files/')&&u.searchParams.get('alt')==='media'){
    const f=files.get(p.split('/').pop());if(!f){status=404;data={error:{message:'missing'}};}else return route.fulfill({status:200,body:f.body});
   }
@@ -126,7 +127,7 @@ const PNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
  const remote=[...files.values()][0], original=remote.body;remote.body=original.slice(0,-4)+'AAAA';
  await p2.locator('#consultImport').click();await p2.waitForFunction(()=>document.querySelector('#consultStatus').textContent.includes('읽기 실패'));
  check('tampered file does not replace or clear local record',await p2.evaluate(async scope=>(await CONSULTATIONS._listLocal(scope)).length===2,scope));remote.body=original;
- await page.locator('#consultList > div').last().getByRole('button',{name:'이 기기에서 삭제',exact:true}).click();await page.waitForFunction(()=>document.querySelector('#consultStatus').textContent.includes('이 기기에서 삭제했습니다'));
+ await page.locator('#consultList > div').last().getByRole('button',{name:'Drive에서도 삭제',exact:true}).click();await page.waitForFunction(()=>document.querySelector('#consultStatus').textContent.includes('이 기기와 Drive에서 삭제했습니다'));
  await page.locator('#consultSave').click();await page.waitForFunction(()=>document.querySelector('#consultStatus').textContent.includes('저장4 기기 저장 완료'));
  check('deleted numbers are not reused', (await page.evaluate(scope=>CONSULTATIONS._listLocal(scope),scope)).some(r=>r.slot===4));
  const tplBefore=await page.evaluate(()=>localStorage.getItem('vhm-notes-tpl'));
